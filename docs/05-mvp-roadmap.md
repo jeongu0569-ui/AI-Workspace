@@ -63,10 +63,11 @@ Status: in progress.
 - PDF viewer through server raw file endpoint. Basic macOS PDFKit rendering and image raw preview done.
 - Hermes chat view. Live `/api/live` wiring, model picker, session resume menu, context scope picker, and approval controls done in the macOS client.
 - Search view. Done with `POST /api/search`.
+- Apple client source now has iOS platform declaration and conditional layout/PDF preview wrappers.
 
 Remaining:
 
-- iOS target/project packaging.
+- Full Xcode iOS app target, signing, and device packaging.
 
 ## Phase 4: Notes Context Router
 

@@ -1,6 +1,6 @@
 # Apple Client
 
-The first Apple client is a macOS SwiftUI shell in:
+The first Apple client is a SwiftUI shell in:
 
 ```text
 client/apple
@@ -8,6 +8,8 @@ client/apple
 
 It is intentionally a Swift Package first, not a full Xcode project. This keeps
 the scaffold buildable on machines that only have Command Line Tools installed.
+The package now declares both macOS and iOS platforms, with conditional SwiftUI
+layout and PDF preview wrappers where the frameworks differ.
 
 ## Run
 
@@ -55,10 +57,11 @@ Implemented:
 - basic live event rendering for assistant, thinking, tool, approval, and system events
 - grouped, collapsible thinking/tool activity rows
 - approval and denial buttons for `approval.request` events
+- iOS-ready source split for file navigation and PDF preview
 
 Not yet implemented:
 
-- iOS target packaging
+- full Xcode iOS app target, signing, and device packaging
 
 ## Client API Boundary
 
@@ -116,3 +119,20 @@ The client only sends a compact `contextRequest`. The Workspace Server resolves
 the path, decides inline versus RAG/search metadata, and forwards the rendered
 context to Hermes. This keeps filesystem and indexing policy centralized on the
 server instead of duplicating it in each Apple client.
+
+## iOS Groundwork
+
+The current package is still primarily run as a macOS executable:
+
+```bash
+swift run AIWorkspace
+```
+
+The source is now prepared for an iOS app target:
+
+- `Package.swift` declares `.iOS(.v17)`.
+- File navigation uses `HSplitView` on macOS and a stacked layout elsewhere.
+- PDF rendering uses `NSViewRepresentable` on macOS and `UIViewRepresentable` on iOS.
+
+The remaining packaging work is to create a proper Xcode app target, bundle ID,
+signing setup, and iPhone/iPad runtime verification.

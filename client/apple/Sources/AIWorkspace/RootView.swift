@@ -27,7 +27,9 @@ struct RootView: View {
                 SearchView()
             }
         }
+        #if os(macOS)
         .frame(minWidth: 980, minHeight: 640)
+        #endif
     }
 }
 

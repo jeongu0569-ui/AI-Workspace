@@ -138,3 +138,4 @@ Current client shell:
 - chat context picker for current file, current folder, or workspace
 - approval and denial buttons for Hermes approval requests
 - grouped, collapsible thinking/tool activity rows
+- iOS-ready conditional SwiftUI source groundwork

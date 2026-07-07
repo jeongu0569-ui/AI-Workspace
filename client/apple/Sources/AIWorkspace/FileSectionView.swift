@@ -7,73 +7,92 @@ struct FileSectionView: View {
     let root: String
 
     var body: some View {
+        #if os(macOS)
         HSplitView {
-            VStack(spacing: 0) {
-                HeaderView(title: title, subtitle: store.sectionSubtitle(root: root))
-                HStack(spacing: 12) {
-                    Button {
-                        Task { await store.goToParent(root: root) }
-                    } label: {
-                        Image(systemName: "chevron.up")
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(store.currentPath(for: root).isEmpty)
-                    .help("Go to parent folder")
-
-                    Button {
-                        Task { await store.goToRoot(root: root) }
-                    } label: {
-                        Image(systemName: "house")
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(store.currentPath(for: root).isEmpty)
-                    .help("Go to root folder")
-
-                    Text(store.currentPath(for: root).isEmpty ? "/" : store.currentPath(for: root))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-
-                List(store.items(for: root)) { item in
-                    Button {
-                        Task {
-                            if item.isDirectory {
-                                await store.openFolder(root: root, item: item)
-                            } else {
-                                await store.loadFile(item)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: icon(for: item))
-                                .foregroundStyle(item.isDirectory ? .blue : .secondary)
-                            VStack(alignment: .leading) {
-                                Text(item.name)
-                                Text(item.path)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if item.isDirectory {
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .frame(minWidth: 280, idealWidth: 340)
+            FileBrowserPane(title: title, root: root)
+                .frame(minWidth: 280, idealWidth: 340)
 
             FilePreviewView()
                 .frame(minWidth: 480)
+        }
+        #else
+        VStack(spacing: 0) {
+            FileBrowserPane(title: title, root: root)
+                .frame(maxHeight: 320)
+            Divider()
+            FilePreviewView()
+        }
+        #endif
+    }
+}
+
+struct FileBrowserPane: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    let title: String
+    let root: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HeaderView(title: title, subtitle: store.sectionSubtitle(root: root))
+            HStack(spacing: 12) {
+                Button {
+                    Task { await store.goToParent(root: root) }
+                } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .buttonStyle(.borderless)
+                .disabled(store.currentPath(for: root).isEmpty)
+                .help("Go to parent folder")
+
+                Button {
+                    Task { await store.goToRoot(root: root) }
+                } label: {
+                    Image(systemName: "house")
+                }
+                .buttonStyle(.borderless)
+                .disabled(store.currentPath(for: root).isEmpty)
+                .help("Go to root folder")
+
+                Text(store.currentPath(for: root).isEmpty ? "/" : store.currentPath(for: root))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            List(store.items(for: root)) { item in
+                Button {
+                    Task {
+                        if item.isDirectory {
+                            await store.openFolder(root: root, item: item)
+                        } else {
+                            await store.loadFile(item)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: icon(for: item))
+                            .foregroundStyle(item.isDirectory ? .blue : .secondary)
+                        VStack(alignment: .leading) {
+                            Text(item.name)
+                            Text(item.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if item.isDirectory {
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -179,6 +198,7 @@ struct FilePreviewView: View {
     }
 }
 
+#if os(macOS)
 struct PDFPreviewView: NSViewRepresentable {
     let url: URL
 
@@ -195,3 +215,23 @@ struct PDFPreviewView: NSViewRepresentable {
         view.document = PDFDocument(url: url)
     }
 }
+#endif
+
+#if os(iOS)
+struct PDFPreviewView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ view: PDFView, context: Context) {
+        view.document = PDFDocument(url: url)
+    }
+}
+#endif
