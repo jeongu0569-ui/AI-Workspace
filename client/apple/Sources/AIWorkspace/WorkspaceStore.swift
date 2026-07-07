@@ -317,12 +317,12 @@ final class WorkspaceStore: ObservableObject {
         }
         if type.contains("thinking") || type.contains("reasoning") {
             if !text.isEmpty {
-                chatLines.append(ChatLine(role: "thinking", text: text))
+                appendActivity(type: type, text: text)
             }
             return
         }
         if type.contains("tool") {
-            chatLines.append(ChatLine(role: "tool", text: text.isEmpty ? type : "\(type): \(text)"))
+            appendActivity(type: type, text: text)
             return
         }
         if type == "approval.request" {
@@ -334,6 +334,26 @@ final class WorkspaceStore: ObservableObject {
     private func updateApprovalLine(_ id: UUID, state: ApprovalState) {
         guard let index = chatLines.firstIndex(where: { $0.id == id }) else { return }
         chatLines[index].approvalState = state
+    }
+
+    private func appendActivity(type: String, text: String) {
+        let item = ChatActivity(type: type, text: text.isEmpty ? type : text)
+        if chatLines.last?.role == "activity" {
+            chatLines[chatLines.count - 1].activityItems.append(item)
+            chatLines[chatLines.count - 1].text = activitySummary(chatLines[chatLines.count - 1].activityItems)
+        } else {
+            chatLines.append(ChatLine(role: "activity", text: activitySummary([item]), activityItems: [item]))
+        }
+    }
+
+    private func activitySummary(_ items: [ChatActivity]) -> String {
+        let toolCount = items.filter { $0.type.contains("tool") }.count
+        let thoughtCount = items.count - toolCount
+        let parts = [
+            thoughtCount > 0 ? "\(thoughtCount) thinking" : nil,
+            toolCount > 0 ? "\(toolCount) tool" : nil
+        ].compactMap { $0 }
+        return parts.isEmpty ? "Activity" : "Activity: " + parts.joined(separator: ", ")
     }
 
     private func chatContextRequest() -> ContextRequest? {

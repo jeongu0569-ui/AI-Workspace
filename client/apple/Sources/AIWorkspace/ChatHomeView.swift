@@ -120,20 +120,54 @@ struct ChatHomeView: View {
 struct MessageBubble: View {
     let line: ChatLine
     let onApproval: (Bool) -> Void
+    @State private var activityExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(line.role.uppercased())
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(line.text)
-                .textSelection(.enabled)
+            if line.role == "activity" {
+                activityView
+            } else {
+                Text(line.text)
+                    .textSelection(.enabled)
+            }
             if line.role == "approval", let state = line.approvalState {
                 approvalControls(state)
             }
         }
         .padding(12)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var activityView: some View {
+        DisclosureGroup(isExpanded: $activityExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(line.activityItems) { item in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.type)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(item.text)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.secondary)
+                Text(line.text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+        }
     }
 
     @ViewBuilder

@@ -38,6 +38,7 @@ Status: in progress.
   - thinking/reasoning
   - tools
   - approvals
+- macOS client groups thinking/tool events into collapsible activity rows.
 - Client-friendly approval response command. Done.
 
 Remaining:

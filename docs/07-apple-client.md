@@ -53,11 +53,11 @@ Implemented:
 - chat context scope picker
 - `contextRequest` forwarding for current file, current folder, and workspace scopes
 - basic live event rendering for assistant, thinking, tool, approval, and system events
+- grouped, collapsible thinking/tool activity rows
 - approval and denial buttons for `approval.request` events
 
 Not yet implemented:
 
-- rich thinking/tool grouping
 - iOS target packaging
 
 ## Client API Boundary

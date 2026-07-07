@@ -115,6 +115,13 @@ struct ChatLine: Identifiable {
     let role: String
     var text: String
     var approvalState: ApprovalState?
+    var activityItems: [ChatActivity] = []
+}
+
+struct ChatActivity: Identifiable {
+    let id = UUID()
+    let type: String
+    let text: String
 }
 
 enum ApprovalState: String {
