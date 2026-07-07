@@ -9,6 +9,8 @@ final class WorkspaceStore: ObservableObject {
     @Published var notesPath = ""
     @Published var codePath = ""
     @Published var selectedFile: FileResponse?
+    @Published var editorText = ""
+    @Published var isEditingFile = false
     @Published var searchResponse: SearchResponse?
     @Published var chatLines: [ChatLine] = [
         ChatLine(role: "system", text: "Connect to the Workspace Server, then start a Hermes live session.")
@@ -84,7 +86,45 @@ final class WorkspaceStore: ObservableObject {
         defer { isLoading = false }
         do {
             selectedFile = try await api.file(path: item.path)
+            editorText = selectedFile?.content ?? ""
+            isEditingFile = false
             statusMessage = "Opened \(item.name)"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    var selectedFileIsDirty: Bool {
+        guard let selectedFile else { return false }
+        return editorText != selectedFile.content
+    }
+
+    var selectedFileCanEdit: Bool {
+        guard let kind = selectedFile?.kind else { return false }
+        return ["markdown", "code", "file"].contains(kind)
+    }
+
+    func startEditingSelectedFile() {
+        guard selectedFileCanEdit else { return }
+        editorText = selectedFile?.content ?? ""
+        isEditingFile = true
+    }
+
+    func cancelEditingSelectedFile() {
+        editorText = selectedFile?.content ?? ""
+        isEditingFile = false
+    }
+
+    func saveSelectedFile() async {
+        guard let api, var selectedFile, selectedFileCanEdit else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await api.writeFile(path: selectedFile.path, content: editorText)
+            selectedFile.content = editorText
+            self.selectedFile = selectedFile
+            isEditingFile = false
+            statusMessage = "Saved \(selectedFile.name)"
         } catch {
             statusMessage = error.localizedDescription
         }

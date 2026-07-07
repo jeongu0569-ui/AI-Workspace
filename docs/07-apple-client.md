@@ -41,6 +41,7 @@ Implemented:
 - Code root listing
 - recursive Notes and Code folder navigation
 - text/markdown file preview
+- markdown/text/code editing and save through `PUT /api/file`
 - workspace search UI
 - Hermes live chat connection through the Workspace Server
 - live session creation
@@ -52,7 +53,6 @@ Implemented:
 
 Not yet implemented:
 
-- markdown editing and save
 - PDF rendering
 - model/session picker UI
 - rich thinking/tool grouping

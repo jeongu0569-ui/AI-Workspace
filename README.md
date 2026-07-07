@@ -129,6 +129,7 @@ Current client shell:
 - workspace status
 - recursive Notes and Code folder navigation
 - text/markdown file preview
+- markdown/text/code editing and save through `PUT /api/file`
 - search form backed by `POST /api/search`
 - Chat view backed by `WS /api/live`
 - live Hermes session creation and message submit

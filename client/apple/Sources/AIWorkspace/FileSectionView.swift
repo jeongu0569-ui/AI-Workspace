@@ -95,12 +95,56 @@ struct FilePreviewView: View {
         VStack(spacing: 0) {
             if let file = store.selectedFile {
                 HeaderView(title: file.name, subtitle: file.path)
-                ScrollView {
-                    Text(file.content)
+                HStack(spacing: 12) {
+                    if store.isEditingFile {
+                        Button {
+                            Task { await store.saveSelectedFile() }
+                        } label: {
+                            Label("Save", systemImage: "square.and.arrow.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!store.selectedFileIsDirty)
+
+                        Button {
+                            store.cancelEditingSelectedFile()
+                        } label: {
+                            Label("Cancel", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(.borderless)
+                    } else {
+                        Button {
+                            store.startEditingSelectedFile()
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!store.selectedFileCanEdit)
+                    }
+
+                    if store.selectedFileIsDirty {
+                        Label("Unsaved changes", systemImage: "circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+
+                if store.isEditingFile {
+                    TextEditor(text: $store.editorText)
                         .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
+                        .scrollContentBackground(.hidden)
+                        .padding(16)
+                } else {
+                    ScrollView {
+                        Text(file.content)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                    }
                 }
             } else {
                 ContentUnavailableView("Select a file", systemImage: "doc.text.magnifyingglass", description: Text("Open a markdown or text file from the tree."))

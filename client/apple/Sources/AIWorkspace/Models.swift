@@ -49,7 +49,7 @@ struct FileResponse: Codable {
     let kind: String
     let size: Int
     let modifiedAt: String
-    let content: String
+    var content: String
 }
 
 struct SearchResponse: Codable {
