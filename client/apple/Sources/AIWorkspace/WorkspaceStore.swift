@@ -383,6 +383,7 @@ final class WorkspaceStore: ObservableObject {
             || type == "turn.complete"
             || type == "turn.completed" {
             isChatTurnOpen = false
+            finishActiveActivity()
             activeActivityLineId = nil
             return
         }
@@ -406,16 +407,23 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func chatLinesFromHistory(_ messages: [HermesSessionMessage], fallbackTitle: String) -> [ChatLine] {
-        let lines = messages.compactMap { message -> ChatLine? in
+        var lines: [ChatLine] = []
+        for message in messages {
             let role = normalizedHistoryRole(message.role)
-            guard let role else { return nil }
+            guard let role else { continue }
             if role == "activity" {
                 let label = message.toolName.map { "\($0): \(message.content)" } ?? message.content
-                return ChatLine(role: "activity", text: "Activity · 1 tool", activityItems: [
+                lines.append(ChatLine(role: "activity", text: "Activity · 1 tool", activityItems: [
                     ChatActivity(type: message.toolName ?? message.role, text: label)
-                ])
+                ]))
+                continue
             }
-            return ChatLine(role: role, text: message.content)
+            if role == "assistant", let reasoning = message.reasoning, !reasoning.isEmpty {
+                lines.append(ChatLine(role: "activity", text: "Activity · thinking", activityItems: [
+                    ChatActivity(type: "Reasoning", text: reasoning)
+                ]))
+            }
+            lines.append(ChatLine(role: role, text: message.content))
         }
         if !lines.isEmpty {
             return lines
@@ -457,11 +465,20 @@ final class WorkspaceStore: ObservableObject {
                 chatLines[index].activityItems.append(item)
             }
             chatLines[index].text = activitySummary(chatLines[index].activityItems)
+            chatLines[index].isStreamingActivity = true
         } else {
-            let line = ChatLine(role: "activity", text: activitySummary([item]), activityItems: [item])
+            let line = ChatLine(role: "activity", text: activitySummary([item]), activityItems: [item], isStreamingActivity: true)
             activeActivityLineId = line.id
             chatLines.append(line)
         }
+    }
+
+    private func finishActiveActivity() {
+        guard let activeActivityLineId,
+              let index = chatLines.firstIndex(where: { $0.id == activeActivityLineId }) else {
+            return
+        }
+        chatLines[index].isStreamingActivity = false
     }
 
     private func activitySummary(_ items: [ChatActivity]) -> String {

@@ -1,7 +1,4 @@
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
 
 struct RootView: View {
     @EnvironmentObject private var store: WorkspaceStore
@@ -14,19 +11,6 @@ struct RootView: View {
                     .tag(section)
             }
             .navigationTitle("Workspace")
-            .toolbar {
-                #if os(macOS)
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        toggleSidebar()
-                    } label: {
-                        Image(systemName: "sidebar.left")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Hide or show sidebar")
-                }
-                #endif
-            }
             .safeAreaInset(edge: .bottom) {
                 ServerStatusView()
                     .padding(12)
@@ -43,16 +27,7 @@ struct RootView: View {
                 SearchView()
             }
         }
-        #if os(macOS)
-        .frame(minWidth: 980, minHeight: 640)
-        #endif
     }
-
-    #if os(macOS)
-    private func toggleSidebar() {
-        NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
-    }
-    #endif
 }
 
 struct ServerStatusView: View {

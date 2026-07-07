@@ -57,7 +57,7 @@ Implemented:
 - chat context scope picker
 - `contextRequest` forwarding for current file, current folder, and workspace scopes
 - basic live event rendering for assistant, thinking, tool, approval, and system events
-- grouped, collapsible thinking/tool activity rows, one activity group per user turn
+- grouped, collapsible thinking/tool activity rows, one compact activity group per user turn
 - streaming thinking/reasoning deltas coalesced into smooth activity blocks instead of one row per token
 - approval and denial buttons for `approval.request` events
 - normalized Hermes session menu titles instead of raw generated session ids
@@ -65,7 +65,7 @@ Implemented:
 - the new chat `+` button clears the local chat view but does not create a Hermes session until the first message is sent
 - macOS activation fix for `swift run AIWorkspace`, so the launched window becomes the key app for keyboard input
 - compact Notes/Code split view sizing for smaller macOS windows
-- explicit sidebar toggle button in the sidebar toolbar
+- default macOS sidebar toggle only; the custom duplicate sidebar button was removed
 - iOS-ready source split for file navigation and PDF preview
 
 Not yet implemented:
@@ -133,6 +133,12 @@ answer.
 
 User messages are right-aligned and assistant messages remain left-aligned, so
 chat turns are visually easier to scan.
+
+While an activity block is streaming, its collapsed state shows a three-line
+preview of the latest reasoning/tool text and a subtle shimmer. When streaming
+finishes, the shimmer stops and the collapsed row returns to the summary-only
+state. Saved Hermes reasoning is also restored as an activity row when loading
+session history.
 
 ## Chat Context Scopes
 

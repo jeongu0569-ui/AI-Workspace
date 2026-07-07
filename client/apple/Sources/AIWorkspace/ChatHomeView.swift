@@ -208,7 +208,7 @@ struct SessionManagerView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 480, minHeight: 420)
+        .frame(idealWidth: 520, idealHeight: 460)
         .confirmationDialog(
             "Delete this Hermes session?",
             isPresented: Binding(
@@ -258,14 +258,14 @@ struct MessageBubble: View {
                     approvalControls(state)
                 }
             }
-            .padding(12)
+            .padding(bubblePadding)
             .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 10))
 
             if line.role != "user" {
-                Spacer(minLength: 52)
+                Spacer(minLength: line.role == "activity" ? 120 : 52)
             }
         }
-        .frame(maxWidth: .infinity, alignment: frameAlignment)
+        .frame(maxWidth: line.role == "activity" ? 640 : .infinity, alignment: frameAlignment)
     }
 
     private var roleLabel: String {
@@ -285,10 +285,20 @@ struct MessageBubble: View {
     }
 
     private var bubbleBackground: AnyShapeStyle {
+        if line.role == "activity" {
+            return AnyShapeStyle(.quaternary.opacity(0.22))
+        }
         if line.role == "user" {
             return AnyShapeStyle(.tint.opacity(0.18))
         }
         return AnyShapeStyle(.quaternary.opacity(0.35))
+    }
+
+    private var bubblePadding: EdgeInsets {
+        if line.role == "activity" {
+            return EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10)
+        }
+        return EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
     }
 
     private var activityView: some View {
@@ -309,15 +319,31 @@ struct MessageBubble: View {
             }
             .padding(.top, 4)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform.path")
-                    .foregroundStyle(.secondary)
-                Text(line.text)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Image(systemName: line.isStreamingActivity ? "sparkles" : "waveform.path")
+                        .foregroundStyle(.secondary)
+                    Text(line.text)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .shimmering(active: line.isStreamingActivity)
+
+                if line.isStreamingActivity && !activityExpanded {
+                    Text(activityPreview)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                        .transition(.opacity)
+                }
             }
         }
+    }
+
+    private var activityPreview: String {
+        line.activityItems.last?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     @ViewBuilder
@@ -347,5 +373,42 @@ struct MessageBubble: View {
                 .font(.caption)
                 .foregroundStyle(.red)
         }
+    }
+}
+
+private struct ShimmerModifier: ViewModifier {
+    let active: Bool
+    @State private var phase = -0.8
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .overlay {
+                    GeometryReader { proxy in
+                        LinearGradient(
+                            colors: [.clear, .white.opacity(0.28), .clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: max(80, proxy.size.width * 0.45))
+                        .offset(x: proxy.size.width * phase)
+                        .blendMode(.plusLighter)
+                    }
+                    .mask(content)
+                }
+                .onAppear {
+                    withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) {
+                        phase = 1.4
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+private extension View {
+    func shimmering(active: Bool) -> some View {
+        modifier(ShimmerModifier(active: active))
     }
 }

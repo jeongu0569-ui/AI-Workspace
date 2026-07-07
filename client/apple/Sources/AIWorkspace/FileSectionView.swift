@@ -10,10 +10,10 @@ struct FileSectionView: View {
         #if os(macOS)
         HSplitView {
             FileBrowserPane(title: title, root: root)
-                .frame(minWidth: 220, idealWidth: 300)
+                .frame(minWidth: 0, idealWidth: 280)
 
             FilePreviewView()
-                .frame(minWidth: 320)
+                .frame(minWidth: 0)
         }
         #else
         VStack(spacing: 0) {

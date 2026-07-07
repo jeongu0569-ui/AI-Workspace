@@ -104,6 +104,7 @@ struct HermesSessionMessage: Codable, Identifiable, Hashable {
     let timestamp: String?
     let toolName: String?
     let finishReason: String?
+    let reasoning: String?
 }
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
@@ -130,6 +131,7 @@ struct ChatLine: Identifiable {
     var text: String
     var approvalState: ApprovalState?
     var activityItems: [ChatActivity] = []
+    var isStreamingActivity = false
 }
 
 struct ChatActivity: Identifiable {

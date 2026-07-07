@@ -420,7 +420,8 @@ function normalizeHermesSessionMessagesResponse(value) {
       content,
       timestamp: stringField(item.timestamp, item.created_at, item.createdAt),
       toolName: stringField(item.tool_name, item.toolName, item.name),
-      finishReason: stringField(item.finish_reason, item.finishReason)
+      finishReason: stringField(item.finish_reason, item.finishReason),
+      reasoning: stringField(item.reasoning, item.reasoning_content, item.reasoningContent)
     });
   }
   return {
