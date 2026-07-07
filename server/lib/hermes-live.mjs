@@ -242,13 +242,53 @@ function buildPromptText(params) {
   const message = requireString(params.message, "message");
   const context = params.context;
   if (!context || Object.keys(context).length === 0) return message;
+  const renderedContext = renderContext(context);
   return [
     "[Workspace context]",
-    JSON.stringify(context, null, 2),
+    renderedContext,
     "",
     "[User message]",
     message
   ].join("\n");
+}
+
+function renderContext(context) {
+  const workspaceContext = context.workspaceContext;
+  if (!workspaceContext) return JSON.stringify(context, null, 2);
+  const workspace = workspaceContext.workspace || {};
+  const lines = [
+    `Scope type: ${workspace.scopeType || "none"}`,
+    `Scope path: ${workspace.scopePath || "(workspace root)"}`,
+    workspace.activePath ? `Active path: ${workspace.activePath}` : "",
+    workspace.ragRecommended ? "RAG search recommended: yes" : "RAG search recommended: no",
+    workspace.ragSearchProvider ? `Preferred search provider: ${workspace.ragSearchProvider}` : "",
+    workspace.ragSearchScopeType ? `Search scope type: ${workspace.ragSearchScopeType}` : "",
+    workspace.ragSearchScopePath ? `Search scope path: ${workspace.ragSearchScopePath}` : ""
+  ].filter(Boolean);
+  if (workspaceContext.fileList?.length) {
+    lines.push("", "[Workspace file list]");
+    for (const file of workspaceContext.fileList.slice(0, 200)) {
+      lines.push(`- ${file.path} (${file.kind})`);
+    }
+    if (workspaceContext.fileList.length > 200) {
+      lines.push(`- ... ${workspaceContext.fileList.length - 200} more files omitted`);
+    }
+  }
+  if (workspaceContext.resources?.length) {
+    lines.push("", "[Linked resources]");
+    for (const resource of workspaceContext.resources.slice(0, 100)) {
+      lines.push(`- ${resource.path} (${resource.kind})${resource.ragRecommended ? " [search]" : ""}`);
+    }
+  }
+  if (workspaceContext.inlineBlocks?.length) {
+    for (const block of workspaceContext.inlineBlocks) {
+      lines.push("", `[${block.title || block.kind}]`);
+      if (block.path) lines.push(`Path: ${block.path}`);
+      if (block.truncated) lines.push("Truncated: true");
+      lines.push(String(block.content || ""));
+    }
+  }
+  return lines.join("\n");
 }
 
 function requireString(value, name) {

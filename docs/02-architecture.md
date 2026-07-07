@@ -12,7 +12,8 @@ Workspace Server
         ├── Metadata DB
         ├── Search/index state
         ├── Hermes API proxy
-        └── Future live event bridge
+        ├── Hermes live event bridge
+        └── Workspace context router
         │
         ▼
 Hermes Server
@@ -95,8 +96,8 @@ RPC  prompt.submit
 RPC  approval.respond
 ```
 
-The Workspace Server should eventually expose a client-friendly live endpoint
-that bridges those Hermes events:
+The Workspace Server exposes a client-friendly live endpoint that bridges those
+Hermes events:
 
 ```text
 message.delta
@@ -109,8 +110,8 @@ approval.request
 message.complete
 ```
 
-The first scaffold only includes REST proxy endpoints for models and sessions.
-Live streaming is intentionally left as the next implementation step.
+The first live bridge keeps Hermes dashboard cookies and WebSocket tickets on
+the server side.
 
 ## Notes Context Router
 
@@ -143,6 +144,16 @@ Example metadata:
 
 Hermes/docsearch should perform the actual search.
 
+Implemented server API:
+
+```text
+POST /api/context
+```
+
+The same context request shape can be sent inside live `prompt.submit` as
+`contextRequest`, so clients do not need to duplicate folder/PDF/RAG routing
+logic.
+
 ## Code Area
 
 Code projects live under `Code/`, but should have stricter permission handling
@@ -157,4 +168,3 @@ Full: Hermes yolo/full mode may bypass dangerous-command prompts.
 
 The client should show diffs and approvals before users trust automated code
 changes.
-

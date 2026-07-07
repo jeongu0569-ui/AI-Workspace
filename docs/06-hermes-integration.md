@@ -83,22 +83,18 @@ not show full reasoning/tool/approval activity.
 
 ## Context Metadata Shape
 
-The app should send workspace context as structured metadata where Hermes
-supports it. Until Hermes has a richer metadata channel for live prompts, the
-server may need to include a compact context preface.
+The app should send a `contextRequest` to the Workspace Server. The server
+resolves paths, decides inline-vs-search policy, and sends a compact context
+preface to Hermes live prompts.
 
 Example:
 
 ```json
 {
-  "workspace": {
-    "rootName": "HermesWorkspace",
-    "activePath": "Notes/Work/os.md",
-    "scopeType": "folder",
-    "scopePath": "Notes/Work",
-    "ragRecommended": true,
-    "ragSearchProvider": "docsearch-mcp"
-  }
+  "scopeType": "folder",
+  "scopePath": "Notes/Work",
+  "activePath": "Notes/Work/os.md",
+  "maxInlineFiles": 3
 }
 ```
 

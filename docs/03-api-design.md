@@ -98,6 +98,61 @@ Deletes a file or folder.
 This endpoint exists for MVP development, but production UI should add undo or
 trash semantics before exposing it casually.
 
+## Context Router
+
+### `POST /api/context`
+
+Builds a Hermes-ready workspace context object from a client mention/scope
+request.
+
+Example for a single note:
+
+```json
+{
+  "scopeType": "note",
+  "scopePath": "Notes/Work/a.md"
+}
+```
+
+Example for a folder:
+
+```json
+{
+  "scopeType": "folder",
+  "scopePath": "Notes/Operating Systems",
+  "maxInlineFiles": 3
+}
+```
+
+Example for a PDF:
+
+```json
+{
+  "scopeType": "pdf",
+  "scopePath": "Documents/os-book.pdf"
+}
+```
+
+Supported scope types:
+
+```text
+none
+selection
+current
+note
+folder
+pdf
+tag
+linked
+workspace
+```
+
+Policy:
+
+- `selection`, `current`, and short `note` context can include inline text.
+- `folder`, `pdf`, `tag`, `linked`, and `workspace` recommend RAG/docsearch.
+- All paths must be workspace-relative.
+
 ## Hermes Proxy
 
 ### `GET /api/hermes/models`
@@ -183,11 +238,9 @@ Submit a prompt:
   "params": {
     "sessionId": "20260707_...",
     "message": "이 노트 요약해줘",
-    "context": {
-      "workspace": {
-        "scopeType": "note",
-        "scopePath": "Notes/Work/a.md"
-      }
+    "contextRequest": {
+      "scopeType": "note",
+      "scopePath": "Notes/Work/a.md"
     }
   }
 }

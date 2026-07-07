@@ -16,6 +16,7 @@ import {
   createFrameDecoder,
   encodeWebSocketFrame
 } from "./lib/hermes-live.mjs";
+import { buildWorkspaceContext } from "./lib/context-router.mjs";
 
 const DEFAULT_PORT = Number.parseInt(process.env.PORT || "8787", 10);
 const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "HermesWorkspace");
@@ -112,6 +113,12 @@ async function handleLiveCommand(hermes, message) {
     return { ok: true, runtimeSessionId };
   }
   if (command === "prompt.submit") {
+    if (params.contextRequest) {
+      params.context = {
+        ...(params.context || {}),
+        workspaceContext: await buildWorkspaceContext(WORKSPACE_ROOT, params.contextRequest)
+      };
+    }
     return await hermes.submitPrompt(params);
   }
   if (command === "approval.respond") {
@@ -183,6 +190,9 @@ async function handleRequest(req, res) {
     }
     if (req.method === "DELETE" && url.pathname === "/api/file") {
       return sendJson(res, await deletePath(url));
+    }
+    if (req.method === "POST" && url.pathname === "/api/context") {
+      return sendJson(res, await resolveContext(req));
     }
     if (url.pathname.startsWith("/api/hermes/")) {
       return handleHermesProxy(req, res, url);
@@ -310,6 +320,11 @@ async function deletePath(url) {
   const { relativePath, absolutePath } = resolveWorkspacePath(WORKSPACE_ROOT, filePath);
   await fs.rm(absolutePath, { recursive: true, force: false });
   return { ok: true, path: relativePath };
+}
+
+async function resolveContext(req) {
+  const body = await readJsonBody(req);
+  return await buildWorkspaceContext(WORKSPACE_ROOT, body);
 }
 
 async function handleHermesProxy(req, res, url) {

@@ -64,7 +64,7 @@ Status: planned.
 
 ## Phase 4: Notes Context Router
 
-Status: planned.
+Status: in progress.
 
 Mention types:
 
@@ -83,6 +83,20 @@ Rule:
 
 - small context inline
 - large context as RAG/search metadata
+
+Implemented:
+
+- `POST /api/context`
+- inline note/selection context
+- folder file list with limited markdown snippets
+- PDF metadata with `ragRecommended`
+- live `prompt.submit` support through `contextRequest`
+
+Remaining:
+
+- Tag and backlink extraction from a real metadata DB.
+- PDF page/chunk references from docsearch.
+- Client mention picker UI.
 
 ## Phase 5: docsearch Integration
 
