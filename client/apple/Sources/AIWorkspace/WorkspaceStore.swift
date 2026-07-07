@@ -12,6 +12,7 @@ final class WorkspaceStore: ObservableObject {
         ChatLine(role: "system", text: "Connect to the Workspace Server, then start a Hermes live session.")
     ]
     @Published var liveSessionId: String?
+    @Published var chatContextScope: ChatContextScope = .currentFile
     @Published var statusMessage = "Not connected"
     @Published var isLoading = false
 
@@ -99,11 +100,24 @@ final class WorkspaceStore: ObservableObject {
         guard let liveSessionId else { return }
         chatLines.append(ChatLine(role: "user", text: trimmed))
         do {
-            try await liveClient.submit(sessionId: liveSessionId, message: trimmed)
+            try await liveClient.submit(sessionId: liveSessionId, message: trimmed, contextRequest: chatContextRequest())
             statusMessage = "Message sent"
         } catch {
             statusMessage = error.localizedDescription
             chatLines.append(ChatLine(role: "system", text: error.localizedDescription))
+        }
+    }
+
+    var chatContextLabel: String {
+        switch chatContextScope {
+        case .none:
+            "No workspace context"
+        case .currentFile:
+            selectedFile.map { "Current file: \($0.path)" } ?? "Current file: none selected"
+        case .currentFolder:
+            "Current folder: \(selectedFolderPath.isEmpty ? "workspace root" : selectedFolderPath)"
+        case .workspace:
+            "Workspace root"
         }
     }
 
@@ -147,5 +161,26 @@ final class WorkspaceStore: ObservableObject {
             chatLines.append(ChatLine(role: "approval", text: text.isEmpty ? "Approval requested." : text))
             return
         }
+    }
+
+    private func chatContextRequest() -> ContextRequest? {
+        switch chatContextScope {
+        case .none:
+            return nil
+        case .currentFile:
+            guard let selectedFile else { return nil }
+            let scopeType = selectedFile.kind == "pdf" ? "pdf" : "current"
+            return ContextRequest(scopeType: scopeType, scopePath: selectedFile.path, activePath: selectedFile.path)
+        case .currentFolder:
+            return ContextRequest(scopeType: "folder", scopePath: selectedFolderPath, activePath: selectedFile?.path)
+        case .workspace:
+            return ContextRequest(scopeType: "workspace", scopePath: nil, activePath: selectedFile?.path)
+        }
+    }
+
+    private var selectedFolderPath: String {
+        guard let path = selectedFile?.path else { return "" }
+        guard let slashIndex = path.lastIndex(of: "/") else { return "" }
+        return String(path[..<slashIndex])
     }
 }

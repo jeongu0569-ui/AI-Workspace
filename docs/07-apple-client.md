@@ -44,6 +44,8 @@ Implemented:
 - Hermes live chat connection through the Workspace Server
 - live session creation
 - message submit
+- chat context scope picker
+- `contextRequest` forwarding for current file, current folder, and workspace scopes
 - basic live event rendering for assistant, thinking, tool, approval, and system events
 
 Not yet implemented:
@@ -88,10 +90,26 @@ Connect button or first message
   -> WS /api/live
   -> connect
   -> session.create
-  -> prompt.submit
+  -> prompt.submit with optional contextRequest
   -> render hermes.event messages
 ```
 
 The first implementation intentionally keeps the UI plain. It renders live
 events as chat rows so the transport can be tested before adding richer Codex-
 style grouped thinking and tool panels.
+
+## Chat Context Scopes
+
+The chat input can now choose the workspace context sent with each prompt:
+
+```text
+No context
+Current file
+Current folder
+Workspace
+```
+
+The client only sends a compact `contextRequest`. The Workspace Server resolves
+the path, decides inline versus RAG/search metadata, and forwards the rendered
+context to Hermes. This keeps filesystem and indexing policy centralized on the
+server instead of duplicating it in each Apple client.

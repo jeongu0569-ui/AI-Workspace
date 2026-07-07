@@ -132,4 +132,5 @@ Current client shell:
 - search form backed by `POST /api/search`
 - Chat view backed by `WS /api/live`
 - live Hermes session creation and message submit
+- chat context picker for current file, current folder, or workspace
 - basic assistant/thinking/tool/approval event rendering

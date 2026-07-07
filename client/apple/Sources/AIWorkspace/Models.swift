@@ -94,3 +94,30 @@ struct ChatLine: Identifiable {
     let role: String
     var text: String
 }
+
+enum ChatContextScope: String, CaseIterable, Identifiable {
+    case none = "none"
+    case currentFile = "current-file"
+    case currentFolder = "current-folder"
+    case workspace = "workspace"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .none: "No context"
+        case .currentFile: "Current file"
+        case .currentFolder: "Current folder"
+        case .workspace: "Workspace"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .none: "slash.circle"
+        case .currentFile: "doc.text"
+        case .currentFolder: "folder"
+        case .workspace: "externaldrive"
+        }
+    }
+}

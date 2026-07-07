@@ -17,30 +17,51 @@ struct ChatHomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
-            HStack(spacing: 12) {
-                Button {
-                    Task { await store.connectLiveChat() }
-                } label: {
-                    Image(systemName: "bolt.horizontal")
-                }
-                .buttonStyle(.borderless)
-                .help("Connect live Hermes session")
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    Picker("Context", selection: $store.chatContextScope) {
+                        ForEach(ChatContextScope.allCases) { scope in
+                            Label(scope.label, systemImage: scope.systemImage)
+                                .tag(scope)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
 
-                TextField("Message Hermes...", text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...5)
-                    .padding(10)
-                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-                Button {
-                    let message = draft
-                    draft = ""
-                    Task { await store.sendChatMessage(message) }
-                } label: {
-                    Image(systemName: "paperplane.fill")
+                    Text(store.chatContextLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer()
                 }
-                .buttonStyle(.borderless)
-                .font(.title3)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                HStack(spacing: 12) {
+                    Button {
+                        Task { await store.connectLiveChat() }
+                    } label: {
+                        Image(systemName: "bolt.horizontal")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Connect live Hermes session")
+
+                    TextField("Message Hermes...", text: $draft, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...5)
+                        .padding(10)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+                    Button {
+                        let message = draft
+                        draft = ""
+                        Task { await store.sendChatMessage(message) }
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.title3)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
             .padding(16)
         }
