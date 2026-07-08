@@ -102,10 +102,13 @@ Implemented:
 - Xcode project with separate macOS and iOS app targets
 - shared SwiftUI source between macOS and iOS
 - iOS Simulator build support
+- iOS device build support when the local Xcode signing team is configured
 
 Not yet implemented:
 
-- Apple developer team signing for real iPhone/iPad device installation
+- Repository-level Apple developer team signing is intentionally not fixed to a
+  specific account. Configure the `AIWorkspace iOS` target's Team in Xcode before
+  installing on a physical iPhone/iPad.
 - iPhone/iPad runtime UX pass on physical devices
 
 ## Client API Boundary
@@ -372,6 +375,11 @@ xcodebuild -project client/apple/AIWorkspace.xcodeproj \
   -scheme 'AIWorkspace iOS' \
   -configuration Debug \
   -destination 'generic/platform=iOS Simulator' build
+
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'platform=iOS,id=<DEVICE_ID>' build
 ```
 
 The old package check is still useful for quick compile feedback:

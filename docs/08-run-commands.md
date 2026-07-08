@@ -211,8 +211,22 @@ xcodebuild -project client/apple/AIWorkspace.xcodeproj \
 ```
 
 실제 iPhone/iPad에 설치하려면 Xcode에서 `AIWorkspace iOS` target의
-Team/Signing을 본인 Apple Developer 계정으로 설정해야 한다. 현재 레포
-기본값은 Simulator 빌드 검증을 우선하기 위해 device signing을 고정하지 않는다.
+Team/Signing을 본인 Apple Developer 계정으로 설정해야 한다.
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes
+xcrun xctrace list devices
+
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'platform=iOS,id=<DEVICE_ID>' build
+```
+
+레포는 특정 Apple Team ID를 고정하지 않는다. 그래서 새 Mac에서는 Xcode에서
+`Signing & Capabilities`의 Team을 먼저 선택해야 실제 기기 설치가 된다. Team
+또는 Apple Development 인증서가 없으면 빌드는 되더라도 설치 단계에서
+`No code signature found` 또는 signing 오류가 난다.
 
 ## 5. 백그라운드로 Workspace Server 실행
 
