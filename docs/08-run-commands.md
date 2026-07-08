@@ -291,8 +291,13 @@ iOS에서 `URLError.-1022`와 함께 App Transport Security 오류가 나오면 
 확인한다. 현재 개발 빌드는 `NSAllowsArbitraryLoads=true`만 사용한다. 이 값과
 세부 예외 키를 섞으면 iOS에서 전체 HTTP 허용이 기대대로 적용되지 않을 수 있다.
 
-iOS에서 전역 채팅은 별도 버튼이 아니라 오른쪽 화면 가장자리에서 왼쪽으로
-스와이프해 연다. 닫을 때는 패널을 오른쪽으로 밀거나 어두워진 본문 영역을 탭한다.
+iOS 기본 화면은 Hermes Chat이다. 왼쪽 메뉴는 화면을 밀어내는 시스템 split view가
+아니라, 왼쪽 위 사이드바 아이콘 또는 왼쪽 가장자리 스와이프로 여는 drawer다.
+서버 주소는 drawer 안이 아니라 오른쪽 위 Settings에서 입력한다.
+
+iOS에서 Notes/Code/Search를 보고 있을 때 전역 채팅은 별도 버튼이 아니라 오른쪽
+화면 가장자리에서 왼쪽으로 스와이프해 연다. 닫을 때는 패널을 오른쪽으로 밀거나
+어두워진 본문 영역을 탭한다.
 
 ## 5. 백그라운드로 Workspace Server 실행
 

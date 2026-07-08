@@ -610,6 +610,11 @@ final class WorkspaceStore: ObservableObject {
         hermesModels.first { $0.id == selectedHermesModelId }
     }
 
+    var selectedHermesModelShortLabel: String {
+        guard let selectedHermesModel else { return "Model" }
+        return selectedHermesModel.shortLabel
+    }
+
     private func handleLiveEnvelope(_ envelope: LiveEnvelope) {
         switch envelope.kind {
         case "ready":

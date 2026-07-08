@@ -15,6 +15,7 @@ struct ChatHomeView: View {
     var compact = false
     @State private var draft = ""
     @State private var showingSessionManager = false
+    @FocusState private var isDraftFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +30,11 @@ struct ChatHomeView: View {
                 }
                 .padding(compact ? 14 : 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isDraftFocused = false
             }
             Divider()
             VStack(spacing: 10) {
@@ -55,6 +61,7 @@ struct ChatHomeView: View {
                     TextField("Message Hermes...", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(1...(compact ? 3 : 4))
+                        .focused($isDraftFocused)
                         .onSubmit(sendDraft)
 
                     HStack(spacing: 12) {
@@ -74,40 +81,47 @@ struct ChatHomeView: View {
                         .buttonStyle(.borderless)
                         .help("Search and manage sessions")
 
-                        Picker("Access", selection: $store.chatAccessMode) {
-                            ForEach(ChatAccessMode.allCases) { mode in
-                                Text(mode.label).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: 84)
-                        .onChange(of: store.chatAccessMode) {
+                        chatControlMenu(
+                            title: store.chatAccessMode.label,
+                            width: 56,
+                            options: ChatAccessMode.allCases.map { ($0.label, $0) }
+                        ) { mode in
+                            store.chatAccessMode = mode
                             Task { await store.applyAccessModeToLiveSession() }
                         }
 
-                        Picker("Model", selection: $store.selectedHermesModelId) {
+                        Menu {
                             if store.hermesModels.isEmpty {
-                                Text("Default").tag("")
+                                Button("Default") {
+                                    store.selectedHermesModelId = ""
+                                }
                             } else {
                                 ForEach(store.hermesModels) { model in
-                                    Text(model.label).tag(model.id)
+                                    Button(model.label) {
+                                        store.selectedHermesModelId = model.id
+                                    }
                                 }
                             }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: 220)
-
-                        Picker("Reasoning", selection: $store.chatReasoningMode) {
-                            ForEach(ChatReasoningMode.allCases) { mode in
-                                Text(mode.label).tag(mode)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(store.selectedHermesModelShortLabel)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
                             }
+                            .frame(width: compact ? 90 : 128, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: 82)
-                        .onChange(of: store.chatReasoningMode) {
+                        .buttonStyle(.plain)
+                        .controlSize(.small)
+
+                        chatControlMenu(
+                            title: store.chatReasoningMode.label,
+                            width: 50,
+                            options: ChatReasoningMode.allCases.map { ($0.label, $0) }
+                        ) { mode in
+                            store.chatReasoningMode = mode
                             Task { await store.applyReasoningModeToLiveSession() }
                         }
 
@@ -132,6 +146,10 @@ struct ChatHomeView: View {
             }
             .padding(compact ? 12 : 16)
             .background(.background.opacity(0.96))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isDraftFocused = false
         }
         .sheet(isPresented: $showingSessionManager) {
             SessionManagerView(isPresented: $showingSessionManager)
@@ -201,9 +219,38 @@ struct ChatHomeView: View {
         .help("Select Hermes session")
     }
 
+    private func chatControlMenu<Value>(
+        title: String,
+        width: CGFloat,
+        options: [(String, Value)],
+        onSelect: @escaping (Value) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                Button(option.0) {
+                    onSelect(option.1)
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+            }
+            .font(.subheadline.weight(.medium))
+            .frame(width: width, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .controlSize(.small)
+    }
+
     private func sendDraft() {
         let message = draft
         draft = ""
+        isDraftFocused = false
         Task { await store.sendChatMessage(message) }
     }
 }

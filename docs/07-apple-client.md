@@ -111,6 +111,13 @@ Implemented:
 - global chat side panel for Notes, Code, and Search. macOS shows a compact
   right-side split panel; iOS reveals the same compact chat surface by swiping
   left from the right edge, closer to the Obsidian plugin side-panel feel.
+- iOS now uses a chat-first custom shell instead of `NavigationSplitView`.
+  The main screen stays fixed, the left workspace menu opens as a drawer, and
+  server connection settings live in a Settings sheet.
+- compact iOS chat controls use short visible labels for access/model/reasoning
+  so long provider model names do not expand vertically and fill the screen.
+- tapping outside the chat input or scrolling the transcript dismisses the iOS
+  keyboard.
 - connection diagnostics now call `/api/health` before loading workspace data
   and show the exact URL/error in the sidebar status area.
 - macOS windows get a default app-sized frame and are clamped back inside the
@@ -160,6 +167,11 @@ Notes / Code / Search toolbar chat button
   -> macOS: right-side split panel
   -> iOS: right-edge swipe panel
 ```
+
+On iOS, the app shell is intentionally chat-first. The left workspace menu is a
+custom drawer opened from the top-left sidebar icon or by swiping from the left
+edge. Server URL and connection diagnostics are managed from the Settings sheet,
+not from the drawer itself.
 
 The global panel uses the same `WorkspaceStore`, live session, model picker,
 access mode, reasoning mode, session manager, approval controls, and message

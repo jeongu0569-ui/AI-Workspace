@@ -5,8 +5,12 @@ struct RootView: View {
     @State private var selection: WorkspaceSection? = .chat
     @State private var isChatPanelVisible = false
     @State private var chatPanelDragX: CGFloat = 0
+    @State private var isSidebarVisible = false
+    @State private var sidebarDragX: CGFloat = 0
+    @State private var showingSettings = false
 
     var body: some View {
+        #if os(macOS)
         NavigationSplitView {
             List(WorkspaceSection.allCases, selection: $selection) { section in
                 Label(section.rawValue, systemImage: section.systemImage)
@@ -32,6 +36,9 @@ struct RootView: View {
                     #endif
                 }
         }
+        #else
+        iOSRootView
+        #endif
     }
 
     private var selectedSection: WorkspaceSection {
@@ -62,6 +69,191 @@ struct RootView: View {
     }
 
     #if os(iOS)
+    private var iOSRootView: some View {
+        GeometryReader { proxy in
+            let sidebarWidth = min(max(proxy.size.width * 0.78, 260), 320)
+            ZStack(alignment: .leading) {
+                iOSMainContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if isSidebarVisible {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            closeSidebar()
+                        }
+                }
+
+                iOSSidebar(width: sidebarWidth)
+                    .offset(x: sidebarOffset(width: sidebarWidth))
+                    .gesture(sidebarGesture(width: sidebarWidth))
+
+                if !isSidebarVisible {
+                    Color.clear
+                        .frame(width: 32)
+                        .contentShape(Rectangle())
+                        .gesture(sidebarGesture(width: sidebarWidth))
+                }
+            }
+            .clipped()
+        }
+        .sheet(isPresented: $showingSettings) {
+            WorkspaceSettingsView(isPresented: $showingSettings)
+                .environmentObject(store)
+        }
+    }
+
+    private var iOSMainContent: some View {
+        VStack(spacing: 0) {
+            iOSTopBar
+            Divider()
+            if selectedSection == .chat {
+                primaryDetailView
+            } else {
+                iOSSwipeChatContainer
+            }
+        }
+        .background(.background)
+    }
+
+    private var iOSTopBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                openSidebar()
+            } label: {
+                Image(systemName: "sidebar.left")
+            }
+            .buttonStyle(.borderless)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(selectedSection.rawValue)
+                    .font(.headline.weight(.semibold))
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(store.statusMessage == "Connected" ? .green : .orange)
+                        .frame(width: 7, height: 7)
+                    Text(store.statusMessage == "Connected" ? "Connected" : "Disconnected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                showingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(.quaternary.opacity(0.14))
+    }
+
+    private func iOSSidebar(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Hermes")
+                    .font(.title2.weight(.semibold))
+                Text(store.workspace?.rootName ?? "AI Workspace")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+
+            VStack(spacing: 4) {
+                ForEach(WorkspaceSection.allCases) { section in
+                    Button {
+                        selection = section
+                        closeSidebar()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: section.systemImage)
+                                .frame(width: 22)
+                            Text(section.rawValue)
+                            Spacer()
+                        }
+                        .font(.headline)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(
+                            selectedSection == section ? Color.secondary.opacity(0.14) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer()
+
+            Button {
+                showingSettings = true
+                closeSidebar()
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .padding(18)
+        }
+        .frame(width: width, alignment: .leading)
+        .frame(maxHeight: .infinity)
+        .background(.regularMaterial)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(.quaternary.opacity(0.55))
+                .frame(width: 1)
+        }
+        .shadow(color: .black.opacity(0.20), radius: 18, x: 6, y: 0)
+    }
+
+    private func openSidebar() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            isSidebarVisible = true
+            sidebarDragX = 0
+        }
+    }
+
+    private func closeSidebar() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            isSidebarVisible = false
+            sidebarDragX = 0
+        }
+    }
+
+    private func sidebarOffset(width: CGFloat) -> CGFloat {
+        if isSidebarVisible {
+            return min(0, sidebarDragX)
+        }
+        return min(0, -width + sidebarDragX)
+    }
+
+    private func sidebarGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                if isSidebarVisible {
+                    sidebarDragX = min(0, value.translation.width)
+                } else {
+                    sidebarDragX = max(0, value.translation.width)
+                }
+            }
+            .onEnded { value in
+                let shouldOpen = isSidebarVisible
+                    ? value.translation.width > -width * 0.35
+                    : value.translation.width > 48
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    isSidebarVisible = shouldOpen
+                    sidebarDragX = 0
+                }
+            }
+    }
+
     private var iOSSwipeChatContainer: some View {
         GeometryReader { proxy in
             let panelWidth = min(max(proxy.size.width * 0.88, 300), 430)
@@ -212,6 +404,49 @@ struct ServerStatusView: View {
             Text("Step: \(store.connectionStep)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+        }
+    }
+}
+
+struct WorkspaceSettingsView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Connection")
+                            .font(.headline)
+                        ServerStatusView()
+                    }
+                    .padding(14)
+                    .background(.quaternary.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("iPhone / Tailscale")
+                            .font(.headline)
+                        Text("Use the Mac server's Tailscale URL when the app runs on iPhone or iPad. 127.0.0.1 points to the phone itself.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(.quaternary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(18)
+            }
+            .navigationTitle("Settings")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+            }
         }
     }
 }

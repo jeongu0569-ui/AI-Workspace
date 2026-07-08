@@ -93,6 +93,15 @@ struct HermesModelOption: Identifiable, Hashable {
     let label: String
     let provider: String?
     let model: String
+
+    var shortLabel: String {
+        let value = model
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? model
+        guard value.count > 14 else { return value }
+        return String(value.prefix(11)) + "..."
+    }
 }
 
 struct HermesSessionSummary: Identifiable, Hashable {
