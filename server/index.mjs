@@ -456,6 +456,8 @@ function normalizeHermesSessionsResponse(value) {
       title,
       model: stringField(item.model),
       preview,
+      projectId: stringField(item.project_id, item.projectId, item.project?.id, item.workspace_id, item.workspaceId, item.scope_id, item.scopeId),
+      projectTitle: stringField(item.project_title, item.projectTitle, item.project?.title, item.project?.name, item.workspace_title, item.workspaceTitle, item.workspace?.title, item.workspace?.name, item.cwd, item.git_repo_root, item.gitRepoRoot),
       updatedAt: stringField(item.updated_at, item.updatedAt, item.modified_at, item.modifiedAt, item.last_active, item.lastActive),
       isActive: Boolean(item.is_active ?? item.isActive)
     });

@@ -23,6 +23,7 @@ struct ChatHomeView: View {
             if showsHeader {
                 chatHeader
             }
+            sessionToolbar
             ScrollView {
                 VStack(spacing: 14) {
                     ForEach(store.chatLines) { line in
@@ -173,30 +174,6 @@ struct ChatHomeView: View {
             }
 
             Spacer(minLength: 10)
-
-            HStack(spacing: 14) {
-                Button {
-                    store.prepareNewChat()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("New chat")
-
-                Button {
-                    showingSessionManager = true
-                } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Search and manage sessions")
-            }
-            .font(compact ? .title3 : .title2)
-
-            sessionMenu
-                .frame(maxWidth: compact ? 160 : 260, alignment: .trailing)
         }
         .padding(.horizontal, compact ? 14 : 20)
         .padding(.vertical, compact ? 10 : 14)
@@ -208,12 +185,107 @@ struct ChatHomeView: View {
         }
     }
 
+    private var sessionToolbar: some View {
+        HStack(spacing: 8) {
+            Button {
+                showingSessionManager = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.arrow.circlepath")
+                    if !usesCompactSessionToolbar {
+                        Text("History")
+                    }
+                }
+                .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Search and manage sessions")
+
+            Spacer(minLength: 8)
+
+            Rectangle()
+                .fill(.quaternary.opacity(0.75))
+                .frame(width: 1, height: 22)
+
+            projectMenu
+                .frame(maxWidth: usesCompactSessionToolbar ? 116 : 170, alignment: .trailing)
+
+            sessionMenu
+                .frame(maxWidth: usesCompactSessionToolbar ? 136 : 230, alignment: .trailing)
+
+            Button {
+                store.prepareNewChat()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.headline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(width: 30, height: 30)
+            .contentShape(Rectangle())
+            .help("New chat")
+        }
+        .padding(.horizontal, compact ? 12 : 16)
+        .padding(.vertical, 5)
+        .background(.background.opacity(0.96))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.quaternary.opacity(0.45))
+                .frame(height: 1)
+        }
+    }
+
+    private var usesCompactSessionToolbar: Bool {
+        #if os(iOS)
+        true
+        #else
+        compact
+        #endif
+    }
+
+    private var projectMenu: some View {
+        Menu {
+            ForEach(store.hermesSessionProjects) { project in
+                Button {
+                    store.selectedHermesProjectId = project.id
+                } label: {
+                    HStack {
+                        Text(project.title)
+                        Text("(\(project.sessionCount))")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .foregroundStyle(.secondary)
+                Text(store.selectedHermesProjectTitle)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded {
+            Task { await store.refreshHermesMetadata() }
+        })
+        .help("Select project")
+    }
+
     private var sessionMenu: some View {
         Menu {
-            if store.hermesSessions.isEmpty {
+            if store.sessionsForSelectedHermesProject.isEmpty {
                 Text("No sessions loaded")
             } else {
-                ForEach(store.hermesSessions) { session in
+                ForEach(store.sessionsForSelectedHermesProject) { session in
                     Button {
                         Task { await store.resumeHermesSession(session) }
                     } label: {
@@ -233,8 +305,15 @@ struct ChatHomeView: View {
                 Text(store.activeHermesSessionTitle == "No session" ? "Session: none" : store.activeHermesSessionTitle)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                Image(systemName: "chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
             .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .frame(height: 30)
+            .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .simultaneousGesture(TapGesture().onEnded {
@@ -332,6 +411,12 @@ struct SessionManagerView: View {
                                     Text(updatedAt)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                if let projectTitle = session.projectTitle {
+                                    Label(projectTitle, systemImage: "folder")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
                                         .lineLimit(1)
                                 }
                             }

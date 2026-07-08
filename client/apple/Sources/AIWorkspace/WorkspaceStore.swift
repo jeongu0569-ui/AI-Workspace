@@ -30,6 +30,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var connectionStep = "Idle"
     @Published var isLoading = false
     @Published var sessionManagerSearch = ""
+    @Published var selectedHermesProjectId = "__all__"
 
     private let liveClient = LiveChatClient()
     private var activeActivityLineId: UUID?
@@ -631,7 +632,39 @@ final class WorkspaceStore: ObservableObject {
             $0.title.lowercased().contains(query)
                 || $0.id.lowercased().contains(query)
                 || ($0.updatedAt ?? "").lowercased().contains(query)
+                || ($0.projectTitle ?? "").lowercased().contains(query)
+                || ($0.projectId ?? "").lowercased().contains(query)
         }
+    }
+
+    var hermesSessionProjects: [HermesSessionProject] {
+        var projects = [
+            HermesSessionProject(id: "__all__", title: "All sessions", sessionCount: hermesSessions.count)
+        ]
+        var seen = Set(["__all__"])
+        for session in hermesSessions {
+            let rawId = session.projectId ?? session.projectTitle
+            guard let rawId, !rawId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            let id = rawId
+            guard seen.insert(id).inserted else { continue }
+            let count = hermesSessions.filter { ($0.projectId ?? $0.projectTitle) == id }.count
+            projects.append(HermesSessionProject(id: id, title: shortProjectTitle(session.projectTitle ?? id), sessionCount: count))
+        }
+        return projects
+    }
+
+    var selectedHermesProjectTitle: String {
+        hermesSessionProjects.first(where: { $0.id == selectedHermesProjectId })?.title ?? "All sessions"
+    }
+
+    var sessionsForSelectedHermesProject: [HermesSessionSummary] {
+        guard selectedHermesProjectId != "__all__" else { return hermesSessions }
+        return hermesSessions.filter { ($0.projectId ?? $0.projectTitle) == selectedHermesProjectId }
+    }
+
+    private func shortProjectTitle(_ value: String) -> String {
+        let normalized = value.replacingOccurrences(of: "\\", with: "/")
+        return normalized.split(separator: "/").last.map(String.init) ?? value
     }
 
     func respondToApproval(lineId: UUID, approved: Bool) async {

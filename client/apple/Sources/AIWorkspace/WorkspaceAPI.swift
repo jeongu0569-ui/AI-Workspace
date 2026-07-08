@@ -311,8 +311,21 @@ private func collectHermesSessions(from object: Any, into sessions: inout [Herme
             ?? stringValue(dict["modifiedAt"])
             ?? stringValue(dict["last_active"])
             ?? stringValue(dict["lastActive"])
+        let projectObject = dict["project"] as? [String: Any]
+        let workspaceObject = dict["workspace"] as? [String: Any]
+        let projectIdCandidates: [Any?] = [
+            dict["project_id"], dict["projectId"], dict["workspace_id"], dict["workspaceId"],
+            projectObject?["id"], workspaceObject?["id"]
+        ]
+        let projectTitleCandidates: [Any?] = [
+            dict["project_title"], dict["projectTitle"], dict["workspace_title"], dict["workspaceTitle"],
+            dict["cwd"], dict["git_repo_root"], dict["gitRepoRoot"],
+            projectObject?["title"], projectObject?["name"], workspaceObject?["title"], workspaceObject?["name"]
+        ]
+        let projectId = projectIdCandidates.compactMap { stringValue($0) }.first
+        let projectTitle = projectTitleCandidates.compactMap { stringValue($0) }.first
         if messageCount > 0 || preview != nil || explicitTitle != nil {
-            sessions.append(HermesSessionSummary(id: id, title: title, updatedAt: updatedAt))
+            sessions.append(HermesSessionSummary(id: id, title: title, updatedAt: updatedAt, projectId: projectId, projectTitle: projectTitle))
         }
     }
     for key in ["sessions", "items", "data", "results"] {

@@ -108,6 +108,14 @@ struct HermesSessionSummary: Identifiable, Hashable {
     let id: String
     let title: String
     let updatedAt: String?
+    let projectId: String?
+    let projectTitle: String?
+}
+
+struct HermesSessionProject: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let sessionCount: Int
 }
 
 struct MarkdownTable: Identifiable {

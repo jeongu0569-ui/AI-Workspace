@@ -63,6 +63,12 @@ Implemented:
   refresh button is no longer required
 - Hermes session history loading backed by `GET /api/hermes/sessions/:id/messages`
 - History sheet for session search, resume, and guarded delete
+- a thin Obsidian-plugin-style session toolbar is shown even when the large Chat
+  header is hidden. The left side opens session history management; the right
+  side contains project grouping, session selection, and new-chat controls.
+- session project grouping uses Hermes session project/workspace metadata when
+  available and falls back to `All sessions` when Hermes does not expose project
+  fields for a session.
 - live session creation
 - message submit
 - Obsidian-plugin-style chat composer with `+`, History, Safe/Full access,
