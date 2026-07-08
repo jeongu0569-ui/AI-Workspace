@@ -220,11 +220,16 @@ touching local client storage directly:
 ```text
 New file   -> POST /api/file
 New folder -> POST /api/folder
+Rename     -> PATCH /api/file/move
+Delete     -> DELETE /api/file
 Save edit  -> PUT /api/file
 ```
 
 This keeps file ownership on the server, which is required for iOS/iPadOS and
-remote workspace use.
+remote workspace use. On iOS, the app is not expected to mount NAS folders,
+spawn local file tools, or modify the server disk directly. It only sends
+workspace-relative paths to the Workspace Server, and the server performs the
+actual filesystem operation inside the configured workspace root.
 
 While an activity block is streaming, its collapsed state shows a three-line
 preview of the latest reasoning/tool text and a subtle shimmer. When streaming

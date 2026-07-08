@@ -32,6 +32,9 @@ struct FileBrowserPane: View {
     let root: String
     @State private var newItemKind: NewWorkspaceItemKind?
     @State private var newItemName = ""
+    @State private var itemToRename: WorkspaceItem?
+    @State private var renameName = ""
+    @State private var itemToDelete: WorkspaceItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -118,6 +121,34 @@ struct FileBrowserPane: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        itemToRename = item
+                        renameName = item.name
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive) {
+                        itemToDelete = item
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button(role: .destructive) {
+                        itemToDelete = item
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    Button {
+                        itemToRename = item
+                        renameName = item.name
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                }
             }
         }
         .alert(newItemKind?.title ?? "New item", isPresented: newItemBinding) {
@@ -143,12 +174,60 @@ struct FileBrowserPane: View {
         } message: {
             Text(store.currentPath(for: root).isEmpty ? "Create in \(title)." : "Create in \(store.currentPath(for: root)).")
         }
+        .alert("Rename", isPresented: renameBinding) {
+            TextField("Name", text: $renameName)
+            Button("Rename") {
+                let item = itemToRename
+                let name = renameName
+                itemToRename = nil
+                Task {
+                    if let item {
+                        await store.renameItem(root: root, item: item, newName: name)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                itemToRename = nil
+            }
+        } message: {
+            Text(itemToRename?.path ?? "")
+        }
+        .confirmationDialog("Delete item?", isPresented: deleteBinding, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                let item = itemToDelete
+                itemToDelete = nil
+                Task {
+                    if let item {
+                        await store.deleteItem(root: root, item: item)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                itemToDelete = nil
+            }
+        } message: {
+            Text(itemToDelete.map { "Delete \($0.path)?" } ?? "")
+        }
     }
 
     private var newItemBinding: Binding<Bool> {
         Binding(
             get: { newItemKind != nil },
             set: { if !$0 { newItemKind = nil } }
+        )
+    }
+
+    private var renameBinding: Binding<Bool> {
+        Binding(
+            get: { itemToRename != nil },
+            set: { if !$0 { itemToRename = nil } }
+        )
+    }
+
+    private var deleteBinding: Binding<Bool> {
+        Binding(
+            get: { itemToDelete != nil },
+            set: { if !$0 { itemToDelete = nil } }
         )
     }
 

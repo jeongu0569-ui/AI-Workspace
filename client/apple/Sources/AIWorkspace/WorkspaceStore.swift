@@ -147,6 +147,44 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
+    func renameItem(root: String, item: WorkspaceItem, newName: String) async {
+        guard let api else { return }
+        let cleaned = cleanNewItemName(newName)
+        guard !cleaned.isEmpty else {
+            statusMessage = "Name is required"
+            return
+        }
+        guard cleaned != item.name else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let destination = siblingWorkspacePath(for: item.path, newName: cleaned)
+            try await api.movePath(from: item.path, to: destination)
+            clearSelectionIfNeeded(paths: [item.path])
+            await loadTree(root: root, path: currentPath(for: root))
+            if !item.isDirectory, let renamed = items(for: root).first(where: { $0.path == destination }) {
+                await loadFile(renamed)
+            }
+            statusMessage = "Renamed \(item.name) to \(cleaned)"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func deleteItem(root: String, item: WorkspaceItem) async {
+        guard let api else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await api.deletePath(path: item.path)
+            clearSelectionIfNeeded(paths: [item.path])
+            await loadTree(root: root, path: currentPath(for: root))
+            statusMessage = "Deleted \(item.name)"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
     func loadFile(_ item: WorkspaceItem) async {
         guard !item.isDirectory, let api else { return }
         isLoading = true
@@ -262,6 +300,21 @@ final class WorkspaceStore: ObservableObject {
             return "# \(title)\n"
         }
         return ""
+    }
+
+    private func siblingWorkspacePath(for path: String, newName: String) -> String {
+        guard let slashIndex = path.lastIndex(of: "/") else { return newName }
+        return "\(path[..<slashIndex])/\(newName)"
+    }
+
+    private func clearSelectionIfNeeded(paths: [String]) {
+        guard let selectedPath = selectedResourcePath else { return }
+        if paths.contains(where: { selectedPath == $0 || selectedPath.hasPrefix($0 + "/") }) {
+            selectedFile = nil
+            selectedRawFile = nil
+            editorText = ""
+            isEditingFile = false
+        }
     }
 
     func runSearch(query: String, scopePath: String) async {

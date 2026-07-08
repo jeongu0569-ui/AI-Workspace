@@ -82,6 +82,20 @@ struct WorkspaceAPI {
         let _: EmptyResponse = try await post("/api/folder", body: body)
     }
 
+    func movePath(from: String, to: String) async throws {
+        let body = [
+            "from": from,
+            "to": to
+        ]
+        let _: EmptyResponse = try await request(try components("/api/file/move"), method: "PATCH", body: body)
+    }
+
+    func deletePath(path: String) async throws {
+        var components = try components("/api/file")
+        components.queryItems = [URLQueryItem(name: "path", value: path)]
+        let _: EmptyResponse = try await request(components, method: "DELETE")
+    }
+
     func search(query: String, scopePath: String) async throws -> SearchResponse {
         let body = [
             "query": query,
