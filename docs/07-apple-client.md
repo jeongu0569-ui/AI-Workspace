@@ -103,13 +103,15 @@ Implemented:
 - shared SwiftUI source between macOS and iOS
 - iOS Simulator build support
 - iOS device build support when the local Xcode signing team is configured
+- physical iPhone app installation has been verified with a local Personal Team
 
 Not yet implemented:
 
 - Repository-level Apple developer team signing is intentionally not fixed to a
   specific account. Configure the `AIWorkspace iOS` target's Team in Xcode before
   installing on a physical iPhone/iPad.
-- iPhone/iPad runtime UX pass on physical devices
+- iPhone/iPad runtime UX pass after trusting the local developer profile on the
+  device
 
 ## Client API Boundary
 
@@ -381,6 +383,21 @@ xcodebuild -project client/apple/AIWorkspace.xcodeproj \
   -configuration Debug \
   -destination 'platform=iOS,id=<DEVICE_ID>' build
 ```
+
+For command-line physical-device testing without committing a personal Team ID,
+pass the Team ID at build time:
+
+```bash
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'platform=iOS,id=<DEVICE_ID>' \
+  DEVELOPMENT_TEAM=<TEAM_ID> \
+  -allowProvisioningUpdates build
+```
+
+If the app installs but launch is denied, trust the Apple Development profile on
+the iPhone/iPad under `Settings > General > VPN & Device Management`.
 
 The old package check is still useful for quick compile feedback:
 

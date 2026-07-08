@@ -228,6 +228,26 @@ xcodebuild -project client/apple/AIWorkspace.xcodeproj \
 또는 Apple Development 인증서가 없으면 빌드는 되더라도 설치 단계에서
 `No code signature found` 또는 signing 오류가 난다.
 
+Xcode UI에서 Team을 고정하지 않고 터미널에서만 테스트하려면 로컬 Team ID를
+명령어로 넘길 수 있다.
+
+```bash
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'platform=iOS,id=<DEVICE_ID>' \
+  DEVELOPMENT_TEAM=<TEAM_ID> \
+  -allowProvisioningUpdates build
+
+xcrun devicectl device install app \
+  --device <DEVICE_ID> \
+  "$HOME/Library/Developer/Xcode/DerivedData/AIWorkspace-eszydbckepibgkbdkzydbcbcxtzz/Build/Products/Debug-iphoneos/AI Workspace iOS.app"
+```
+
+처음 설치한 개인 개발자 앱은 iPhone에서 바로 실행이 거부될 수 있다. 이 경우
+iPhone에서 `설정 > 일반 > VPN 및 기기 관리`로 이동해 Apple Development
+프로파일을 신뢰한 다음 다시 실행한다.
+
 ## 5. 백그라운드로 Workspace Server 실행
 
 매번 터미널을 열어두기 싫으면 Workspace Server를 백그라운드로 실행할 수 있다.
