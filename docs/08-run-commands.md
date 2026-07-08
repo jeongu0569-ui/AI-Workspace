@@ -286,6 +286,11 @@ curl http://100.x.x.x:8787/api/health
 상태 영역에 표시한다. `100.x.x.x:8787`처럼 스킴 없이 입력해도 Connect 시점에
 `http://`를 붙여 저장한다.
 
+iOS에서 `URLError.-1022`와 함께 App Transport Security 오류가 나오면 앱의
+`App/iOS-Info.plist`에 HTTP 개발 연결 허용 설정이 실제 번들에 들어갔는지
+확인한다. 현재 개발 빌드는 `NSAllowsArbitraryLoads=true`만 사용한다. 이 값과
+세부 예외 키를 섞으면 iOS에서 전체 HTTP 허용이 기대대로 적용되지 않을 수 있다.
+
 iOS에서 전역 채팅은 별도 버튼이 아니라 오른쪽 화면 가장자리에서 왼쪽으로
 스와이프해 연다. 닫을 때는 패널을 오른쪽으로 밀거나 어두워진 본문 영역을 탭한다.
 

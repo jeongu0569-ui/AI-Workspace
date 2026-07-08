@@ -26,6 +26,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var chatContextScope: ChatContextScope = .currentFile
     @Published var statusMessage = "Not connected"
     @Published var connectionDetail = "Enter the Workspace Server URL and connect."
+    @Published var connectionStep = "Idle"
     @Published var isLoading = false
     @Published var sessionManagerSearch = ""
 
@@ -56,6 +57,10 @@ final class WorkspaceStore: ObservableObject {
         return "Use the Workspace Server URL, for example http://100.x.x.x:8787 over Tailscale."
     }
 
+    var macTailscaleServerURL: String {
+        "http://100.123.26.117:8787"
+    }
+
     func saveServerURL() {
         let cleaned = normalizedServerURL(serverURLText)
         serverURLText = cleaned
@@ -66,28 +71,43 @@ final class WorkspaceStore: ObservableObject {
         UserDefaults.standard.set(serverURLText, forKey: "workspace.serverURL")
     }
 
+    func useMacTailscaleServerURL() {
+        serverURLText = macTailscaleServerURL
+        saveServerURL()
+    }
+
     func refreshWorkspace() async {
         saveServerURL()
         guard let api else {
             statusMessage = "Invalid server URL"
             connectionDetail = "Could not parse \(serverURLText)"
+            connectionStep = "URL parse"
+            persistConnectionDiagnostics()
             return
         }
         isLoading = true
         defer { isLoading = false }
         do {
+            connectionStep = "Checking /api/health"
             let health = try await api.health()
             connectionDetail = "Health OK: \(health.service) at \(serverURLText)"
+            connectionStep = "Loading /api/workspace"
             workspace = try await api.workspace()
+            connectionStep = "Loading Notes tree"
             let notesTree = try await api.tree(root: "notes", path: notesPath)
+            connectionStep = "Loading Code tree"
             let codeTree = try await api.tree(root: "code", path: codePath)
             notes = notesTree.children
             code = codeTree.children
+            connectionStep = "Loading Hermes metadata"
             await refreshHermesMetadata()
             statusMessage = "Connected"
+            connectionStep = "Ready"
+            persistConnectionDiagnostics()
         } catch {
             statusMessage = "Connection failed"
-            connectionDetail = "\(serverURLText): \(error.localizedDescription)"
+            connectionDetail = "\(connectionStep) failed for \(serverURLText): \(describeConnectionError(error))"
+            persistConnectionDiagnostics()
         }
     }
 
@@ -854,6 +874,24 @@ final class WorkspaceStore: ObservableObject {
             text.removeLast()
         }
         return text
+    }
+
+    private func describeConnectionError(_ error: Error) -> String {
+        if let urlError = error as? URLError {
+            return "\(urlError.localizedDescription) [URLError.\(urlError.code.rawValue)]"
+        }
+        if let apiError = error as? WorkspaceAPIError {
+            return apiError.localizedDescription
+        }
+        let nsError = error as NSError
+        return "\(nsError.localizedDescription) [\(nsError.domain) \(nsError.code)]"
+    }
+
+    private func persistConnectionDiagnostics() {
+        UserDefaults.standard.set(statusMessage, forKey: "workspace.lastStatusMessage")
+        UserDefaults.standard.set(connectionStep, forKey: "workspace.lastConnectionStep")
+        UserDefaults.standard.set(connectionDetail, forKey: "workspace.lastConnectionDetail")
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "workspace.lastConnectionCheck")
     }
 }
 

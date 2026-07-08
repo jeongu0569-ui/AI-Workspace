@@ -176,6 +176,17 @@ struct ServerStatusView: View {
                 .font(.caption2)
                 .foregroundStyle(store.serverURLUsesLocalhost ? .orange : .secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            #if os(iOS)
+            Button {
+                store.useMacTailscaleServerURL()
+                Task { await store.refreshWorkspace() }
+            } label: {
+                Label("Use Mac Tailscale", systemImage: "network")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            #endif
             HStack {
                 Circle()
                     .fill(store.statusMessage == "Connected" ? .green : .orange)
@@ -198,6 +209,9 @@ struct ServerStatusView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("Step: \(store.connectionStep)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 }
