@@ -102,6 +102,14 @@ struct WorkspaceAPI {
         let _: EmptyResponse = try await post("/api/file/copy", body: body)
     }
 
+    func uploadFile(path: String, data: Data) async throws {
+        let body = [
+            "path": path,
+            "dataBase64": data.base64EncodedString()
+        ]
+        let _: EmptyResponse = try await post("/api/file/upload", body: body)
+    }
+
     func deletePath(path: String) async throws {
         var components = try components("/api/file")
         components.queryItems = [URLQueryItem(name: "path", value: path)]

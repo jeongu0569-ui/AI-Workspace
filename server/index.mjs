@@ -198,6 +198,9 @@ async function handleRequest(req, res) {
     if (req.method === "POST" && url.pathname === "/api/file/copy") {
       return sendJson(res, await copyPath(req), 201);
     }
+    if (req.method === "POST" && url.pathname === "/api/file/upload") {
+      return sendJson(res, await uploadFile(req), 201);
+    }
     if (req.method === "DELETE" && url.pathname === "/api/file") {
       return sendJson(res, await deletePath(url));
     }
@@ -350,6 +353,18 @@ async function copyPath(req) {
     force: false
   });
   return { ok: true, from: from.relativePath, to: to.relativePath };
+}
+
+async function uploadFile(req) {
+  const body = await readJsonBody(req);
+  if (!body.path) throw Object.assign(new Error("Missing file path."), { status: 400 });
+  if (typeof body.dataBase64 !== "string") {
+    throw Object.assign(new Error("Missing file data."), { status: 400 });
+  }
+  const { relativePath, absolutePath } = resolveWorkspacePath(WORKSPACE_ROOT, body.path);
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.writeFile(absolutePath, Buffer.from(body.dataBase64, "base64"), { flag: "wx" });
+  return { ok: true, path: relativePath };
 }
 
 async function deletePath(url) {

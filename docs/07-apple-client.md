@@ -97,8 +97,12 @@ Implemented:
   server-managed folder. New Notes files default to `.md`; new Code files
   default to `.swift` unless the user enters an extension.
 - Notes and Code file browsers also expose rename, delete, move, and copy from
-  the row context menu. On touch devices, long-press a file or folder row to
-  open the same management actions.
+  the row context menu. Each row now also has a visible `...` menu, so touch
+  devices do not have to rely only on long-press discovery.
+- Notes and Code file browsers can attach an existing local file into the
+  current server-managed folder through the paperclip button. The app reads the
+  selected file and sends it to `POST /api/file/upload`; the Workspace Server
+  writes the file under the workspace root.
 - approval and denial buttons for `approval.request` events
 - normalized Hermes session menu titles instead of raw generated session ids
 - zero-message Hermes sessions are hidden from the client session list
@@ -133,6 +137,9 @@ Implemented:
 - on iOS, Notes and Code use an Obsidian-style layout: the folder tree lives in
   the left drawer, and the main screen shows only the selected file preview or
   editor content.
+- the iOS left drawer now uses a compact custom section dropdown above Settings
+  instead of a full repeated menu list. The rest of the drawer is reserved for
+  Notes/Code file navigation when one of those sections is selected.
 - the Apple client now uses a neutral app tint and neutral file/chat colors to
   avoid bright default blue controls in dark mode.
 - connection diagnostics now call `/api/health` before loading workspace data
@@ -201,6 +208,12 @@ Opening a folder expands/navigates inside the drawer. Opening a file closes the
 drawer and shows that file in the main content area. The main content area does
 not repeat the Notes/Code header because the top app bar already names the
 current section.
+
+Choosing Notes or Code from the drawer's section dropdown does not close the
+drawer by itself. This matches the intended mobile flow: first choose the
+workspace section, then choose a concrete file. The drawer closes only when the
+user opens a file, chooses Chat/Search, taps outside the drawer, or swipes it
+closed.
 
 The left workspace drawer and the right global chat drawer are mutually
 exclusive. Opening one closes the other, and the opposite edge gesture is

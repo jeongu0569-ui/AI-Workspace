@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selection: WorkspaceSection? = .chat
+    @State private var sidebarMenuExpanded = false
     @State private var isChatPanelVisible = false
     @State private var chatPanelDragX: CGFloat = 0
     @State private var isSidebarVisible = false
@@ -77,6 +78,7 @@ struct RootView: View {
             ZStack(alignment: .leading) {
                 iOSMainContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .simultaneousGesture(edgeOpenSidebarGesture(width: sidebarWidth))
 
                 if isSidebarVisible {
                     Color.black.opacity(0.25)
@@ -91,14 +93,6 @@ struct RootView: View {
                 iOSSidebar(width: sidebarWidth)
                     .offset(x: sidebarOffset(width: sidebarWidth))
                     .gesture(sidebarGesture(width: sidebarWidth))
-
-                if !isSidebarVisible && !isChatPanelVisible {
-                    Color.clear
-                        .frame(width: 52)
-                        .padding(.top, 58)
-                        .contentShape(Rectangle())
-                        .gesture(sidebarGesture(width: sidebarWidth))
-                }
             }
             .clipped()
         }
@@ -183,29 +177,60 @@ struct RootView: View {
             .padding(.horizontal, 18)
             .padding(.top, 18)
 
-            VStack(spacing: 4) {
-                ForEach(WorkspaceSection.allCases) { section in
-                    Button {
-                        selectSectionFromSidebar(section)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: section.systemImage)
-                                .frame(width: 22)
-                            Text(section.rawValue)
-                            Spacer()
-                        }
-                        .font(.headline)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(selectedSection == section ? .primary : .secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(
-                            selectedSection == section ? Color.secondary.opacity(0.14) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 8)
-                        )
+            VStack(spacing: 8) {
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
+                        sidebarMenuExpanded.toggle()
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: selectedSection.systemImage)
+                            .frame(width: 20)
+                        Text(selectedSection.rawValue)
+                            .font(.headline.weight(.semibold))
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .rotationEffect(.degrees(sidebarMenuExpanded ? 180 : 0))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                if sidebarMenuExpanded {
+                    VStack(spacing: 2) {
+                        ForEach(WorkspaceSection.allCases) { section in
+                            Button {
+                                selectSectionFromSidebar(section)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: section.systemImage)
+                                        .frame(width: 20)
+                                    Text(section.rawValue)
+                                    Spacer()
+                                }
+                                .font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .foregroundStyle(selectedSection == section ? .primary : .secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(RoundedRectangle(cornerRadius: 8))
+                                .background(
+                                    selectedSection == section ? Color.secondary.opacity(0.12) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
             .padding(.horizontal, 10)
@@ -216,15 +241,17 @@ struct RootView: View {
                 FileBrowserPane(title: "Notes", root: "notes", showsHeader: false) {
                     closeSidebar()
                 }
+                .frame(maxHeight: .infinity)
             } else if selectedSection == .code {
                 Divider()
                     .padding(.vertical, 4)
                 FileBrowserPane(title: "Code", root: "code", showsHeader: false) {
                     closeSidebar()
                 }
+                .frame(maxHeight: .infinity)
+            } else {
+                Spacer()
             }
-
-            Spacer()
 
             Button {
                 showingSettings = true
@@ -267,7 +294,12 @@ struct RootView: View {
 
     private func selectSectionFromSidebar(_ section: WorkspaceSection) {
         selection = section
-        closeSidebar()
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+            sidebarMenuExpanded = false
+        }
+        if section == .chat || section == .search {
+            closeSidebar()
+        }
     }
 
     private func sidebarOffset(width: CGFloat) -> CGFloat {
@@ -302,6 +334,25 @@ struct RootView: View {
                         isChatPanelVisible = false
                         chatPanelDragX = 0
                     }
+                    sidebarDragX = 0
+                }
+            }
+    }
+
+    private func edgeOpenSidebarGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { value in
+                guard !isSidebarVisible, !isChatPanelVisible, value.startLocation.x <= 26 else { return }
+                sidebarDragX = max(0, value.translation.width)
+            }
+            .onEnded { value in
+                guard !isSidebarVisible, !isChatPanelVisible, value.startLocation.x <= 26 else {
+                    sidebarDragX = 0
+                    return
+                }
+                let shouldOpen = value.translation.width > 34 || value.predictedEndTranslation.width > 72
+                withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
+                    isSidebarVisible = shouldOpen
                     sidebarDragX = 0
                 }
             }

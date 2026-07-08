@@ -259,6 +259,30 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
+    func uploadLocalFile(root: String, fileURL: URL) async {
+        guard let api else { return }
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let destination = workspacePathForNewItem(root: root, name: fileURL.lastPathComponent)
+            try await api.uploadFile(path: destination, data: data)
+            await loadTree(root: root, path: currentPath(for: root))
+            if let item = items(for: root).first(where: { $0.path == destination }) {
+                await loadFile(item)
+            }
+            statusMessage = "Attached \(fileURL.lastPathComponent)"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
     func deleteItem(root: String, item: WorkspaceItem) async {
         guard let api else { return }
         isLoading = true

@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import UniformTypeIdentifiers
 
 struct FileSectionView: View {
     @EnvironmentObject private var store: WorkspaceStore
@@ -42,39 +43,54 @@ struct FileBrowserPane: View {
     @State private var itemToDelete: WorkspaceItem?
     @State private var transferAction: WorkspaceTransferAction?
     @State private var transferDestination = ""
+    @State private var isImportingFile = false
 
     var body: some View {
         VStack(spacing: 0) {
             if showsHeader {
                 HeaderView(title: title, subtitle: store.sectionSubtitle(root: root))
             }
-            HStack(spacing: 12) {
-                Menu {
-                    Button {
-                        newItemName = root == "code" ? "Untitled.swift" : "Untitled.md"
-                        newItemKind = .file
-                    } label: {
-                        Label("New file", systemImage: "doc.badge.plus")
-                    }
-
-                    Button {
-                        newItemName = "New Folder"
-                        newItemKind = .folder
-                    } label: {
-                        Label("New folder", systemImage: "folder.badge.plus")
-                    }
+            HStack(spacing: 8) {
+                Button {
+                    newItemName = root == "code" ? "Untitled.swift" : "Untitled.md"
+                    newItemKind = .file
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "doc.badge.plus")
                 }
-                .menuStyle(.borderlessButton)
-                .help("Create file or folder")
+                .buttonStyle(.plain)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+                .help("New file")
+
+                Button {
+                    newItemName = "New Folder"
+                    newItemKind = .folder
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .buttonStyle(.plain)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+                .help("New folder")
+
+                Button {
+                    isImportingFile = true
+                } label: {
+                    Image(systemName: "paperclip")
+                }
+                .buttonStyle(.plain)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+                .help("Attach file")
 
                 Button {
                     Task { await store.goToParent(root: root) }
                 } label: {
                     Image(systemName: "chevron.up")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
                 .disabled(store.currentPath(for: root).isEmpty)
                 .help("Go to parent folder")
 
@@ -83,7 +99,9 @@ struct FileBrowserPane: View {
                 } label: {
                     Image(systemName: "house")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
                 .disabled(store.currentPath(for: root).isEmpty)
                 .help("Go to root folder")
 
@@ -105,46 +123,27 @@ struct FileBrowserPane: View {
             }
 
             List(store.items(for: root)) { item in
-                Button {
-                    Task {
-                        if item.isDirectory {
-                            await store.openFolder(root: root, item: item)
-                        } else {
-                            await store.loadFile(item)
-                            onOpenFile?()
-                        }
+                HStack(spacing: 8) {
+                    Button {
+                        open(item)
+                    } label: {
+                        fileRowLabel(item)
                     }
-                } label: {
-                    fileRowLabel(item)
+                    .buttonStyle(.plain)
+
+                    Menu {
+                        itemManagementMenu(item)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
                 }
-                .buttonStyle(.plain)
                 .contextMenu {
-                    Button {
-                        transferDestination = store.currentPath(for: root)
-                        transferAction = .move(item)
-                    } label: {
-                        Label("Move to folder", systemImage: "folder")
-                    }
-
-                    Button {
-                        transferDestination = store.currentPath(for: root)
-                        transferAction = .copy(item)
-                    } label: {
-                        Label("Copy to folder", systemImage: "doc.on.doc")
-                    }
-
-                    Button {
-                        itemToRename = item
-                        renameName = item.name
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
-                    }
-
-                    Button(role: .destructive) {
-                        itemToDelete = item
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
+                    itemManagementMenu(item)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
@@ -160,6 +159,15 @@ struct FileBrowserPane: View {
                     }
                     .tint(.secondary)
                 }
+            }
+        }
+        .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
+            switch result {
+            case let .success(urls):
+                guard let url = urls.first else { return }
+                Task { await store.uploadLocalFile(root: root, fileURL: url) }
+            case let .failure(error):
+                store.statusMessage = error.localizedDescription
             }
         }
         .alert(newItemKind?.title ?? "New item", isPresented: newItemBinding) {
@@ -280,6 +288,47 @@ struct FileBrowserPane: View {
         case "image": return "photo"
         case "code": return "curlybraces"
         default: return "doc"
+        }
+    }
+
+    private func open(_ item: WorkspaceItem) {
+        Task {
+            if item.isDirectory {
+                await store.openFolder(root: root, item: item)
+            } else {
+                await store.loadFile(item)
+                onOpenFile?()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func itemManagementMenu(_ item: WorkspaceItem) -> some View {
+        Button {
+            transferDestination = store.currentPath(for: root)
+            transferAction = .move(item)
+        } label: {
+            Label("Move to folder", systemImage: "folder")
+        }
+
+        Button {
+            transferDestination = store.currentPath(for: root)
+            transferAction = .copy(item)
+        } label: {
+            Label("Copy to folder", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            itemToRename = item
+            renameName = item.name
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        Button(role: .destructive) {
+            itemToDelete = item
+        } label: {
+            Label("Delete", systemImage: "trash")
         }
     }
 
