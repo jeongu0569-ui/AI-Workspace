@@ -54,7 +54,7 @@ struct ChatHomeView: View {
                 VStack(spacing: 8) {
                     TextField("Message Hermes...", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .lineLimit(1...4)
+                        .lineLimit(1...(compact ? 3 : 4))
                         .onSubmit(sendDraft)
 
                     HStack(spacing: 12) {
@@ -123,10 +123,15 @@ struct ChatHomeView: View {
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                .padding(10)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                .padding(compact ? 9 : 10)
+                .background(.quaternary.opacity(0.34), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(.quaternary.opacity(0.70), lineWidth: 1)
+                )
             }
             .padding(compact ? 12 : 16)
+            .background(.background.opacity(0.96))
         }
         .sheet(isPresented: $showingSessionManager) {
             SessionManagerView(isPresented: $showingSessionManager)
@@ -153,7 +158,12 @@ struct ChatHomeView: View {
         }
         .padding(.horizontal, compact ? 14 : 20)
         .padding(.vertical, compact ? 10 : 14)
-        .background(.background)
+        .background(.quaternary.opacity(0.14))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.quaternary.opacity(0.55))
+                .frame(height: 1)
+        }
     }
 
     private var sessionMenu: some View {

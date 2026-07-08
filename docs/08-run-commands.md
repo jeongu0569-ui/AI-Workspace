@@ -273,6 +273,22 @@ ipconfig getifaddr en0
 http://<MAC_LAN_IP>:8787
 ```
 
+연결이 안 될 때는 Mac에서 먼저 서버와 Tailscale 주소가 실제 응답하는지 확인한다.
+
+```bash
+lsof -nP -iTCP:8787 -sTCP:LISTEN
+curl http://127.0.0.1:8787/api/health
+curl http://100.x.x.x:8787/api/health
+```
+
+세 명령이 모두 정상인데 iPhone 앱만 실패하면 앱의 `Workspace Server` 입력값을
+다시 확인한다. 앱은 연결 시 `/api/health`를 먼저 호출하고, 실패한 URL과 오류를
+상태 영역에 표시한다. `100.x.x.x:8787`처럼 스킴 없이 입력해도 Connect 시점에
+`http://`를 붙여 저장한다.
+
+iOS에서 전역 채팅은 별도 버튼이 아니라 오른쪽 화면 가장자리에서 왼쪽으로
+스와이프해 연다. 닫을 때는 패널을 오른쪽으로 밀거나 어두워진 본문 영역을 탭한다.
+
 ## 5. 백그라운드로 Workspace Server 실행
 
 매번 터미널을 열어두기 싫으면 Workspace Server를 백그라운드로 실행할 수 있다.

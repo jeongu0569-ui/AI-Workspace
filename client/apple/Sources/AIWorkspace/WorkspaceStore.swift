@@ -25,6 +25,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var chatReasoningMode: ChatReasoningMode = .balanced
     @Published var chatContextScope: ChatContextScope = .currentFile
     @Published var statusMessage = "Not connected"
+    @Published var connectionDetail = "Enter the Workspace Server URL and connect."
     @Published var isLoading = false
     @Published var sessionManagerSearch = ""
 
@@ -56,17 +57,27 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func saveServerURL() {
+        let cleaned = normalizedServerURL(serverURLText)
+        serverURLText = cleaned
+        UserDefaults.standard.set(cleaned, forKey: "workspace.serverURL")
+    }
+
+    func persistServerURLText() {
         UserDefaults.standard.set(serverURLText, forKey: "workspace.serverURL")
     }
 
     func refreshWorkspace() async {
+        saveServerURL()
         guard let api else {
             statusMessage = "Invalid server URL"
+            connectionDetail = "Could not parse \(serverURLText)"
             return
         }
         isLoading = true
         defer { isLoading = false }
         do {
+            let health = try await api.health()
+            connectionDetail = "Health OK: \(health.service) at \(serverURLText)"
             workspace = try await api.workspace()
             let notesTree = try await api.tree(root: "notes", path: notesPath)
             let codeTree = try await api.tree(root: "code", path: codePath)
@@ -75,7 +86,8 @@ final class WorkspaceStore: ObservableObject {
             await refreshHermesMetadata()
             statusMessage = "Connected"
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = "Connection failed"
+            connectionDetail = "\(serverURLText): \(error.localizedDescription)"
         }
     }
 
@@ -830,6 +842,18 @@ final class WorkspaceStore: ObservableObject {
     private func parentPath(_ path: String) -> String {
         guard let slashIndex = path.lastIndex(of: "/") else { return "" }
         return String(path[..<slashIndex])
+    }
+
+    private func normalizedServerURL(_ value: String) -> String {
+        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty { return text }
+        if !text.contains("://") {
+            text = "http://" + text
+        }
+        while text.count > "http://x".count && text.hasSuffix("/") {
+            text.removeLast()
+        }
+        return text
     }
 }
 

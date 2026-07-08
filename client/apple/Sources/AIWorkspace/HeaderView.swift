@@ -15,8 +15,12 @@ struct HeaderView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.vertical, 14)
-        .background(.background)
+        .padding(.vertical, 12)
+        .background(.quaternary.opacity(0.18))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.quaternary.opacity(0.55))
+                .frame(height: 1)
+        }
     }
 }
-

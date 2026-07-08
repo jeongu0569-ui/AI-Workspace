@@ -6,3 +6,5 @@ HermesWorkspace/
 coverage/
 .build/
 client/apple/.build/
+client/apple/AIWorkspace.xcodeproj/project.xcworkspace/xcuserdata/
+client/apple/AIWorkspace.xcodeproj/xcuserdata/

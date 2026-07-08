@@ -22,6 +22,10 @@ struct WorkspaceAPI {
         try await get("/api/workspace")
     }
 
+    func health() async throws -> HealthResponse {
+        try await get("/api/health")
+    }
+
     func tree(root: String, path: String = "") async throws -> TreeResponse {
         var components = try components("/api/tree")
         components.queryItems = [

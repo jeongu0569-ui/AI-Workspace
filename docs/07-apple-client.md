@@ -109,7 +109,12 @@ Implemented:
 - iOS device build support when the local Xcode signing team is configured
 - physical iPhone app installation has been verified with a local Personal Team
 - global chat side panel for Notes, Code, and Search. macOS shows a compact
-  right-side split panel; iOS opens the same compact chat surface as a sheet.
+  right-side split panel; iOS reveals the same compact chat surface by swiping
+  left from the right edge, closer to the Obsidian plugin side-panel feel.
+- connection diagnostics now call `/api/health` before loading workspace data
+  and show the exact URL/error in the sidebar status area.
+- macOS windows get a default app-sized frame and are clamped back inside the
+  visible screen if a restored window opens too large or clipped.
 
 Not yet implemented:
 
@@ -153,13 +158,15 @@ Chat tab
 Notes / Code / Search toolbar chat button
   -> compact ChatHomeView
   -> macOS: right-side split panel
-  -> iOS: modal sheet
+  -> iOS: right-edge swipe panel
 ```
 
 The global panel uses the same `WorkspaceStore`, live session, model picker,
 access mode, reasoning mode, session manager, approval controls, and message
 history as the main Chat tab. It is a different presentation of the same chat
-state, not a separate local chat instance.
+state, not a separate local chat instance. iOS intentionally does not show a
+toolbar button for this panel; the panel is opened by swiping left from the
+right screen edge and dismissed by swiping right or tapping the dimmed content.
 
 The current client flow is:
 

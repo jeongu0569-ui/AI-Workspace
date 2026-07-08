@@ -83,6 +83,11 @@ struct RenderedMarkdownResponse: Codable {
     let html: String
 }
 
+struct HealthResponse: Codable {
+    let ok: Bool
+    let service: String
+}
+
 struct HermesModelOption: Identifiable, Hashable {
     var id: String { provider.map { "\($0):\(model)" } ?? model }
     let label: String

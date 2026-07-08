@@ -4,6 +4,7 @@ struct RootView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selection: WorkspaceSection? = .chat
     @State private var isChatPanelVisible = false
+    @State private var chatPanelDragX: CGFloat = 0
 
     var body: some View {
         NavigationSplitView {
@@ -19,6 +20,7 @@ struct RootView: View {
         } detail: {
             detailView
                 .toolbar {
+                    #if os(macOS)
                     if selectedSection != .chat {
                         Button {
                             isChatPanelVisible.toggle()
@@ -27,35 +29,13 @@ struct RootView: View {
                         }
                         .help(isChatPanelVisible ? "Hide chat panel" : "Show chat panel")
                     }
-                }
-                .sheet(isPresented: chatPanelSheetBinding) {
-                    ChatHomeView(compact: true)
-                        .environmentObject(store)
+                    #endif
                 }
         }
     }
 
     private var selectedSection: WorkspaceSection {
         selection ?? .chat
-    }
-
-    private var chatPanelSheetBinding: Binding<Bool> {
-        Binding(
-            get: {
-                #if os(iOS)
-                return isChatPanelVisible && selectedSection != .chat
-                #else
-                return false
-                #endif
-            },
-            set: { value in
-                #if os(iOS)
-                isChatPanelVisible = value
-                #else
-                _ = value
-                #endif
-            }
-        )
     }
 
     @ViewBuilder
@@ -73,9 +53,90 @@ struct RootView: View {
             primaryDetailView
         }
         #else
-        primaryDetailView
+        if selectedSection == .chat {
+            primaryDetailView
+        } else {
+            iOSSwipeChatContainer
+        }
         #endif
     }
+
+    #if os(iOS)
+    private var iOSSwipeChatContainer: some View {
+        GeometryReader { proxy in
+            let panelWidth = min(max(proxy.size.width * 0.88, 300), 430)
+            ZStack(alignment: .trailing) {
+                primaryDetailView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if isChatPanelVisible {
+                    Color.black.opacity(0.24)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                isChatPanelVisible = false
+                                chatPanelDragX = 0
+                            }
+                        }
+                }
+
+                HStack(spacing: 0) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.secondary.opacity(0.55))
+                        .frame(width: 3, height: 44)
+                        .padding(.leading, 7)
+                        .padding(.trailing, 5)
+
+                    ChatHomeView(compact: true)
+                        .frame(width: panelWidth)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .shadow(color: .black.opacity(0.22), radius: 18, x: -6, y: 0)
+                }
+                .frame(width: panelWidth + 15)
+                .frame(maxHeight: .infinity)
+                .offset(x: chatPanelOffset(panelWidth: panelWidth))
+                .gesture(chatPanelGesture(panelWidth: panelWidth))
+
+                if !isChatPanelVisible {
+                    Color.clear
+                        .frame(width: 28)
+                        .contentShape(Rectangle())
+                        .gesture(chatPanelGesture(panelWidth: panelWidth))
+                }
+            }
+            .clipped()
+        }
+    }
+
+    private func chatPanelOffset(panelWidth: CGFloat) -> CGFloat {
+        let closedOffset = panelWidth + 15
+        if isChatPanelVisible {
+            return max(0, chatPanelDragX)
+        }
+        return max(0, closedOffset + chatPanelDragX)
+    }
+
+    private func chatPanelGesture(panelWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                if isChatPanelVisible {
+                    chatPanelDragX = max(0, value.translation.width)
+                } else {
+                    chatPanelDragX = min(0, value.translation.width)
+                }
+            }
+            .onEnded { value in
+                let shouldOpen = isChatPanelVisible
+                    ? value.translation.width < panelWidth * 0.36
+                    : value.translation.width < -48
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    isChatPanelVisible = shouldOpen
+                    chatPanelDragX = 0
+                }
+            }
+    }
+    #endif
 
     @ViewBuilder
     private var primaryDetailView: some View {
@@ -101,8 +162,12 @@ struct ServerStatusView: View {
                 .textFieldStyle(.roundedBorder)
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .keyboardType(.URL)
                 #endif
+                .onChange(of: store.serverURLText) {
+                    store.persistServerURLText()
+                }
                 .onSubmit {
                     store.saveServerURL()
                     Task { await store.refreshWorkspace() }
@@ -123,10 +188,16 @@ struct ServerStatusView: View {
                     store.saveServerURL()
                     Task { await store.refreshWorkspace() }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Label("Connect", systemImage: "arrow.clockwise")
+                        .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.borderless)
             }
+            Text(store.connectionDetail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

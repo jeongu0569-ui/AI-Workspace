@@ -20,7 +20,12 @@ struct SearchView: View {
                 .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(16)
-            Divider()
+            .background(.quaternary.opacity(0.10))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(.quaternary.opacity(0.35))
+                    .frame(height: 1)
+            }
             List(store.searchResponse?.results ?? []) { result in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -41,4 +46,3 @@ struct SearchView: View {
         }
     }
 }
-

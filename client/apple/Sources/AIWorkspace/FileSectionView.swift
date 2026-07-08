@@ -7,22 +7,25 @@ struct FileSectionView: View {
     let root: String
 
     var body: some View {
-        #if os(macOS)
-        HSplitView {
-            FileBrowserPane(title: title, root: root)
-                .frame(minWidth: 0, idealWidth: 280)
+        Group {
+            #if os(macOS)
+            HSplitView {
+                FileBrowserPane(title: title, root: root)
+                    .frame(minWidth: 0, idealWidth: 280)
 
-            FilePreviewView()
-                .frame(minWidth: 0)
+                FilePreviewView()
+                    .frame(minWidth: 0)
+            }
+            #else
+            VStack(spacing: 0) {
+                FileBrowserPane(title: title, root: root)
+                    .frame(maxHeight: 320)
+                Divider()
+                FilePreviewView()
+            }
+            #endif
         }
-        #else
-        VStack(spacing: 0) {
-            FileBrowserPane(title: title, root: root)
-                .frame(maxHeight: 320)
-            Divider()
-            FilePreviewView()
-        }
-        #endif
+        .background(.background)
     }
 }
 
@@ -90,6 +93,12 @@ struct FileBrowserPane: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.10))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(.quaternary.opacity(0.35))
+                    .frame(height: 1)
+            }
 
             List(store.items(for: root)) { item in
                 Button {
