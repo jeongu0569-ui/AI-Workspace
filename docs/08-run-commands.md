@@ -111,7 +111,26 @@ curl http://127.0.0.1:8787/api/hermes/models
 
 ## 3. Apple macOS 앱 실행
 
-터미널 3에서 SwiftUI 앱을 실행한다.
+실제 앱 개발은 Xcode 프로젝트를 기준으로 진행한다.
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes/client/apple
+open AIWorkspace.xcodeproj
+```
+
+Xcode에서 `AIWorkspace` scheme을 선택하고 My Mac 대상으로 실행한다.
+
+터미널에서 빌드만 검증하려면:
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme AIWorkspace \
+  -configuration Debug \
+  -destination 'platform=macOS' build
+```
+
+기존 Swift Package shell도 회귀 테스트용으로 남겨두었다.
 
 ```bash
 cd /Users/user/Desktop/AI-Workspace-on-hermes/client/apple
@@ -142,7 +161,30 @@ http://127.0.0.1:8787
 `Safe`는 Hermes의 위험 작업 승인 게이트를 사용하는 모드이고, `Full`은
 Hermes가 지원하는 범위에서 추가 승인 없이 진행하는 모드다.
 
-## 4. 백그라운드로 Workspace Server 실행
+## 4. iPhone/iPad 앱 빌드
+
+Xcode 프로젝트에는 iOS target도 들어있다.
+
+```text
+Scheme: AIWorkspace iOS
+Target: AIWorkspace iOS
+```
+
+iOS Simulator 빌드 검증:
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' build
+```
+
+실제 iPhone/iPad에 설치하려면 Xcode에서 `AIWorkspace iOS` target의
+Team/Signing을 본인 Apple Developer 계정으로 설정해야 한다. 현재 레포
+기본값은 Simulator 빌드 검증을 우선하기 위해 device signing을 고정하지 않는다.
+
+## 5. 백그라운드로 Workspace Server 실행
 
 매번 터미널을 열어두기 싫으면 Workspace Server를 백그라운드로 실행할 수 있다.
 
@@ -176,7 +218,7 @@ tail -f /tmp/ai-workspace-on-hermes.log
 kill "$(cat /tmp/ai-workspace-on-hermes.pid)"
 ```
 
-## 5. 개발 검증 명령어
+## 6. 개발 검증 명령어
 
 서버 테스트:
 
@@ -185,7 +227,27 @@ cd /Users/user/Desktop/AI-Workspace-on-hermes
 npm run check
 ```
 
-Apple 앱 빌드:
+Apple macOS 앱 Xcode 빌드:
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme AIWorkspace \
+  -configuration Debug \
+  -destination 'platform=macOS' build
+```
+
+Apple iOS 앱 Simulator 빌드:
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' build
+```
+
+Swift Package 회귀 빌드:
 
 ```bash
 cd /Users/user/Desktop/AI-Workspace-on-hermes/client/apple
@@ -199,7 +261,7 @@ cd /Users/user/Desktop/AI-Workspace-on-hermes/client/apple
 swift run AIWorkspace
 ```
 
-## 6. 현재 원격 접속 주의점
+## 7. 현재 원격 접속 주의점
 
 현재 Workspace Server는 코드상 `127.0.0.1:8787`로 실행된다.
 

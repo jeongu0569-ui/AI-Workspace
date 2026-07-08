@@ -8,19 +8,29 @@ struct AIWorkspaceApp: App {
     @StateObject private var store = WorkspaceStore()
 
     var body: some Scene {
+        #if os(macOS)
         WindowGroup {
-            RootView()
-                .environmentObject(store)
-                #if os(macOS)
-                .onAppear {
-                    activateMacAppWindow()
-                }
-                #endif
-                .task {
-                    await store.refreshWorkspace()
-                }
+            rootView
         }
         .windowStyle(.titleBar)
+        #else
+        WindowGroup {
+            rootView
+        }
+        #endif
+    }
+
+    private var rootView: some View {
+        RootView()
+            .environmentObject(store)
+            #if os(macOS)
+            .onAppear {
+                activateMacAppWindow()
+            }
+            #endif
+            .task {
+                await store.refreshWorkspace()
+            }
     }
 }
 

@@ -6,10 +6,15 @@ The first Apple client is a SwiftUI shell in:
 client/apple
 ```
 
-It is intentionally a Swift Package first, not a full Xcode project. This keeps
-the scaffold buildable on machines that only have Command Line Tools installed.
-The package now declares both macOS and iOS platforms, with conditional SwiftUI
-layout and PDF preview wrappers where the frameworks differ.
+It now has a real Xcode project for app development:
+
+```text
+client/apple/AIWorkspace.xcodeproj
+```
+
+The previous Swift Package remains in place as a lightweight CLI build check,
+but the main app-development path is now Xcode. The Xcode project contains a
+macOS app target and an iOS app target that share the same SwiftUI source files.
 
 ## Run
 
@@ -23,8 +28,12 @@ Then run the client:
 
 ```bash
 cd client/apple
-swift run AIWorkspace
+xcodebuild -project AIWorkspace.xcodeproj -scheme AIWorkspace -destination 'platform=macOS' build
+open ~/Library/Developer/Xcode/DerivedData
 ```
+
+For the old package shell smoke test, `swift run AIWorkspace` still works on
+macOS.
 
 ## Current Views
 
@@ -74,11 +83,14 @@ Implemented:
 - macOS activation fix for `swift run AIWorkspace`, so the launched window becomes the key app for keyboard input
 - compact Notes/Code split view sizing for smaller macOS windows
 - default macOS sidebar toggle only; the custom duplicate sidebar button was removed
-- iOS-ready source split for file navigation and PDF preview
+- Xcode project with separate macOS and iOS app targets
+- shared SwiftUI source between macOS and iOS
+- iOS Simulator build support
 
 Not yet implemented:
 
-- full Xcode iOS app target, signing, and device packaging
+- Apple developer team signing for real iPhone/iPad device installation
+- iPhone/iPad runtime UX pass on physical devices
 
 ## Client API Boundary
 
@@ -184,19 +196,61 @@ the path, decides inline versus RAG/search metadata, and forwards the rendered
 context to Hermes. This keeps filesystem and indexing policy centralized on the
 server instead of duplicating it in each Apple client.
 
-## iOS Groundwork
+## Xcode Project
 
-The current package is still primarily run as a macOS executable:
+The app-development project is:
 
-```bash
-swift run AIWorkspace
+```text
+client/apple/AIWorkspace.xcodeproj
 ```
 
-The source is now prepared for an iOS app target:
+Targets:
 
-- `Package.swift` declares `.iOS(.v17)`.
-- File navigation uses `HSplitView` on macOS and a stacked layout elsewhere.
-- PDF rendering uses `NSViewRepresentable` on macOS and `UIViewRepresentable` on iOS.
+```text
+AIWorkspace      macOS app target
+AIWorkspace iOS  iPhone/iPad app target
+```
 
-The remaining packaging work is to create a proper Xcode app target, bundle ID,
-signing setup, and iPhone/iPad runtime verification.
+The targets share the files in:
+
+```text
+client/apple/Sources/AIWorkspace
+```
+
+Platform-specific differences are handled with `#if os(macOS)` / `#if os(iOS)`.
+For example:
+
+- macOS uses `HSplitView`; iOS uses a stacked layout.
+- macOS PDF preview uses `NSViewRepresentable`; iOS uses `UIViewRepresentable`.
+- macOS applies `.windowStyle(.titleBar)` and activation handling; iOS does not.
+
+Info plists:
+
+```text
+App/Info.plist      macOS
+App/iOS-Info.plist  iOS
+```
+
+Both allow local HTTP networking during development because the client connects
+to the local Workspace Server.
+
+Current verified builds:
+
+```bash
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme AIWorkspace \
+  -configuration Debug \
+  -destination 'platform=macOS' build
+
+xcodebuild -project client/apple/AIWorkspace.xcodeproj \
+  -scheme 'AIWorkspace iOS' \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' build
+```
+
+The old package check is still useful for quick compile feedback:
+
+```bash
+cd client/apple
+swift build
+```
