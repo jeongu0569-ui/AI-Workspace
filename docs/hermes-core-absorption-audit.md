@@ -17,9 +17,9 @@ This document audits the absorption state of the Hermes core runtime inside AI W
 | **Tool Registry** | Common core tools configuration and executor. | Workspace search, file reader, and directory tree lister are native. | `implemented` |
 | **Tools Toggle** | Toggling specific tool activations. | Filters tools using `disabled_tools` list in config.yaml. Toggleable via CLI `aiw tools`. | `implemented` |
 | **MCP Server Registry** | Managing Model Context Protocol servers. | Supports `mcp_servers` configuration, commands, and actual stdio JSON-RPC client connection (initialize, tools/list, tools/call). | `implemented` |
-| **Skills / Plugins** | Custom bundle plugins and active skill injection. | Built-in guide skill is supported, but arbitrary plugin loading is absent. | `missing` |
-| **Approvals & Security** | Safe action approval queues, hooks, and execution rules. | Task approval queue for code patches and git operations is native. | `partially implemented` |
-| **Doctor & Diagnostics** | Diagnostic tests, status outputs, and tracing logs. | Fully supported via `aiw doctor` inspecting all configurations and connections. | `implemented` |
+| **Skills / Plugins** | Custom bundle plugins and active skill injection. | Natively loaded from `.ai-workspace/skills/`. Supports list, show, enable, disable, add, remove, and dynamic relevance/trigger system prompt injection. | `implemented` |
+| **Approvals & Security** | Safe action approval queues, hooks, and execution rules. | Evaluates allowed/denied commands, shell restrictions, path boundaries, and gates MCP tools or destructive tasks via approval polling. | `implemented` |
+| **Doctor & Diagnostics** | Diagnostic tests, status outputs, and tracing logs. | Fully supported via `aiw doctor` inspecting all configurations, skills, security policies, and deep MCP server checks. | `implemented` |
 | **Prompt Assembly** | Assembling system instructions, file lists, and guidelines. | Dynamic context router joins files, folders, RAG guidelines, and memory. | `implemented` |
 | **Websocket & Live API** | Real-time WebSocket connection upgrades and JSON-RPC stream. | Live socket broker upgraded via `websocket-utils.mjs`. | `implemented` |
 | **Runtime Event Stream** | Standard turn/token streaming events (`message.delta`, `turn.complete`). | Emits rich token streaming events correctly. | `implemented` |
@@ -37,15 +37,20 @@ This document audits the absorption state of the Hermes core runtime inside AI W
 - [x] Add MCP Server Registry and stdio JSON-RPC client connection (initialize, tools/list, tools/call, timeouts, and process crash handlers).
 - [x] Implement `aiw doctor` showing comprehensive workspace, config, auth, and network diagnostics.
 
-### Phase 2: Skills & Security (Planned)
-- [ ] Add generic approval hooks schema to config.yaml.
-- [ ] Implement skill loading path configurations.
+### Phase 2: Skills & Security (Completed)
+- [x] Add generic approval hooks and security schema to config.yaml.
+- [x] Implement skill loading and metadata/instruction parser in `skill-registry.mjs`.
+- [x] Integrate dynamic skill prompt injections based on triggers and task type relevance.
+- [x] Add `aiw skills` and `aiw security` CLI tools.
+- [x] Enforce allowed/denied shell commands, path boundary validations, and MCP execution approvals.
+- [x] Set up GitHub Actions CI verification.
+- [x] Enhance `aiw doctor --deep` to run live handshake checks on enabled MCP servers.
 
 ---
 
 ## Test Verification Results
 
-All 44 unit and integration tests successfully pass:
+All 48 unit and integration tests successfully pass:
 ```text
 TAP version 13
 # Subtest: workspace agent engine resolves context and records task state
@@ -80,8 +85,8 @@ ok 14 - code agent runtime generates automatic patches using mock LLM server
 ok 15 - code agent runtime executes git commands with safety approvals
 # Subtest: attaches a short note inline
 ok 16 - attaches a short note inline
-# Subtest: folder context lists files and recommends rag
-ok 17 - folder context lists files and recommends rag
+# Subtest: folder context lists files and recommends RAG
+ok 17 - folder context lists files and recommends RAG
 # Subtest: pdf context is metadata only
 ok 18 - pdf context is metadata only
 # Subtest: rejects context path traversal
@@ -126,20 +131,28 @@ ok 37 - SessionRuntime rename, export, and prune
 ok 38 - OpenAI-compatible runtime fallback event condition mapping
 # Subtest: McpClient lifecycle: initialize, list, call, idle-timeout, and logs
 ok 39 - McpClient lifecycle: initialize, list, call, idle-timeout, and logs
+# Subtest: Skills registry basic operations, validation, and path traversal protection
+ok 40 - Skills registry basic operations, validation, and path traversal protection
+# Subtest: Security policy evaluator allowed/denied commands and boundaries
+ok 41 - Security policy evaluator allowed/denied commands and boundaries
+# Subtest: System prompt dynamically includes enabled and relevant skills
+ok 42 - System prompt dynamically includes enabled and relevant skills
+# Subtest: isDangerousMcpTool heuristics evaluation
+ok 43 - isDangerousMcpTool heuristics evaluation
 # Subtest: searches workspace text files within scope
-ok 40 - searches workspace text files within scope
+ok 44 - searches workspace text files within scope
 # Subtest: does not search outside the requested scope
-ok 41 - does not search outside the requested scope
+ok 45 - does not search outside the requested scope
 # Subtest: reports fallback search status
-ok 42 - reports fallback search status
+ok 46 - reports fallback search status
 # Subtest: encodes server text frames
-ok 43 - encodes server text frames
+ok 47 - encodes server text frames
 # Subtest: decodes masked client text frames
-ok 44 - decodes masked client text frames
-1..44
-# tests 44
+ok 48 - decodes masked client text frames
+1..48
+# tests 48
 # suites 0
-# pass 44
+# pass 48
 # fail 0
 # cancelled 0
 # skipped 0

@@ -145,6 +145,11 @@ export class CodeAgentRuntime {
     const startedAt = new Date().toISOString();
     const results = [];
     for (const command of commands) {
+      const { checkAction } = await import("./runtime/security-policy.mjs");
+      const check = await checkAction(this.workspaceRoot, { type: "shell.run", command });
+      if (check.status === "deny") {
+        throw Object.assign(new Error(`Security block: ${check.reason}`), { status: 403 });
+      }
       const result = await runShellCommand(scope.absolutePath, command, params);
       results.push(result);
       await this.state.recordToolLog({
@@ -242,6 +247,12 @@ export class CodeAgentRuntime {
     const metacharacters = /[;&|`$\n\r<>]/;
     if (metacharacters.test(command)) {
       throw Object.assign(new Error("Security block: Shell metacharacters are not allowed in git commands."), { status: 400 });
+    }
+
+    const { checkAction } = await import("./runtime/security-policy.mjs");
+    const check = await checkAction(this.workspaceRoot, { type: "git.command", command });
+    if (check.status === "deny") {
+      throw Object.assign(new Error(`Security block: ${check.reason}`), { status: 403 });
     }
 
     // Strong Approval Policy
@@ -522,6 +533,14 @@ export class CodeAgentRuntime {
     const targets = [];
     for (const change of proposal.changes || []) {
       const target = resolveCodeChangePath(this.workspaceRoot, scope, change.path);
+      
+      const { checkAction } = await import("./runtime/security-policy.mjs");
+      const actionType = change.operation === "delete" ? "file.delete" : "file.write";
+      const check = await checkAction(this.workspaceRoot, { type: actionType, path: target.relativePath });
+      if (check.status === "deny") {
+        throw Object.assign(new Error(`Security block: ${check.reason}`), { status: 403 });
+      }
+
       await assertCurrentContent(target.absolutePath, change);
       targets.push({ change, target });
     }

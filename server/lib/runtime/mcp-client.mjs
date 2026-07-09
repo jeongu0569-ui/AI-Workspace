@@ -79,6 +79,9 @@ export class McpClient {
         }
         this.stop();
       }, this.idleTimeoutMs);
+      if (this.idleTimer.unref) {
+        this.idleTimer.unref();
+      }
     }
   }
 

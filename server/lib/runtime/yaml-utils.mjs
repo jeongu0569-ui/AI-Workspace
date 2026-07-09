@@ -4,13 +4,18 @@ export function parseConfigYaml(content) {
     model: null,
     custom_providers: [],
     disabled_tools: [],
-    mcp_servers: []
+    mcp_servers: [],
+    security: null
   };
 
   let inModel = false;
   let inCustomProviders = false;
   let inDisabledTools = false;
   let inMcpServers = false;
+  let inSecurity = false;
+  let inAllowedCommands = false;
+  let inDeniedCommands = false;
+  let inRequireApproval = false;
   let currentCustomProvider = null;
   let currentMcpServer = null;
 
@@ -25,6 +30,10 @@ export function parseConfigYaml(content) {
       inCustomProviders = trimmed.startsWith("custom_providers:");
       inDisabledTools = trimmed.startsWith("disabled_tools:");
       inMcpServers = trimmed.startsWith("mcp_servers:");
+      inSecurity = trimmed.startsWith("security:");
+      inAllowedCommands = false;
+      inDeniedCommands = false;
+      inRequireApproval = false;
       if (currentCustomProvider) {
         result.custom_providers.push(currentCustomProvider);
         currentCustomProvider = null;
@@ -113,6 +122,47 @@ export function parseConfigYaml(content) {
         }
       }
     }
+
+    if (inSecurity && indent > 0) {
+      if (!result.security) {
+        result.security = {
+          approval_mode: "suggest",
+          allow_shell: true,
+          allowed_commands: [],
+          denied_commands: [],
+          require_approval: []
+        };
+      }
+      if (trimmed.startsWith("allowed_commands:")) {
+        inAllowedCommands = true;
+        inDeniedCommands = false;
+        inRequireApproval = false;
+      } else if (trimmed.startsWith("denied_commands:")) {
+        inAllowedCommands = false;
+        inDeniedCommands = true;
+        inRequireApproval = false;
+      } else if (trimmed.startsWith("require_approval:")) {
+        inAllowedCommands = false;
+        inDeniedCommands = false;
+        inRequireApproval = true;
+      } else if (trimmed.startsWith("approval_mode:")) {
+        const colonIdx = trimmed.indexOf(":");
+        result.security.approval_mode = stripQuotes(trimmed.slice(colonIdx + 1).trim());
+      } else if (trimmed.startsWith("allow_shell:")) {
+        const colonIdx = trimmed.indexOf(":");
+        const v = trimmed.slice(colonIdx + 1).trim();
+        result.security.allow_shell = v !== "false";
+      } else if (trimmed.startsWith("-")) {
+        const v = stripQuotes(trimmed.slice(1).trim());
+        if (inAllowedCommands) {
+          result.security.allowed_commands.push(v);
+        } else if (inDeniedCommands) {
+          result.security.denied_commands.push(v);
+        } else if (inRequireApproval) {
+          result.security.require_approval.push(v);
+        }
+      }
+    }
   }
 
   if (currentCustomProvider) result.custom_providers.push(currentCustomProvider);
@@ -121,7 +171,7 @@ export function parseConfigYaml(content) {
   return result;
 }
 
-export function stringifyConfigYaml(content, { model, custom_providers, disabled_tools, mcp_servers }) {
+export function stringifyConfigYaml(content, { model, custom_providers, disabled_tools, mcp_servers, security }) {
   const lines = content.split(/\r?\n/);
   const resultLines = [];
   let skipUntilUnindented = false;
@@ -137,7 +187,8 @@ export function stringifyConfigYaml(content, { model, custom_providers, disabled
         trimmed.startsWith("model:") ||
         trimmed.startsWith("custom_providers:") ||
         trimmed.startsWith("disabled_tools:") ||
-        trimmed.startsWith("mcp_servers:")
+        trimmed.startsWith("mcp_servers:") ||
+        trimmed.startsWith("security:")
       ) {
         skipUntilUnindented = true;
         continue;
@@ -197,6 +248,30 @@ export function stringifyConfigYaml(content, { model, custom_providers, disabled
         for (const arg of mcp.args) {
           resultLines.push(`      - ${arg}`);
         }
+      }
+    }
+  }
+
+  if (security) {
+    resultLines.push("security:");
+    resultLines.push(`  approval_mode: ${security.approval_mode || "suggest"}`);
+    resultLines.push(`  allow_shell: ${security.allow_shell !== false}`);
+    if (security.allowed_commands && security.allowed_commands.length > 0) {
+      resultLines.push("  allowed_commands:");
+      for (const cmd of security.allowed_commands) {
+        resultLines.push(`    - ${cmd}`);
+      }
+    }
+    if (security.denied_commands && security.denied_commands.length > 0) {
+      resultLines.push("  denied_commands:");
+      for (const cmd of security.denied_commands) {
+        resultLines.push(`    - ${cmd}`);
+      }
+    }
+    if (security.require_approval && security.require_approval.length > 0) {
+      resultLines.push("  require_approval:");
+      for (const req of security.require_approval) {
+        resultLines.push(`    - ${req}`);
       }
     }
   }

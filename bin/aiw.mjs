@@ -77,6 +77,13 @@ async function main(argv) {
     case "mcp":
       await runMcp(args);
       return;
+    case "skills":
+    case "skill":
+      await runSkills(args);
+      return;
+    case "security":
+      await runSecurity(args);
+      return;
     case "doctor":
       await runDoctor(args);
       return;
@@ -111,7 +118,9 @@ Usage:
   aiw sessions [list|rename|export|prune|delete]        (Interactive session browser if no subcommand)
   aiw tools [list|enable|disable] <name>
   aiw mcp [list|add|remove|enable|disable] <name> [...]
-  aiw doctor                                            (Diagnostics helper)
+  aiw skills [list|show|enable|disable|add|remove] <name>
+  aiw security [show|set-approval-mode|allow-command|deny-command|list] [...]
+  aiw doctor [--deep]                                   (Diagnostics helper)
   aiw config [edit]                                     (User configuration manager)
   aiw approvals [list|show|approve|reject] [...]
   aiw tasks [list|show] [...]
@@ -1338,7 +1347,7 @@ async function runMcp(args) {
 }
 
 async function runDoctor(args) {
-  const options = parseOptions(args, { boolean: ["help"] });
+  const options = parseOptions(args, { boolean: ["help", "deep"] });
   const root = workspaceRoot(options);
 
   console.log(`\x1b[36m=== AI Workspace Diagnostics (aiw doctor) ===\x1b[0m\n`);
@@ -1449,7 +1458,33 @@ async function runDoctor(args) {
     console.log(`   \x1b[31m[ERROR]\x1b[0m Failed to read MCP registry: ${err.message}`);
   }
 
-  console.log(`\n7. Local Server Connection:`);
+  console.log(`\n7. Skills & Plugins:`);
+  try {
+    const { listSkills } = await import("../server/lib/runtime/skill-registry.mjs");
+    const skills = await listSkills(root);
+    console.log(`   - Total skills found: ${skills.length}`);
+    for (const skill of skills) {
+      const status = skill.config.enabled ? "\x1b[32mENABLED\x1b[0m" : "\x1b[31mDISABLED\x1b[0m";
+      console.log(`   - Skill \x1b[36m${skill.name}\x1b[0m: ${status} (Triggers: ${skill.config.triggers?.join(", ") || "none"})`);
+    }
+  } catch (err) {
+    console.log(`   \x1b[31m[ERROR]\x1b[0m Failed to parse skills: ${err.message}`);
+  }
+
+  console.log(`\n8. Hooks & Security Policy:`);
+  try {
+    const { readSecurityConfig } = await import("../server/lib/runtime/security-policy.mjs");
+    const sec = await readSecurityConfig(root);
+    console.log(`   - Approval Mode: \x1b[36m${sec.approvalMode}\x1b[0m`);
+    console.log(`   - Allow Shell Commands: ${sec.allowShell ? "\x1b[32myes\x1b[0m" : "\x1b[31mno\x1b[0m"}`);
+    if (sec.deniedCommands.length > 0) {
+      console.log(`   - \x1b[33m[INFO]\x1b[0m ${sec.deniedCommands.length} denied command patterns configured.`);
+    }
+  } catch (err) {
+    console.log(`   \x1b[31m[ERROR]\x1b[0m Failed to read security policy: ${err.message}`);
+  }
+
+  console.log(`\n9. Local Server Connection:`);
   const baseUrl = workspaceUrl(options);
   try {
     const health = await requestJson(baseUrl, "/api/health");
@@ -1460,6 +1495,37 @@ async function runDoctor(args) {
     }
   } catch {
     console.log(`   \x1b[33m[WARNING]\x1b[0m Server at ${baseUrl} is not currently running.`);
+  }
+
+  if (options.deep) {
+    console.log(`\n10. Deep MCP Verification (--deep):`);
+    try {
+      const config = await readRuntimeConfig(root);
+      if (config.mcpServers?.length) {
+        const { McpClient } = await import("../server/lib/runtime/mcp-client.mjs");
+        for (const mcp of config.mcpServers) {
+          if (mcp.enabled === false) {
+            console.log(`   - MCP Server \x1b[36m${mcp.name}\x1b[0m is disabled, skipping deep verification.`);
+            continue;
+          }
+          console.log(`   - Testing MCP Server \x1b[36m${mcp.name}\x1b[0m...`);
+          const client = new McpClient(mcp.name, mcp.command, mcp.args || [], { workspaceRoot: root });
+          try {
+            await client.start();
+            const toolsList = await client.listTools();
+            console.log(`     \x1b[32m[OK]\x1b[0m Successfully initialized and listed ${toolsList.length} tools.`);
+          } catch (err) {
+            console.log(`     \x1b[31m[ERROR]\x1b[0m Deep verification failed: ${err.message}`);
+          } finally {
+            try { client.stop(); } catch {}
+          }
+        }
+      } else {
+        console.log(`   [INFO] No MCP servers registered.`);
+      }
+    } catch (err) {
+      console.log(`   \x1b[31m[ERROR]\x1b[0m Deep verification error: ${err.message}`);
+    }
   }
 
   console.log(`\n\x1b[36m=== Diagnostics Complete ===\x1b[0m\n`);
@@ -1836,4 +1902,162 @@ function waitForEnter() {
       resolve();
     });
   });
+}
+
+async function runSkills(args) {
+  const options = parseOptions(args, { boolean: ["help"] });
+  const [subcommand, name, argValue] = options._;
+  const root = workspaceRoot(options);
+
+  if (options.help || !subcommand) {
+    console.log(`Usage:
+  aiw skills list [--root PATH]
+  aiw skills show <name> [--root PATH]
+  aiw skills enable <name> [--root PATH]
+  aiw skills disable <name> [--root PATH]
+  aiw skills add <path> [--root PATH]
+  aiw skills remove <name> [--root PATH]
+`);
+    return;
+  }
+
+  const { listSkills, readSkill, enableSkill, addSkill, removeSkill } = await import("../server/lib/runtime/skill-registry.mjs");
+
+  if (subcommand === "list") {
+    console.log("=== Workspace Skills ===");
+    const list = await listSkills(root);
+    if (list.length === 0) {
+      console.log("(No registered skills)");
+    } else {
+      for (const skill of list) {
+        const status = skill.config.enabled ? "\x1b[32menabled\x1b[0m" : "\x1b[31mdisabled\x1b[0m";
+        console.log(`- ${skill.name} [${status}] (triggers: ${skill.config.triggers?.join(", ") || "none"})`);
+      }
+    }
+    return;
+  }
+
+  if (subcommand === "show") {
+    if (!name) throw new Error("Usage: aiw skills show <name>");
+    const skill = await readSkill(root, name);
+    console.log(`=== Skill: ${skill.name} ===`);
+    console.log(`Status: ${skill.config.enabled ? "Enabled" : "Disabled"}`);
+    console.log(`Triggers: ${skill.config.triggers?.join(", ") || "None"}`);
+    console.log(`Task Types: ${skill.config.taskTypes?.join(", ") || "None"}`);
+    console.log("\n--- Instructions (skill.md) ---");
+    console.log(skill.skillMd || "(Empty)");
+    return;
+  }
+
+  if (subcommand === "enable") {
+    if (!name) throw new Error("Usage: aiw skills enable <name>");
+    await enableSkill(root, name, true);
+    console.log(`Enabled skill '${name}'.`);
+    return;
+  }
+
+  if (subcommand === "disable") {
+    if (!name) throw new Error("Usage: aiw skills disable <name>");
+    await enableSkill(root, name, false);
+    console.log(`Disabled skill '${name}'.`);
+    return;
+  }
+
+  if (subcommand === "add") {
+    const srcPath = name;
+    if (!srcPath) throw new Error("Usage: aiw skills add <path>");
+    const skill = await addSkill(root, srcPath);
+    console.log(`Added skill '${skill.name}' from ${srcPath}.`);
+    return;
+  }
+
+  if (subcommand === "remove") {
+    if (!name) throw new Error("Usage: aiw skills remove <name>");
+    await removeSkill(root, name);
+    console.log(`Removed skill '${name}'.`);
+    return;
+  }
+
+  throw new Error(`Unknown skills subcommand: ${subcommand}`);
+}
+
+async function runSecurity(args) {
+  const options = parseOptions(args, { boolean: ["help"] });
+  const [subcommand, arg1, ...argsRest] = options._;
+  const root = workspaceRoot(options);
+
+  if (options.help || !subcommand) {
+    console.log(`Usage:
+  aiw security show [--root PATH]
+  aiw security set-approval-mode <suggest|auto|manual|off> [--root PATH]
+  aiw security allow-command <command> [--root PATH]
+  aiw security deny-command <command> [--root PATH]
+  aiw security list [--root PATH]
+`);
+    return;
+  }
+
+  const { readSecurityConfig, writeSecurityConfig } = await import("../server/lib/runtime/security-policy.mjs");
+  const config = await readSecurityConfig(root);
+
+  if (subcommand === "show" || subcommand === "list") {
+    console.log("=== Security Policy ===");
+    console.log(`Approval Mode: \x1b[36m${config.approvalMode}\x1b[0m`);
+    console.log(`Allow Shell: ${config.allowShell ? "\x1b[32myes\x1b[0m" : "\x1b[31mno\x1b[0m"}`);
+    console.log("\nAllowed Commands:");
+    if (config.allowedCommands.length === 0) {
+      console.log("  (None)");
+    } else {
+      config.allowedCommands.forEach(cmd => console.log(`  - ${cmd}`));
+    }
+    console.log("\nDenied Commands:");
+    if (config.deniedCommands.length === 0) {
+      console.log("  (None)");
+    } else {
+      config.deniedCommands.forEach(cmd => console.log(`  - ${cmd}`));
+    }
+    console.log("\nRequire Approval Actions:");
+    if (config.requireApproval.length === 0) {
+      console.log("  (None)");
+    } else {
+      config.requireApproval.forEach(act => console.log(`  - ${act}`));
+    }
+    return;
+  }
+
+  if (subcommand === "set-approval-mode") {
+    if (!arg1) throw new Error("Usage: aiw security set-approval-mode <suggest|auto|manual|off>");
+    const validModes = ["suggest", "auto", "manual", "off"];
+    if (!validModes.includes(arg1)) {
+      throw new Error(`Invalid approval mode. Choose from: ${validModes.join(", ")}`);
+    }
+    config.approvalMode = arg1;
+    await writeSecurityConfig(root, config);
+    console.log(`Set approval mode to '${arg1}'.`);
+    return;
+  }
+
+  if (subcommand === "allow-command") {
+    const cmd = [arg1, ...argsRest].join(" ").trim();
+    if (!cmd) throw new Error("Usage: aiw security allow-command <command>");
+    if (!config.allowedCommands.includes(cmd)) {
+      config.allowedCommands.push(cmd);
+      await writeSecurityConfig(root, config);
+    }
+    console.log(`Allowed command: '${cmd}'`);
+    return;
+  }
+
+  if (subcommand === "deny-command") {
+    const cmd = [arg1, ...argsRest].join(" ").trim();
+    if (!cmd) throw new Error("Usage: aiw security deny-command <command>");
+    if (!config.deniedCommands.includes(cmd)) {
+      config.deniedCommands.push(cmd);
+      await writeSecurityConfig(root, config);
+    }
+    console.log(`Denied command: '${cmd}'`);
+    return;
+  }
+
+  throw new Error(`Unknown security subcommand: ${subcommand}`);
 }

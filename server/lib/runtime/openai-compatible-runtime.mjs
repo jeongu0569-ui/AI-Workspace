@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import fs from "node:fs/promises";
 import {
   BUILTIN_PROVIDERS,
   readCredentials,
@@ -82,7 +84,8 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       let selection;
       try {
         selection = await this.resolveModelSelection(activeParams);
-        const messages = buildMessages(activeParams);
+        const systemPrompt = await this.buildSystemPrompt(activeParams);
+        const messages = buildMessages(activeParams, systemPrompt);
 
         this.emit("event", {
           type: "turn.start",
@@ -358,6 +361,56 @@ export class OpenAICompatibleRuntime extends EventEmitter {
             argsObj = {};
           }
         }
+
+        // Fetch tool metadata from client to check if it's dangerous
+        const toolMeta = (client.tools || []).find(t => t.name === originalToolName) || { name: originalToolName };
+        const dangerous = isDangerousMcpTool(toolMeta);
+
+        // Security Policy Check
+        const { checkAction } = await import("./security-policy.mjs");
+        const policyCheck = await checkAction(this.workspaceRoot, {
+          type: "mcp.tool.call",
+          serverName: mcpName,
+          toolName: originalToolName,
+          arguments: argsObj,
+          dangerous
+        });
+
+        if (policyCheck.status === "deny") {
+          throw new Error(`Security block: ${policyCheck.reason}`);
+        }
+
+        if (policyCheck.status === "approve" && params.approved !== true) {
+          // Record approval request and wait
+          const approval = await recordMcpApproval(this.workspaceRoot, mcpName, originalToolName, argsObj);
+          
+          this.emit("event", {
+            type: "approval.request",
+            sessionId: params.sessionId,
+            taskId: params.taskId,
+            approvalId: approval.id,
+            category: "mcp.tool.call",
+            summary: approval.summary
+          });
+
+          // Block and poll for status
+          let approved = false;
+          for (let i = 0; i < 600; i++) {
+            const status = await readMcpApproval(this.workspaceRoot, approval.id);
+            if (status && status.status === "approved") {
+              approved = true;
+              break;
+            } else if (status && status.status === "rejected") {
+              break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          if (!approved) {
+            throw new Error(`MCP tool execution '${call.name}' was rejected or timed out waiting for approval.`);
+          }
+        }
+
         const mcpResult = await client.callTool(originalToolName, argsObj);
         const output = mcpResult.content || mcpResult;
 
@@ -452,6 +505,12 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   }
 
   async getOrStartMcpClient(mcpConfig) {
+    const { checkAction } = await import("./security-policy.mjs");
+    const check = await checkAction(this.workspaceRoot, { type: "mcp.server.start", serverName: mcpConfig.name });
+    if (check.status === "deny") {
+      throw new Error(`Security block: Starting MCP server '${mcpConfig.name}' is blocked.`);
+    }
+
     let client = this.mcpClients.get(mcpConfig.name);
     if (!client) {
       const { McpClient } = await import("./mcp-client.mjs");
@@ -473,6 +532,82 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       } catch {}
     }
     this.mcpClients.clear();
+  }
+
+  async buildSystemPrompt(params) {
+    const context = params.context?.workspaceContext || params.context || {};
+    const parts = [
+      "You are AI Workspace's built-in assistant.",
+      "Answer in the same language as the user's latest message.",
+      "Use provided workspace context when relevant, but do not expose it as raw metadata."
+    ];
+
+    const workspace = context.workspace || {};
+    if (workspace.scopeType || workspace.scopePath || workspace.activePath) {
+      parts.push(`Workspace scope: ${workspace.scopeType || "none"}`);
+      if (workspace.scopePath) parts.push(`Scope path: ${workspace.scopePath}`);
+      if (workspace.activePath) parts.push(`Active path: ${workspace.activePath}`);
+      if (workspace.ragRecommended) {
+        parts.push("Search may be needed for broader folder/workspace questions.");
+      }
+    }
+
+    if (Array.isArray(context.inlineBlocks) && context.inlineBlocks.length) {
+      parts.push("Inline workspace context:");
+      for (const block of context.inlineBlocks) {
+        parts.push(`--- ${block.title || block.kind || "Context"}${block.path ? `: ${block.path}` : ""} ---`);
+        parts.push(String(block.content || ""));
+      }
+    }
+
+    if (Array.isArray(context.fileList) && context.fileList.length) {
+      parts.push("Workspace file list:");
+      for (const item of context.fileList.slice(0, 200)) {
+        parts.push(`- ${item.path} (${item.kind})`);
+      }
+    }
+
+    if (Array.isArray(context.resources) && context.resources.length) {
+      parts.push("Linked resources:");
+      for (const item of context.resources.slice(0, 100)) {
+        parts.push(`- ${item.path} (${item.kind})`);
+      }
+    }
+
+    try {
+      const { listSkills } = await import("./skill-registry.mjs");
+      const skills = await listSkills(this.workspaceRoot);
+      const userPrompt = String(params.prompt || params.message || "").toLowerCase();
+      const historyText = (params.history || [])
+        .map((h) => String(h.content || ""))
+        .join(" ")
+        .toLowerCase();
+      const fullTextContext = `${userPrompt} ${historyText}`;
+
+      const taskType = params.taskId ? "code" : "chat";
+
+      for (const skill of skills) {
+        if (skill.config.enabled === false) continue;
+
+        if (Array.isArray(skill.config.taskTypes) && skill.config.taskTypes.length > 0) {
+          if (!skill.config.taskTypes.includes(taskType)) continue;
+        }
+
+        if (Array.isArray(skill.config.triggers) && skill.config.triggers.length > 0) {
+          const matched = skill.config.triggers.some((trigger) =>
+            fullTextContext.includes(String(trigger).toLowerCase())
+          );
+          if (!matched) continue;
+        }
+
+        parts.push(`\n--- Skill: ${skill.name} ---`);
+        parts.push(skill.skillMd);
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    return parts.join("\n");
   }
 
   async resolveModelSelection(params = {}) {
@@ -543,9 +678,9 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   }
 }
 
-function buildMessages(params) {
+function buildMessages(params, systemPrompt) {
   const messages = [];
-  const system = buildSystemMessage(params);
+  const system = systemPrompt || buildSystemMessage(params);
   if (system) messages.push({ role: "system", content: system });
   for (const item of params.history || []) {
     if ((item.role === "user" || item.role === "assistant") && item.content) {
@@ -736,4 +871,46 @@ export function classifyError(error) {
     return "provider_unavailable";
   }
   return "unknown_error";
+}
+
+export function isDangerousMcpTool(tool) {
+  const name = String(tool.name).toLowerCase();
+  const desc = String(tool.description || "").toLowerCase();
+  const dangerousKeywords = [
+    "write", "delete", "remove", "destroy", "bash", "shell", "run", "execute",
+    "git", "push", "patch", "modify", "install", "download", "fetch", "http",
+    "curl", "wget", "rm", "kill", "stop"
+  ];
+  return dangerousKeywords.some((kw) => name.includes(kw) || desc.includes(kw));
+}
+
+export async function recordMcpApproval(workspaceRoot, mcpName, toolName, argsObj) {
+  const approvalsDir = path.join(workspaceRoot, ".ai-workspace", "approvals");
+  await fs.mkdir(approvalsDir, { recursive: true });
+  const id = `approval-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
+  const approval = {
+    id,
+    approvalId: id,
+    type: "approval.request",
+    category: "mcp.tool.call",
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    serverName: mcpName,
+    toolName,
+    arguments: argsObj,
+    summary: `Execute MCP tool '${toolName}' on server '${mcpName}'`
+  };
+  await fs.writeFile(path.join(approvalsDir, `${id}.json`), JSON.stringify(approval, null, 2) + "\n", "utf8");
+  return approval;
+}
+
+export async function readMcpApproval(workspaceRoot, id) {
+  const approvalsDir = path.join(workspaceRoot, ".ai-workspace", "approvals");
+  try {
+    const text = await fs.readFile(path.join(approvalsDir, `${id}.json`), "utf8");
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
