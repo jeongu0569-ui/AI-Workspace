@@ -157,6 +157,60 @@ test("workspace agent state records and resolves approval inbox items", async ()
   assert.equal(pending.approvals.length, 0);
 });
 
+test("workspace agent engine stores approval_required task and resumes approved MCP pending state", async () => {
+  const root = await fixtureWorkspace();
+  const runtime = new ApprovalRequiredRuntime();
+  const engine = new WorkspaceAgentEngine({ workspaceRoot: root }, runtime);
+
+  const session = await engine.createSession({});
+  const result = await engine.submitPrompt({
+    sessionId: session.sessionId,
+    message: "dangerous tool please"
+  });
+
+  assert.equal(result.status, "approval_required");
+  assert.match(result.approvalId, /^approval-/);
+
+  const task = await engine.readTask(result.taskId);
+  assert.equal(task.status, "approval_required");
+  assert.equal(task.approvalIds.includes(result.approvalId), true);
+  assert.equal(task.pendingState.type, "mcp.tool.call");
+
+  const approvals = await engine.listApprovals({ status: "pending" });
+  assert.equal(approvals.approvals.length, 1);
+  assert.equal(approvals.approvals[0].category, "mcp.tool.call");
+  assert.equal(approvals.approvals[0].hasPendingState ?? Boolean(approvals.approvals[0].payload?.pendingState), true);
+
+  const approved = await engine.respondToWorkspaceApproval(result.approvalId, { approved: true });
+  assert.equal(approved.status, "approved");
+  assert.equal(runtime.resumed.length, 1);
+
+  const resumedTask = await engine.readTask(result.taskId);
+  assert.equal(resumedTask.status, "completed");
+  assert.equal(resumedTask.pendingState, null);
+  assert.equal(resumedTask.result.result.output, "ok");
+});
+
+test("workspace agent engine cancels approval_required tasks", async () => {
+  const root = await fixtureWorkspace();
+  const runtime = new ApprovalRequiredRuntime();
+  const engine = new WorkspaceAgentEngine({ workspaceRoot: root }, runtime);
+
+  const session = await engine.createSession({});
+  const result = await engine.submitPrompt({
+    sessionId: session.sessionId,
+    message: "cancel me"
+  });
+
+  const cancelled = await engine.cancelTask(result.taskId, { reason: "User cancelled." });
+  assert.equal(cancelled.status, "cancelled");
+
+  const task = await engine.readTask(result.taskId);
+  assert.equal(task.status, "cancelled");
+  assert.equal(task.pendingState, null);
+  assert.equal(task.error, "User cancelled.");
+});
+
 class FakeAgentRuntime extends EventEmitter {
   constructor() {
     super();
@@ -194,6 +248,74 @@ class FakeAgentRuntime extends EventEmitter {
       runtimeSessionId: "runtime-1",
       choice: params.approved === false ? "deny" : "once"
     };
+  }
+
+  async setAccessMode() {}
+
+  async setReasoning() {}
+
+  close() {}
+}
+
+class ApprovalRequiredRuntime extends EventEmitter {
+  constructor() {
+    super();
+    this.name = "approval-runtime";
+    this.resumed = [];
+  }
+
+  async connect() {}
+
+  async createSession() {
+    return {
+      sessionId: "approval-session",
+      runtimeSessionId: "approval-session",
+      source: "fake"
+    };
+  }
+
+  async resumeSession() {
+    return "approval-session";
+  }
+
+  async submitPrompt(params) {
+    const pendingState = {
+      type: "mcp.tool.call",
+      sessionId: params.sessionId,
+      taskId: params.taskId,
+      serverName: "mock",
+      toolName: "danger",
+      arguments: { value: 1 },
+      toolCall: {
+        id: "call-danger",
+        name: "mcp_mock_danger",
+        arguments: "{\"value\":1}"
+      }
+    };
+    throw Object.assign(new Error("Approval required."), {
+      status: 409,
+      approvalRequired: true,
+      category: "mcp.tool.call",
+      summary: "Execute dangerous MCP tool",
+      reason: "Test requires approval.",
+      pendingState
+    });
+  }
+
+  async resumePendingState(pendingState) {
+    this.resumed.push(pendingState);
+    return {
+      ok: true,
+      status: "completed",
+      result: {
+        ok: true,
+        output: "ok"
+      }
+    };
+  }
+
+  async respondToApproval() {
+    return { ok: true };
   }
 
   async setAccessMode() {}

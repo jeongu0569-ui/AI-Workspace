@@ -132,6 +132,8 @@ Current implemented files:
 .ai-workspace/tasks/task-<timestamp>-<uuid>.json
 .ai-workspace/tool-logs/live-events.jsonl
 .ai-workspace/tool-logs/tool-events.jsonl
+.ai-workspace/index/files.json
+.ai-workspace/audit/audit.jsonl
 ```
 
 Model, provider, and auth config is stored under `.ai-workspace/config`.
@@ -183,6 +185,34 @@ files_changed
 task_memory
 ```
 
+General runtime task statuses are:
+
+```text
+queued
+running
+approval_required
+completed
+failed
+cancelled
+```
+
+Code task flows can still use more specific code-runtime statuses such as
+`patch_proposed`, `patched`, `checked`, or `check_failed`. Those statuses are
+owned by `CodeAgentRuntime`. The general `approval_required` status is used
+when an in-flight runtime operation, such as an MCP tool call, must pause for a
+user decision.
+
+Approval-gated runtime tasks also store:
+
+```text
+approval_ids[]
+pending_state
+```
+
+`pending_state` is server-owned resume data. It is not a client command. The
+client can show that a task has pending state, approve/reject the related
+approval request, resume the task through the server, or cancel the task.
+
 Approval records currently store:
 
 ```text
@@ -202,10 +232,32 @@ responded_at
 approved
 reason
 response
+payload.pending_state
 ```
 
 The approval inbox is workspace-owned. Code patch/check approvals can be listed,
 resumed, approved, or rejected even if the chat stream is no longer visible.
+MCP tool-call approvals use the same inbox. Approving one resumes the stored
+task state; rejecting one records the decision and fails the waiting task.
+
+Security audit records currently store:
+
+```text
+id
+actionType
+status: allowed | denied | approval_required | approved | rejected
+reason
+createdAt
+sessionId
+taskId
+command
+path
+serverName
+toolName
+```
+
+The first implementation writes audit rows from the security policy evaluator
+for denied, approval-required, and risky write/execute action checks.
 
 This records AI Workspace Server's own view of the work so code agent loops can
 attach diffs, test results, shell output, approvals, and decision logs to the

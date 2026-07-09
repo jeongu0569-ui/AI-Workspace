@@ -188,6 +188,58 @@ export class WorkspaceAgentEngine extends EventEmitter {
         runtime: this.runtimeName()
       };
     } catch (error) {
+      if (error?.approvalRequired) {
+        const approval = await this.state.recordApprovalRequest({
+          category: error.category || "approval.required",
+          summary: error.summary || error.message || "Approval required",
+          reason: error.reason,
+          sessionId: params.sessionId,
+          taskId: task.id,
+          payload: {
+            ...(error.payload || {}),
+            pendingState: error.pendingState,
+            serverName: error.pendingState?.serverName,
+            toolName: error.pendingState?.toolName,
+            arguments: error.pendingState?.arguments
+          }
+        });
+        await this.state.finishTask(task.id, {
+          status: "approval_required",
+          approvalIds: [approval.id],
+          pendingState: error.pendingState,
+          result: {
+            ok: false,
+            status: "approval_required",
+            approvalId: approval.id,
+            taskId: task.id,
+            pendingState: error.pendingState
+          },
+          error: null
+        });
+        const event = {
+          type: "approval.request",
+          engine: "workspace-agent",
+          runtime: this.runtimeName(),
+          sessionId: params.sessionId,
+          taskId: task.id,
+          approvalId: approval.id,
+          category: approval.category,
+          summary: approval.summary,
+          reason: approval.reason
+        };
+        this.trackEventWrite(this.state.recordAgentEvent(event));
+        this.emit("event", event);
+        await this.flush();
+        return {
+          ok: false,
+          status: "approval_required",
+          approvalId: approval.id,
+          taskId: task.id,
+          pendingState: error.pendingState,
+          engine: "workspace-agent",
+          runtime: this.runtimeName()
+        };
+      }
       await this.state.finishTask(task.id, {
         status: "failed",
         error: error?.message || "Prompt submit failed."
@@ -391,6 +443,54 @@ export class WorkspaceAgentEngine extends EventEmitter {
         approval: rejected
       };
     }
+    if (approval.category === "mcp.tool.call" && approval.taskId) {
+      if (approved) {
+        const resolved = await this.state.resolveApproval(approval.id, {
+          approved: true,
+          reason: params.reason
+        });
+        const result = await this.resumeTask(approval.taskId, {
+          approvalId: approval.id,
+          approval: resolved
+        });
+        return {
+          ok: result.ok,
+          engine: "workspace-agent",
+          status: "approved",
+          approval: resolved,
+          result
+        };
+      }
+      const rejected = await this.state.resolveApproval(approval.id, {
+        approved: false,
+        reason: params.reason || "Rejected from approval inbox."
+      });
+      const task = await this.state.finishTask(approval.taskId, {
+        status: "failed",
+        error: rejected.reason || "MCP tool call rejected.",
+        pendingState: null,
+        result: {
+          ok: false,
+          status: "rejected",
+          approvalId: approval.id
+        }
+      });
+      this.emit("event", {
+        type: "task.failed",
+        engine: "workspace-agent",
+        runtime: this.runtimeName(),
+        taskId: approval.taskId,
+        approvalId: approval.id,
+        error: task.error
+      });
+      return {
+        ok: true,
+        engine: "workspace-agent",
+        status: "rejected",
+        approval: rejected,
+        task
+      };
+    }
     const resolved = await this.state.resolveApproval(approval.id, {
       approved,
       reason: params.reason
@@ -405,6 +505,90 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
   async flush() {
     await Promise.allSettled([...this.eventWrites]);
+  }
+
+  async resumeTask(taskId, params = {}) {
+    await this.state.ensure();
+    const task = await this.state.readTask(taskId);
+    if (task.status === "cancelled") {
+      throw Object.assign(new Error(`Task ${taskId} is cancelled.`), { status: 409 });
+    }
+    if (task.status !== "approval_required") {
+      return {
+        ok: true,
+        status: task.status,
+        task,
+        alreadyResolved: true
+      };
+    }
+    const pendingState = task.pendingState || params.pendingState;
+    if (!pendingState) {
+      throw Object.assign(new Error(`Task ${taskId} has no pending state to resume.`), { status: 400 });
+    }
+    if (!this.runtime || typeof this.runtime.resumePendingState !== "function") {
+      throw Object.assign(new Error("Runtime does not support pending task resume."), { status: 501 });
+    }
+    const result = await this.runtime.resumePendingState(pendingState, {
+      taskId,
+      approvalId: params.approvalId,
+      approval: params.approval
+    });
+    const status = result.ok === false ? "failed" : "completed";
+    const updated = await this.state.finishTask(taskId, {
+      status,
+      pendingState: null,
+      result,
+      error: result.ok === false ? (result.error || "Task resume failed.") : null
+    });
+    this.emit("event", {
+      type: status === "completed" ? "task.completed" : "task.failed",
+      engine: "workspace-agent",
+      runtime: this.runtimeName(),
+      taskId,
+      approvalId: params.approvalId,
+      result
+    });
+    return {
+      ok: status === "completed",
+      status,
+      task: updated,
+      result
+    };
+  }
+
+  async cancelTask(taskId, params = {}) {
+    await this.state.ensure();
+    const task = await this.state.readTask(taskId);
+    if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
+      return {
+        ok: true,
+        status: task.status,
+        task,
+        alreadyResolved: true
+      };
+    }
+    const updated = await this.state.finishTask(taskId, {
+      status: "cancelled",
+      pendingState: null,
+      error: params.reason || "Cancelled.",
+      result: {
+        ok: false,
+        status: "cancelled",
+        reason: params.reason || "Cancelled."
+      }
+    });
+    this.emit("event", {
+      type: "task.cancelled",
+      engine: "workspace-agent",
+      runtime: this.runtimeName(),
+      taskId,
+      reason: params.reason || "Cancelled."
+    });
+    return {
+      ok: true,
+      status: "cancelled",
+      task: updated
+    };
   }
 
   runtimeName() {
@@ -496,9 +680,13 @@ export class WorkspaceAgentStateStore {
     await this.ensure();
     const task = {
       id: `task-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`,
-      status: "started",
+      status: "running",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      approvalIds: [],
+      pendingState: null,
+      result: {},
+      error: null,
       ...definedFields(input)
     };
     await this.writeTask(task);
@@ -515,11 +703,19 @@ export class WorkspaceAgentStateStore {
   async finishTask(taskId, patch) {
     await this.ensure();
     const task = await this.readTask(taskId);
+    const mergedApprovalIds = [
+      ...(Array.isArray(task.approvalIds) ? task.approvalIds : []),
+      ...(Array.isArray(patch.approvalIds) ? patch.approvalIds : [])
+    ].filter(Boolean);
     const updated = {
       ...task,
       ...definedFields(patch),
+      approvalIds: Array.from(new Set(mergedApprovalIds)),
       updatedAt: new Date().toISOString()
     };
+    if (Object.hasOwn(patch, "pendingState")) updated.pendingState = patch.pendingState;
+    if (Object.hasOwn(patch, "error")) updated.error = patch.error;
+    if (Object.hasOwn(patch, "result")) updated.result = patch.result;
     await this.writeTask(updated);
     await this.appendJsonl("tasks/events.jsonl", {
       type: "task.finish",
@@ -811,6 +1007,9 @@ function summarizeTask(task) {
     sessionId: task.sessionId,
     scopePath: task.scopePath,
     message: task.message,
+    approvalIds: Array.isArray(task.approvalIds) ? task.approvalIds : [],
+    hasPendingState: Boolean(task.pendingState),
+    error: task.error || "",
     summary: task.plan?.summary || task.result?.summary || task.error || ""
   };
 }
@@ -828,9 +1027,11 @@ function summarizeApproval(approval) {
     proposalId: approval.proposalId,
     scopePath: approval.scopePath,
     summary: approval.summary,
+    reason: approval.reason,
+    hasPendingState: Boolean(approval.pendingState || approval.payload?.pendingState),
+    payload: approval.payload,
     diffRef: approval.diffRef,
     commands: approval.commands,
-    reason: approval.reason
   };
 }
 

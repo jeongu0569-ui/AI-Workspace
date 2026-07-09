@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readRuntimeConfig, runtimeConfigDir } from "./config-store.mjs";
+import { runtimeConfigDir } from "./config-store.mjs";
 import { parseConfigYaml, stringifyConfigYaml } from "./yaml-utils.mjs";
+import { appendAuditEvent } from "./audit-log.mjs";
 
 export async function readSecurityConfig(workspaceRoot) {
   const dir = runtimeConfigDir(workspaceRoot);
@@ -53,7 +54,12 @@ export async function writeSecurityConfig(workspaceRoot, securityConfig) {
 
 export async function checkAction(workspaceRoot, action) {
   const config = await readSecurityConfig(workspaceRoot);
+  const decision = await evaluateSecurityAction(workspaceRoot, action, config);
+  await auditSecurityDecision(workspaceRoot, action, decision);
+  return decision;
+}
 
+async function evaluateSecurityAction(workspaceRoot, action, config) {
   // 1. Path Traversal & Workspace Boundaries
   if (action.path) {
     const absolutePath = path.resolve(workspaceRoot, action.path);
@@ -102,7 +108,18 @@ export async function checkAction(workspaceRoot, action) {
     }
   }
 
-  // 5. Require Approval Check
+  // 5. Dangerous Shell Syntax Check
+  if (action.type === "shell.run" && action.command) {
+    const dangerousSyntax = detectDangerousShellSyntax(action.command);
+    if (dangerousSyntax) {
+      return {
+        status: "approve",
+        reason: `Shell command uses risky syntax: ${dangerousSyntax}.`
+      };
+    }
+  }
+
+  // 6. Require Approval Check
   let requireApproval = false;
   if (config.requireApproval.includes(action.type)) {
     requireApproval = true;
@@ -122,7 +139,7 @@ export async function checkAction(workspaceRoot, action) {
     };
   }
 
-  // 6. Approval Mode Evaluator
+  // 7. Approval Mode Evaluator
   switch (config.approvalMode) {
     case "auto":
       return { status: "allow", reason: "Approval mode is set to auto." };
@@ -147,4 +164,58 @@ export async function checkAction(workspaceRoot, action) {
       }
       return { status: "allow" };
   }
+}
+
+function detectDangerousShellSyntax(command) {
+  const text = String(command || "");
+  const compact = text.replace(/\s+/g, " ").trim().toLowerCase();
+  const checks = [
+    ["curl | sh", /\bcurl\b[\s\S]*\|[\s\S]*(\bsh\b|\bbash\b)/i],
+    ["wget | sh", /\bwget\b[\s\S]*\|[\s\S]*(\bsh\b|\bbash\b)/i],
+    ["rm -rf", /\brm\s+(-[a-z]*r[a-z]*f|-{1,2}recursive\b[\s\S]*-{1,2}force\b)/i],
+    ["sudo", /\bsudo\b/i],
+    ["subshell", /\$\([^)]*\)/],
+    ["backtick", /`[^`]*`/],
+    ["and/or chain", /&&|\|\|/],
+    ["semicolon chain", /;/],
+    ["pipe", /\|/],
+    ["redirection", /(^|[^<])>{1,2}([^>]|$)|</],
+    ["chmod + execute", /\bchmod\s+\+x\b[\s\S]*(&&|;|\|\|)/i]
+  ];
+  for (const [label, pattern] of checks) {
+    if (pattern.test(text) || pattern.test(compact)) return label;
+  }
+  return "";
+}
+
+async function auditSecurityDecision(workspaceRoot, action, decision) {
+  if (!shouldAuditAction(action, decision)) return;
+  try {
+    await appendAuditEvent(workspaceRoot, {
+      actionType: action.type || "unknown",
+      status: decision.status === "approve" ? "approval_required" : decision.status,
+      reason: decision.reason || "",
+      sessionId: action.sessionId || "",
+      taskId: action.taskId || "",
+      command: action.command || "",
+      path: action.path || "",
+      serverName: action.serverName || "",
+      toolName: action.toolName || ""
+    });
+  } catch {
+    // Audit logging must not make the policy evaluator fail closed by accident.
+  }
+}
+
+function shouldAuditAction(action, decision) {
+  if (decision.status === "deny" || decision.status === "approve") return true;
+  return [
+    "file.write",
+    "file.delete",
+    "file.move",
+    "git.command",
+    "shell.run",
+    "mcp.tool.call",
+    "code.patch.apply"
+  ].includes(action.type);
 }

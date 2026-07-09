@@ -512,6 +512,15 @@ struct ServerStatusView: View {
                     store.saveServerURL()
                     Task { await store.refreshWorkspace() }
                 }
+            SecureField("Server auth token (optional)", text: $store.serverAuthToken)
+                .textFieldStyle(.roundedBorder)
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                #endif
+                .onChange(of: store.serverAuthToken) {
+                    store.persistServerAuthToken()
+                }
             Text(store.serverConnectionHint)
                 .font(.caption2)
                 .foregroundStyle(store.serverURLUsesLocalhost ? .orange : .secondary)

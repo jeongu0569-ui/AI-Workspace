@@ -47,6 +47,8 @@ Search
 Implemented:
 
 - server URL setting
+- optional server auth token setting. HTTP requests use `Authorization: Bearer`
+  and live WebSocket/raw URLs use `?token=` when a token is configured.
 - workspace status loading
 - Notes root listing
 - Code root listing
@@ -203,6 +205,8 @@ POST /api/file/upload/cancel
 POST /api/search
 GET  /api/agent/tasks
 GET  /api/agent/tasks/:id
+POST /api/agent/tasks/:id/resume
+POST /api/agent/tasks/:id/cancel
 GET  /api/agent/approvals
 GET  /api/agent/approvals/:id
 POST /api/agent/approvals/:id/respond
@@ -222,6 +226,12 @@ WS   /api/live
 ```
 
 It should not directly access filesystem paths or Hermes dashboard cookies.
+
+For approval-gated runtime work, the app should treat `approval_required` as a
+normal task state. It can show the related approval from
+`GET /api/agent/approvals`, call `POST /api/agent/approvals/:id/respond`, and
+let the server resume or reject the stored pending state. The client should not
+poll an MCP tool call directly or reconstruct the pending tool arguments.
 
 ## Code Agent Panel
 

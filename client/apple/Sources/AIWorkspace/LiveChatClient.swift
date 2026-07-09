@@ -88,12 +88,16 @@ actor LiveChatClient {
     private var continuations: [String: CheckedContinuation<LiveEnvelope, Error>] = [:]
     private var onEvent: (@Sendable (LiveEnvelope) -> Void)?
 
-    func connect(baseURL: URL, onEvent: @escaping @Sendable (LiveEnvelope) -> Void) async throws {
+    func connect(baseURL: URL, authToken: String = "", onEvent: @escaping @Sendable (LiveEnvelope) -> Void) async throws {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw LiveChatClientError.invalidURL
         }
         components.scheme = components.scheme == "https" ? "wss" : "ws"
         components.path = "/api/live"
+        let token = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !token.isEmpty {
+            components.queryItems = [URLQueryItem(name: "token", value: token)]
+        }
         guard let url = components.url else { throw LiveChatClientError.invalidURL }
         self.onEvent = onEvent
         if task != nil, connectedURL == url {

@@ -27,6 +27,24 @@ test("does not search outside the requested scope", async () => {
   assert.equal(result.resultCount, 0);
 });
 
+test("search supports filename hits and kind filters", async () => {
+  const root = await fixtureWorkspace();
+  const filenameHit = await searchWorkspace(root, {
+    query: "main",
+    scopePath: "",
+    kind: "code"
+  });
+  assert.equal(filenameHit.resultCount, 1);
+  assert.equal(filenameHit.results[0].path, "Code/main.js");
+
+  const filteredOut = await searchWorkspace(root, {
+    query: "main",
+    scopePath: "",
+    kind: "markdown"
+  });
+  assert.equal(filteredOut.resultCount, 0);
+});
+
 test("reports fallback search status", async () => {
   const status = searchStatus("/tmp/workspace");
   assert.equal(status.provider, "workspace-scan");
@@ -43,4 +61,3 @@ async function fixtureWorkspace() {
   await fs.writeFile(path.join(root, "Code", "main.js"), "console.log('hello')", "utf8");
   return root;
 }
-

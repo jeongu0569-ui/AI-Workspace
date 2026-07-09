@@ -202,11 +202,21 @@ async function runTasks(args) {
     console.log(`Usage:
   aiw tasks [list] [--root PATH] [--type code] [--limit 20] [--json]
   aiw tasks show <taskId> [--root PATH] [--json]
+  aiw tasks resume <taskId> [--url URL] [--json]
+  aiw tasks cancel <taskId> [--url URL] [--reason TEXT] [--json]
 `);
     return;
   }
   if (subcommand === "show") {
     await showTask(rest);
+    return;
+  }
+  if (subcommand === "resume") {
+    await resumeTask(rest);
+    return;
+  }
+  if (subcommand === "cancel") {
+    await cancelTask(rest);
     return;
   }
   if (subcommand !== "list") {
@@ -330,6 +340,40 @@ async function showTask(args) {
     return;
   }
   console.log(JSON.stringify(task, null, 2));
+}
+
+async function resumeTask(args) {
+  const options = parseOptions(args, { boolean: ["json"] });
+  const [taskId] = options._;
+  if (!taskId) throw new Error("Usage: aiw tasks resume <taskId>");
+  const result = await requestJson(workspaceUrl(options), `/api/agent/tasks/${encodeURIComponent(taskId)}/resume`, {
+    method: "POST",
+    body: {}
+  });
+  if (options.json) {
+    printJson(result);
+    return;
+  }
+  console.log(`Resumed task: ${taskId}`);
+  console.log(`Status: ${result.status}`);
+}
+
+async function cancelTask(args) {
+  const options = parseOptions(args, { boolean: ["json"] });
+  const [taskId] = options._;
+  if (!taskId) throw new Error("Usage: aiw tasks cancel <taskId> [--reason TEXT]");
+  const result = await requestJson(workspaceUrl(options), `/api/agent/tasks/${encodeURIComponent(taskId)}/cancel`, {
+    method: "POST",
+    body: {
+      reason: stringOption(options.reason) || undefined
+    }
+  });
+  if (options.json) {
+    printJson(result);
+    return;
+  }
+  console.log(`Cancelled task: ${taskId}`);
+  console.log(`Status: ${result.status}`);
 }
 
 async function runCode(args) {
@@ -522,11 +566,17 @@ async function runIndex(args) {
   if (subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
     console.log(`Usage:
   aiw index [status] [--url URL] [--json]
+  aiw index rebuild [--url URL] [--json]
   aiw index search <query...> [--scope PATH] [--limit 10] [--url URL]
 
-Current MVP index backend is the Workspace Server search API. Persistent
-docsearch/vector index rebuild commands will attach behind this command later.
+Current MVP index backend is the Workspace Server file metadata index plus the
+workspace scan search API. docsearch/vector index providers will attach behind
+this command later.
 `);
+    return;
+  }
+  if (subcommand === "rebuild") {
+    await indexRebuild(rest);
     return;
   }
   if (subcommand === "search") {
@@ -541,14 +591,27 @@ docsearch/vector index rebuild commands will attach behind this command later.
 
 async function indexStatus(args) {
   const options = parseOptions(args, { boolean: ["json"] });
-  const result = await requestJson(workspaceUrl(options), "/api/search/status");
+  const result = await requestJson(workspaceUrl(options), "/api/index/status");
   if (options.json) {
     printJson(result);
     return;
   }
-  console.log(`Search provider: ${result.provider || "(unknown)"}`);
-  console.log(`Indexed: ${result.indexed ? "yes" : "no"}`);
-  if (result.description) console.log(result.description);
+  console.log(`Index provider: ${result.provider || "(unknown)"}`);
+  console.log(`Built at: ${result.builtAt || "(not built)"}`);
+  console.log(`Items: ${result.itemCount ?? 0}`);
+}
+
+async function indexRebuild(args) {
+  const options = parseOptions(args, { boolean: ["json"] });
+  const result = await requestJson(workspaceUrl(options), "/api/index/rebuild", {
+    method: "POST"
+  });
+  if (options.json) {
+    printJson(result);
+    return;
+  }
+  console.log(`Index rebuilt: ${result.itemCount ?? 0} item(s)`);
+  if (result.builtAt) console.log(`Built at: ${result.builtAt}`);
 }
 
 async function indexSearch(args) {
@@ -689,9 +752,13 @@ function pad(value, width) {
 }
 
 async function requestJson(baseUrl, pathname, options = {}) {
+  const headers = {};
+  if (options.body) headers["content-type"] = "application/json";
+  const token = process.env.AIW_SERVER_TOKEN || process.env.AIW_AUTH_TOKEN || "";
+  if (token) headers.authorization = `Bearer ${token}`;
   const response = await fetch(`${trimTrailingSlash(baseUrl)}${pathname}`, {
     method: options.method || "GET",
-    headers: options.body ? { "content-type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: options.body ? JSON.stringify(removeUndefined(options.body)) : undefined
   });
   const text = await response.text();

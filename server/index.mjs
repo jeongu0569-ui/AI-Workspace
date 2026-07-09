@@ -21,13 +21,19 @@ import {
   ensureAgentWorkspaceState
 } from "./lib/agent-engine.mjs";
 import { buildWorkspaceContext } from "./lib/context-router.mjs";
+import { buildIndex, readFileMetadata, readIndex } from "./lib/file-index.mjs";
 import { renderCodeDocument, renderMarkdownDocument } from "./lib/render-service.mjs";
 import { searchStatus, searchWorkspace } from "./lib/search-service.mjs";
+import { readAuditSummary } from "./lib/runtime/audit-log.mjs";
+import { readRuntimeConfig, writeRuntimeConfig } from "./lib/runtime/config-store.mjs";
+import { readSecurityConfig, writeSecurityConfig } from "./lib/runtime/security-policy.mjs";
+import { enableSkill, listSkills, readSkill } from "./lib/runtime/skill-registry.mjs";
 
 const DEFAULT_PORT = Number.parseInt(process.env.AIW_PORT || process.env.PORT || "8787", 10);
 const WORKSPACE_HOST = process.env.AIW_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
 const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "AIWorkspace");
 const WORKSPACE_ROOT = path.resolve(process.env.AIW_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
+const SERVER_TOKEN = process.env.AIW_SERVER_TOKEN || "";
 
 const TEXT_FILE_LIMIT = 5 * 1024 * 1024;
 
@@ -45,6 +51,11 @@ function handleUpgrade(req, socket) {
   const url = new URL(req.url || "/", "http://localhost");
   if (url.pathname !== "/api/live") {
     socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  if (!isAuthorized(req, url)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -101,6 +112,19 @@ function createAgentEngine() {
   });
 }
 
+function isPublicRequest(req, url) {
+  return req.method === "GET" && url.pathname === "/api/health";
+}
+
+function isAuthorized(req, url) {
+  if (!SERVER_TOKEN) return true;
+  const authorization = String(req.headers.authorization || "");
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const queryToken = url.searchParams.get("token") || "";
+  const headerToken = String(req.headers["x-aiw-token"] || "").trim();
+  return bearer === SERVER_TOKEN || queryToken === SERVER_TOKEN || headerToken === SERVER_TOKEN;
+}
+
 async function handleLiveCommand(engine, message) {
   const command = String(message.command || message.type || "");
   const params = message.params || {};
@@ -129,6 +153,12 @@ async function handleLiveCommand(engine, message) {
   }
   if (command === "approval.inbox.respond") {
     return await engine.respondToWorkspaceApproval(String(params.approvalId || params.id || ""), params);
+  }
+  if (command === "task.resume") {
+    return await engine.resumeTask(String(params.taskId || params.id || ""), params);
+  }
+  if (command === "task.cancel") {
+    return await engine.cancelTask(String(params.taskId || params.id || ""), params);
   }
   if (command === "config.accessMode") {
     await engine.setAccessMode(String(params.sessionId || ""), params.accessMode);
@@ -185,9 +215,16 @@ async function handleRequest(req, res) {
     const url = new URL(req.url || "/", "http://localhost");
     if (req.method === "OPTIONS") return sendNoContent(res);
     setCors(res);
+    if (!isPublicRequest(req, url) && !isAuthorized(req, url)) {
+      return sendJson(res, { ok: false, error: "Unauthorized." }, 401);
+    }
 
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return sendJson(res, { ok: true, service: "ai-workspace" });
+      return sendJson(res, {
+        ok: true,
+        service: "ai-workspace",
+        authRequired: Boolean(SERVER_TOKEN)
+      });
     }
     if (req.method === "GET" && url.pathname === "/api/workspace") {
       return sendJson(res, await workspaceInfo());
@@ -234,8 +271,17 @@ async function handleRequest(req, res) {
     if (req.method === "DELETE" && url.pathname === "/api/file") {
       return sendJson(res, await deletePath(url));
     }
+    if (req.method === "GET" && url.pathname === "/api/file/metadata") {
+      return sendJson(res, await fileMetadata(url));
+    }
     if (req.method === "POST" && url.pathname === "/api/context") {
       return sendJson(res, await resolveContext(req));
+    }
+    if (req.method === "GET" && url.pathname === "/api/index/status") {
+      return sendJson(res, await indexStatus());
+    }
+    if (req.method === "POST" && url.pathname === "/api/index/rebuild") {
+      return sendJson(res, await rebuildIndex());
     }
     if (req.method === "GET" && url.pathname === "/api/search/status") {
       return sendJson(res, searchStatus(WORKSPACE_ROOT));
@@ -243,12 +289,62 @@ async function handleRequest(req, res) {
     if (req.method === "POST" && url.pathname === "/api/search") {
       return sendJson(res, await runSearch(req));
     }
+    if (req.method === "GET" && url.pathname === "/api/skills") {
+      return sendJson(res, await skillsList());
+    }
+    const skillMatch = url.pathname.match(/^\/api\/skills\/([^/]+)$/);
+    if (skillMatch && req.method === "GET") {
+      return sendJson(res, await skillDetail(skillMatch[1]));
+    }
+    const skillEnableMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/enable$/);
+    if (skillEnableMatch && req.method === "POST") {
+      return sendJson(res, await setSkillEnabled(skillEnableMatch[1], true));
+    }
+    const skillDisableMatch = url.pathname.match(/^\/api\/skills\/([^/]+)\/disable$/);
+    if (skillDisableMatch && req.method === "POST") {
+      return sendJson(res, await setSkillEnabled(skillDisableMatch[1], false));
+    }
+    if (req.method === "GET" && url.pathname === "/api/security") {
+      return sendJson(res, await readSecurityConfig(WORKSPACE_ROOT));
+    }
+    if (req.method === "POST" && url.pathname === "/api/security") {
+      return sendJson(res, await updateSecurity(req));
+    }
+    if (req.method === "GET" && url.pathname === "/api/mcp") {
+      return sendJson(res, await listMcpServers());
+    }
+    if (req.method === "POST" && url.pathname === "/api/mcp") {
+      return sendJson(res, await addMcpServer(req), 201);
+    }
+    const mcpEnableMatch = url.pathname.match(/^\/api\/mcp\/([^/]+)\/enable$/);
+    if (mcpEnableMatch && req.method === "POST") {
+      return sendJson(res, await setMcpEnabled(mcpEnableMatch[1], true));
+    }
+    const mcpDisableMatch = url.pathname.match(/^\/api\/mcp\/([^/]+)\/disable$/);
+    if (mcpDisableMatch && req.method === "POST") {
+      return sendJson(res, await setMcpEnabled(mcpDisableMatch[1], false));
+    }
+    const mcpDeleteMatch = url.pathname.match(/^\/api\/mcp\/([^/]+)$/);
+    if (mcpDeleteMatch && req.method === "DELETE") {
+      return sendJson(res, await removeMcpServer(mcpDeleteMatch[1]));
+    }
+    if (req.method === "GET" && url.pathname === "/api/doctor") {
+      return sendJson(res, await doctorStatus());
+    }
     if (req.method === "GET" && url.pathname === "/api/agent/tasks") {
       return sendJson(res, await listAgentTasks(url));
     }
     const taskMatch = url.pathname.match(/^\/api\/agent\/tasks\/([^/]+)$/);
     if (taskMatch && req.method === "GET") {
       return sendJson(res, await readAgentTask(taskMatch[1]));
+    }
+    const taskResumeMatch = url.pathname.match(/^\/api\/agent\/tasks\/([^/]+)\/resume$/);
+    if (taskResumeMatch && req.method === "POST") {
+      return sendJson(res, await resumeAgentTask(taskResumeMatch[1], req));
+    }
+    const taskCancelMatch = url.pathname.match(/^\/api\/agent\/tasks\/([^/]+)\/cancel$/);
+    if (taskCancelMatch && req.method === "POST") {
+      return sendJson(res, await cancelAgentTask(taskCancelMatch[1], req));
     }
     if (req.method === "GET" && url.pathname === "/api/agent/approvals") {
       return sendJson(res, await listAgentApprovals(url));
@@ -591,14 +687,179 @@ async function deletePath(url) {
   return { ok: true, path: relativePath };
 }
 
+async function fileMetadata(url) {
+  const filePath = requireQuery(url, "path");
+  return await readFileMetadata(WORKSPACE_ROOT, filePath);
+}
+
 async function resolveContext(req) {
   const body = await readJsonBody(req);
   return await buildWorkspaceContext(WORKSPACE_ROOT, body);
 }
 
+async function indexStatus() {
+  const index = await readIndex(WORKSPACE_ROOT);
+  return {
+    provider: index.provider,
+    builtAt: index.builtAt,
+    itemCount: index.itemCount || 0,
+    indexPath: ".ai-workspace/index/files.json"
+  };
+}
+
+async function rebuildIndex() {
+  const index = await buildIndex(WORKSPACE_ROOT);
+  return {
+    ok: true,
+    provider: index.provider,
+    builtAt: index.builtAt,
+    itemCount: index.itemCount
+  };
+}
+
 async function runSearch(req) {
   const body = await readJsonBody(req);
   return await searchWorkspace(WORKSPACE_ROOT, body);
+}
+
+async function skillsList() {
+  const skills = await listSkills(WORKSPACE_ROOT);
+  return {
+    skills: skills.map((skill) => ({
+      name: skill.name,
+      enabled: Boolean(skill.config?.enabled),
+      triggers: skill.config?.triggers || [],
+      taskTypes: skill.config?.taskTypes || []
+    }))
+  };
+}
+
+async function skillDetail(name) {
+  return await readSkill(WORKSPACE_ROOT, decodeURIComponent(name));
+}
+
+async function setSkillEnabled(name, enabled) {
+  await assertSkillExists(name);
+  const skill = await enableSkill(WORKSPACE_ROOT, decodeURIComponent(name), enabled);
+  return {
+    ok: true,
+    name: skill.name,
+    enabled: Boolean(skill.config?.enabled)
+  };
+}
+
+async function assertSkillExists(name) {
+  const decoded = decodeURIComponent(name);
+  const skills = await listSkills(WORKSPACE_ROOT);
+  if (!skills.some((skill) => skill.name === decoded)) {
+    throw Object.assign(new Error(`Skill not found: ${decoded}`), { status: 404 });
+  }
+}
+
+async function updateSecurity(req) {
+  const body = await readJsonBody(req);
+  const current = await readSecurityConfig(WORKSPACE_ROOT);
+  const next = {
+    approvalMode: body.approvalMode ?? current.approvalMode,
+    allowShell: body.allowShell ?? current.allowShell,
+    allowedCommands: Array.isArray(body.allowedCommands) ? body.allowedCommands : current.allowedCommands,
+    deniedCommands: Array.isArray(body.deniedCommands) ? body.deniedCommands : current.deniedCommands,
+    requireApproval: Array.isArray(body.requireApproval) ? body.requireApproval : current.requireApproval
+  };
+  await writeSecurityConfig(WORKSPACE_ROOT, next);
+  return { ok: true, security: next };
+}
+
+async function listMcpServers() {
+  const config = await readRuntimeConfig(WORKSPACE_ROOT);
+  return { servers: config.mcpServers || [] };
+}
+
+async function addMcpServer(req) {
+  const body = await readJsonBody(req);
+  const name = safeMcpName(body.name);
+  const command = String(body.command || "").trim();
+  if (!command) throw Object.assign(new Error("Missing MCP command."), { status: 400 });
+  const config = await readRuntimeConfig(WORKSPACE_ROOT);
+  const servers = config.mcpServers || [];
+  if (servers.some((server) => server.name === name)) {
+    throw Object.assign(new Error(`MCP server already exists: ${name}`), { status: 409 });
+  }
+  servers.push({
+    name,
+    command,
+    args: Array.isArray(body.args) ? body.args.map(String) : [],
+    enabled: body.enabled !== false
+  });
+  await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: servers });
+  return { ok: true, server: servers.at(-1) };
+}
+
+async function setMcpEnabled(name, enabled) {
+  const target = safeMcpName(decodeURIComponent(name));
+  const config = await readRuntimeConfig(WORKSPACE_ROOT);
+  const servers = config.mcpServers || [];
+  const server = servers.find((item) => item.name === target);
+  if (!server) throw Object.assign(new Error(`MCP server not found: ${target}`), { status: 404 });
+  server.enabled = enabled;
+  await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: servers });
+  return { ok: true, server };
+}
+
+async function removeMcpServer(name) {
+  const target = safeMcpName(decodeURIComponent(name));
+  const config = await readRuntimeConfig(WORKSPACE_ROOT);
+  const servers = config.mcpServers || [];
+  const next = servers.filter((item) => item.name !== target);
+  if (next.length === servers.length) {
+    throw Object.assign(new Error(`MCP server not found: ${target}`), { status: 404 });
+  }
+  await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: next });
+  return { ok: true, removed: target };
+}
+
+async function doctorStatus() {
+  const [config, security, skills, index, audit] = await Promise.all([
+    readRuntimeConfig(WORKSPACE_ROOT),
+    readSecurityConfig(WORKSPACE_ROOT),
+    listSkills(WORKSPACE_ROOT),
+    readIndex(WORKSPACE_ROOT),
+    readAuditSummary(WORKSPACE_ROOT)
+  ]);
+  return {
+    ok: true,
+    service: "ai-workspace",
+    workspaceRoot: WORKSPACE_ROOT,
+    authRequired: Boolean(SERVER_TOKEN),
+    runtime: {
+      defaultModel: config.defaultModel,
+      fallbackChain: config.fallbackChain || [],
+      disabledTools: config.disabledTools || []
+    },
+    mcp: {
+      count: (config.mcpServers || []).length,
+      enabledCount: (config.mcpServers || []).filter((server) => server.enabled !== false).length
+    },
+    skills: {
+      count: skills.length,
+      enabledCount: skills.filter((skill) => skill.config?.enabled).length
+    },
+    security,
+    index: {
+      builtAt: index.builtAt,
+      itemCount: index.itemCount || 0
+    },
+    audit,
+    search: searchStatus(WORKSPACE_ROOT)
+  };
+}
+
+function safeMcpName(value) {
+  const name = String(value || "").trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    throw Object.assign(new Error("MCP server name must contain only letters, numbers, dashes, and underscores."), { status: 400 });
+  }
+  return name;
 }
 
 async function createCodeTask(req) {
@@ -627,6 +888,26 @@ async function readAgentTask(taskId) {
   const engine = createAgentEngine();
   try {
     return await engine.readTask(decodeURIComponent(taskId));
+  } finally {
+    engine.close();
+  }
+}
+
+async function resumeAgentTask(taskId, req) {
+  const body = await readJsonBody(req);
+  const engine = createAgentEngine();
+  try {
+    return await engine.resumeTask(decodeURIComponent(taskId), body);
+  } finally {
+    engine.close();
+  }
+}
+
+async function cancelAgentTask(taskId, req) {
+  const body = await readJsonBody(req);
+  const engine = createAgentEngine();
+  try {
+    return await engine.cancelTask(decodeURIComponent(taskId), body);
   } finally {
     engine.close();
   }

@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class WorkspaceStore: ObservableObject {
     @Published var serverURLText = UserDefaults.standard.string(forKey: "workspace.serverURL") ?? "http://127.0.0.1:8787"
+    @Published var serverAuthToken = UserDefaults.standard.string(forKey: "workspace.serverAuthToken") ?? ""
     @Published var workspace: WorkspaceInfo?
     @Published var notes: [WorkspaceItem] = []
     @Published var code: [WorkspaceItem] = []
@@ -49,7 +50,7 @@ final class WorkspaceStore: ObservableObject {
 
     var api: WorkspaceAPI? {
         guard let url = URL(string: serverURLText) else { return nil }
-        return WorkspaceAPI(baseURL: url)
+        return WorkspaceAPI(baseURL: url, authToken: serverAuthToken)
     }
 
     var serverURLUsesLocalhost: Bool {
@@ -82,6 +83,10 @@ final class WorkspaceStore: ObservableObject {
 
     func persistServerURLText() {
         UserDefaults.standard.set(serverURLText, forKey: "workspace.serverURL")
+    }
+
+    func persistServerAuthToken() {
+        UserDefaults.standard.set(serverAuthToken, forKey: "workspace.serverAuthToken")
     }
 
     func useMacTailscaleServerURL() {
@@ -793,7 +798,7 @@ final class WorkspaceStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            try await liveClient.connect(baseURL: url) { [weak self] envelope in
+            try await liveClient.connect(baseURL: url, authToken: serverAuthToken) { [weak self] envelope in
                 Task { @MainActor in
                     self?.handleLiveEnvelope(envelope)
                 }
@@ -841,7 +846,7 @@ final class WorkspaceStore: ObservableObject {
             chatLines = chatLinesFromHistory(history, fallbackTitle: session.title)
             activeActivityLineId = nil
             isChatTurnOpen = false
-            try await liveClient.connect(baseURL: url) { [weak self] envelope in
+            try await liveClient.connect(baseURL: url, authToken: serverAuthToken) { [weak self] envelope in
                 Task { @MainActor in
                     self?.handleLiveEnvelope(envelope)
                 }

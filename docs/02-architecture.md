@@ -151,3 +151,10 @@ The native runtime also exposes a first read-only tool registry:
 - `workspace_list_tree`: list files and folders under a workspace path.
 
 Tool calls are executed by AI Workspace itself, emitted as `tool.start`, `tool.complete`, or `tool.error` live events, then passed back to the model as tool results before the final assistant message is streamed.
+
+MCP tool calls that need user approval no longer block the runtime stream while
+the server polls for a decision. The runtime now creates an approval request,
+marks the owning task as `approval_required`, stores a compact `pendingState`,
+and returns control to the client. Approval resumes the saved task state through
+the Workspace Agent Engine; rejection or cancellation resolves the task without
+executing the pending MCP tool call.

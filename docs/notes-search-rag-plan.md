@@ -1,0 +1,224 @@
+# Notes, PDF, Search, And RAG Plan
+
+AI Workspace should treat notes, PDFs, attachments, and code projects as
+server-owned workspace resources. Clients display and edit them, but indexing
+and retrieval belong to the Workspace Server.
+
+## Workspace Structure
+
+Default workspace root:
+
+```text
+AIWorkspace/
+├── Notes/
+├── Code/
+├── Documents/
+├── Attachments/
+└── .ai-workspace/
+```
+
+The user sees an Obsidian/VS Code-style tree. Internally, the server tracks
+metadata, index state, sessions, tasks, approvals, and tool logs.
+
+## Current File Index
+
+Implemented module:
+
+```text
+server/lib/file-index.mjs
+```
+
+Index path:
+
+```text
+.ai-workspace/index/files.json
+```
+
+Index item:
+
+```json
+{
+  "path": "Notes/example.md",
+  "kind": "markdown",
+  "extension": ".md",
+  "size": 1234,
+  "modifiedAt": "2026-07-09T00:00:00.000Z",
+  "hash": "sha256-...",
+  "indexedAt": "2026-07-09T00:00:01.000Z",
+  "indexStatus": "indexed"
+}
+```
+
+Current APIs:
+
+```text
+GET  /api/file/metadata?path=Notes/example.md
+GET  /api/index/status
+POST /api/index/rebuild
+```
+
+This is a metadata index, not yet a vector index.
+
+## Current Search
+
+Implemented module:
+
+```text
+server/lib/search-service.mjs
+```
+
+Current provider:
+
+```text
+workspace-scan
+```
+
+Capabilities:
+
+- scope search
+- content search
+- filename search
+- result snippets
+- `kind` / `kinds` filter
+- `modifiedAfter` / `modifiedBefore` filter
+
+Search API:
+
+```text
+GET  /api/search/status
+POST /api/search
+```
+
+Example:
+
+```json
+{
+  "query": "architecture",
+  "scopePath": "Notes",
+  "kinds": ["markdown"],
+  "maxResults": 10
+}
+```
+
+## PDF Strategy
+
+Phase 2 target is not full GoodNotes-level annotation yet. The stable order is:
+
+1. Serve PDFs as raw files for client preview.
+2. Store file metadata in `.ai-workspace/index/files.json`.
+3. Add PDF text extraction where possible.
+4. Add extracted text chunks to the search layer.
+5. Add server-side annotation storage.
+6. Add OCR for scanned PDFs later.
+
+PDF annotations should not be stored only inside a client-local app cache. They
+should be workspace-owned so iPhone, iPad, and Mac see the same annotation
+state.
+
+Suggested later annotation state:
+
+```text
+.ai-workspace/pdf-annotations/<file-hash>.json
+```
+
+## RAG Direction
+
+The Workspace Server should decide when to inline context and when to search.
+Clients should send compact context requests, not huge file bundles.
+
+Recommended context flow:
+
+```text
+user message
+  -> contextRequest
+  -> Workspace Server context router
+  -> small scope: inline text
+  -> large scope: search/RAG hint
+  -> runtime prompt/tool calls
+```
+
+For whole-folder, whole-workspace, or PDF-heavy questions, the runtime should
+prefer server-side search tools rather than attaching many raw files.
+
+## docsearch MCP Integration
+
+docsearch should be treated as a server capability:
+
+```text
+aiw mcp add docsearch <command> [args...]
+aiw mcp enable docsearch
+```
+
+Expected path:
+
+```text
+question
+  -> model decides search is needed
+  -> MCP/docsearch tool call
+  -> approval policy if required
+  -> retrieved chunks
+  -> model answer
+```
+
+The current MCP approval implementation pauses as `approval_required` and can be
+resumed with a stored `pendingState`, so long search/tool operations should not
+block the server while waiting for user approval.
+
+## Roadmap
+
+### Step 1: Metadata Index
+
+Done:
+
+- `server/lib/file-index.mjs`
+- `/api/file/metadata`
+- `/api/index/status`
+- `/api/index/rebuild`
+
+### Step 2: Search Quality
+
+Done:
+
+- filename hit support
+- kind filter
+- modified date filter
+
+Next:
+
+- rank exact filename matches higher
+- include index metadata in search results
+- expose search/index status in Apple UI
+
+### Step 3: PDF Text
+
+Next:
+
+- extract text from selectable PDFs
+- store extraction status in index metadata
+- expose extraction errors as index status
+
+### Step 4: RAG Provider
+
+Next:
+
+- support docsearch MCP as first external RAG backend
+- add `/api/index/rebuild` handoff to docsearch when configured
+- add top-k chunk retrieval API for server-internal use
+
+### Step 5: Client UX
+
+Next:
+
+- show file metadata panel
+- show indexed/not indexed badges
+- show PDF text extraction state
+- show search provider status
+- let users rebuild index from Settings/Diagnostics
+
+## Non-goals For This Phase
+
+- Full multi-user permission model
+- Handwritten PDF annotation sync
+- OCR for scanned PDFs
+- Full vector database ownership
+- Client-side direct indexing

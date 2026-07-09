@@ -1,5 +1,7 @@
 # AI Workspace
 
+![check](https://github.com/jeongu0569-ui/AI-Workspace-on-hermes/actions/workflows/check.yml/badge.svg)
+
 AI Workspace is a server-centered workspace app for chat, notes, PDFs, search, and code tasks.
 
 **Architecture Note**: AI Workspace directly absorbs the Hermes core runtime natively. It is not an adapter or bridge structure connecting to an external Hermes server. Instead, it natively implements the same robust model/provider/auth/session/tool/mcp/approval/runtime systems directly inside AI Workspace, overlaid by the workspace, notes, search, and code project layers.
@@ -40,6 +42,9 @@ This repository currently contains the first server-centered scaffold:
 - live WebSocket endpoint at `WS /api/live`
 - workspace context router for note/folder/PDF/workspace scopes
 - fallback workspace text search API
+- file metadata index API
+- optional bearer-token server auth via `AIW_SERVER_TOKEN`
+- skills, security, MCP, and doctor management APIs
 - code task inspect/propose/apply/check/git loop
 - approval inbox API
 - macOS/iOS SwiftUI client shell
@@ -53,6 +58,8 @@ The first Apple client lives in `client/apple`.
 export AIW_WORKSPACE_ROOT="$HOME/AIWorkspace"
 export AIW_HOST="127.0.0.1"
 export AIW_PORT="8787"
+# Optional. Required by clients when set.
+# export AIW_SERVER_TOKEN="choose-a-long-local-token"
 
 aiw serve
 ```
@@ -116,19 +123,35 @@ PATCH /api/file/move
 POST /api/file/copy
 DELETE /api/file?path=Notes/example.md
 POST /api/context
+GET  /api/file/metadata?path=Notes/example.md
+GET  /api/index/status
+POST /api/index/rebuild
 GET  /api/search/status
 POST /api/search
+GET  /api/skills
+GET  /api/security
+GET  /api/mcp
+GET  /api/doctor
 
 GET  /api/models
 GET  /api/sessions
 POST /api/sessions
 GET  /api/sessions/:id/messages
 DELETE /api/sessions/:id
+GET  /api/agent/tasks
+POST /api/agent/tasks/:id/resume
+POST /api/agent/tasks/:id/cancel
+GET  /api/agent/approvals
+POST /api/agent/approvals/:id/respond
 WS   /api/live
 ```
 
 Client requests use workspace-relative paths only. Absolute paths and `..`
 path traversal are rejected by the server.
+
+When `AIW_SERVER_TOKEN` is set, every endpoint except `GET /api/health`
+requires `Authorization: Bearer <token>` or a `token` query parameter for raw
+file/WebSocket URLs.
 
 The live endpoint accepts JSON commands such as `session.create`,
 `prompt.submit`, and `approval.respond`, then forwards runtime events back to
@@ -144,6 +167,9 @@ the client.
 - [Runtime migration note](docs/06-runtime-migration.md)
 - [Apple client](docs/07-apple-client.md)
 - [Run commands](docs/08-run-commands.md)
+- [API contract](docs/api-contract.md)
+- [Apple client API audit](docs/apple-client-api-audit.md)
+- [Notes/search/RAG plan](docs/notes-search-rag-plan.md)
 
 ## Run The Apple Client
 

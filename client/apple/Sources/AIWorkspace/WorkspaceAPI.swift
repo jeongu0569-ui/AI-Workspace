@@ -16,6 +16,7 @@ enum WorkspaceAPIError: Error, LocalizedError {
 
 struct WorkspaceAPI {
     var baseURL: URL
+    var authToken: String = ""
     var session: URLSession = .shared
 
     func workspace() async throws -> WorkspaceInfo {
@@ -43,7 +44,7 @@ struct WorkspaceAPI {
 
     func rawURL(path: String) throws -> URL {
         var components = try components("/api/raw")
-        components.queryItems = [URLQueryItem(name: "path", value: path)]
+        components.queryItems = authQueryItems([URLQueryItem(name: "path", value: path)])
         guard let url = components.url else { throw WorkspaceAPIError.invalidURL }
         return url
     }
@@ -52,6 +53,7 @@ struct WorkspaceAPI {
         let url = try rawURL(path: path)
         var request = URLRequest(url: url)
         request.setValue("*/*", forHTTPHeaderField: "accept")
+        applyAuth(to: &request)
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
@@ -288,6 +290,7 @@ struct WorkspaceAPI {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "accept")
+        applyAuth(to: &request)
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "content-type")
             request.httpBody = try JSONEncoder().encode(AnyEncodable(body))
@@ -298,6 +301,18 @@ struct WorkspaceAPI {
             throw WorkspaceAPIError.badStatus(status, String(data: data, encoding: .utf8) ?? "")
         }
         return data
+    }
+
+    private func applyAuth(to request: inout URLRequest) {
+        let token = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    }
+
+    private func authQueryItems(_ items: [URLQueryItem]) -> [URLQueryItem] {
+        let token = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return items }
+        return items + [URLQueryItem(name: "token", value: token)]
     }
 }
 

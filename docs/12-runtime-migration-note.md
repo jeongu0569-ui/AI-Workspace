@@ -58,6 +58,13 @@ The first migration step is already underway:
 - Assistant replies are now persisted to `.ai-workspace/sessions` from live
   streaming events, so session history and visible streamed output share the
   same runtime path.
+- MCP tool calls that need approval now pause as workspace tasks with
+  `status=approval_required`, `approvalIds[]`, and server-owned `pendingState`.
+  They can be approved/resumed, rejected, or cancelled without keeping the
+  original model/tool stream blocked.
+- Security policy decisions now write a first audit log under
+  `.ai-workspace/audit/audit.jsonl`, and `/api/doctor` reports recent denied and
+  approval-required counts.
 
 ## Next Step
 

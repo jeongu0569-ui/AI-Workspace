@@ -6,6 +6,21 @@ Base URL during local development:
 http://127.0.0.1:8787
 ```
 
+## Auth
+
+`GET /api/health` is public. If the server is started with
+`AIW_SERVER_TOKEN`, every other endpoint requires:
+
+```text
+Authorization: Bearer <token>
+```
+
+Raw-file URLs and WebSocket connections can also pass:
+
+```text
+?token=<token>
+```
+
 ## Workspace
 
 ### `GET /api/health`
@@ -59,6 +74,11 @@ GET /api/tree?root=notes&path=Work
 Reads a text file. This is for markdown and small text/code files.
 
 Large files should use `/api/raw` or future search/index APIs.
+
+### `GET /api/file/metadata?path=Notes/Work/a.md`
+
+Returns server-side file metadata, including kind, size, extension, modified
+time, and hash when the file is small enough to hash cheaply.
 
 ### `GET /api/raw?path=Documents/a.pdf`
 
@@ -227,6 +247,54 @@ Future provider:
 docsearch-mcp / vector index
 ```
 
+### `GET /api/index/status`
+
+Returns the current metadata index summary from `.ai-workspace/index/files.json`.
+
+### `POST /api/index/rebuild`
+
+Rebuilds the current workspace file metadata index. This indexes file metadata,
+not vector embeddings.
+
+## Runtime Management
+
+### Skills
+
+```text
+GET  /api/skills
+GET  /api/skills/:name
+POST /api/skills/:name/enable
+POST /api/skills/:name/disable
+```
+
+### Security
+
+```text
+GET  /api/security
+POST /api/security
+```
+
+The security endpoint reads and writes approval mode, shell policy, allow/deny
+commands, and required approval categories.
+
+### MCP
+
+```text
+GET    /api/mcp
+POST   /api/mcp
+DELETE /api/mcp/:name
+POST   /api/mcp/:name/enable
+POST   /api/mcp/:name/disable
+```
+
+### Doctor
+
+```text
+GET /api/doctor
+```
+
+Returns runtime, MCP, skills, security, index, and search summary.
+
 ## Workspace Agent
 
 ### `GET /api/agent/tasks`
@@ -257,6 +325,47 @@ Response:
 ### `GET /api/agent/tasks/:id`
 
 Returns the full task record from `.ai-workspace/tasks/:id.json`.
+
+Task status values used by the general Workspace Agent path are:
+
+```text
+queued
+running
+approval_required
+completed
+failed
+cancelled
+```
+
+When an MCP tool call needs approval, the task is stored as
+`approval_required`. The task record includes `approvalIds[]` and a
+`pendingState` object that the server can resume after approval. Clients should
+show the approval inbox item instead of waiting on a long-polling tool call.
+
+### `POST /api/agent/tasks/:id/resume`
+
+Resumes a task that is waiting in `approval_required` state.
+
+```json
+{
+  "approvalId": "approval-..."
+}
+```
+
+The server replays the stored `pendingState` through the runtime with approval
+already granted. If the task already finished, the response reports that it was
+already resolved rather than running it again.
+
+### `POST /api/agent/tasks/:id/cancel`
+
+Cancels a queued, running, or `approval_required` task without executing its
+pending state.
+
+```json
+{
+  "reason": "User cancelled from the approval inbox."
+}
+```
 
 ### `GET /api/agent/approvals`
 
@@ -294,7 +403,8 @@ Returns the full approval record.
 Approves or rejects a workspace-owned approval request. For `code.patch.apply`,
 approval applies the patch and rejection rejects the patch proposal. For
 `code.checks.run`, approval runs the detected checks and rejection only records
-the rejected decision.
+the rejected decision. For `mcp.tool.call`, approval resumes the task's stored
+`pendingState` and rejection fails that task without calling the MCP server.
 
 Request:
 

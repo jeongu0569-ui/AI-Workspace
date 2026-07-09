@@ -53,7 +53,10 @@ export async function searchWorkspace(workspaceRoot, request = {}) {
   const scopePath = resolveWorkspacePath(workspaceRoot, request.scopePath || "").relativePath;
   const maxResults = clampNumber(request.maxResults, 1, 100, DEFAULT_MAX_RESULTS);
   const maxScanFiles = clampNumber(request.maxScanFiles, 10, 5000, DEFAULT_MAX_SCAN_FILES);
-  const candidates = await listSearchableFiles(workspaceRoot, scopePath, { maxScanFiles });
+  const candidates = filterCandidates(
+    await listSearchableFiles(workspaceRoot, scopePath, { maxScanFiles }),
+    request
+  );
   const results = [];
   for (const file of candidates) {
     if (results.length >= maxResults) break;
@@ -102,6 +105,18 @@ async function listSearchableFiles(workspaceRoot, relativePath, options) {
 }
 
 async function searchFile(file, query) {
+  const needle = query.toLocaleLowerCase();
+  const filenameIndex = file.path.toLocaleLowerCase().indexOf(needle);
+  if (filenameIndex >= 0) {
+    return {
+      path: file.path,
+      kind: file.kind,
+      size: file.size,
+      modifiedAt: file.modifiedAt,
+      score: 1.25,
+      snippet: file.path
+    };
+  }
   let text;
   try {
     text = await fs.readFile(file.absolutePath, "utf8");
@@ -109,7 +124,6 @@ async function searchFile(file, query) {
     return null;
   }
   const haystack = text.toLocaleLowerCase();
-  const needle = query.toLocaleLowerCase();
   const index = haystack.indexOf(needle);
   if (index < 0) return null;
   return {
@@ -120,6 +134,31 @@ async function searchFile(file, query) {
     score: scoreHit(text, query, index),
     snippet: snippet(text, index, query.length)
   };
+}
+
+function filterCandidates(candidates, request) {
+  const kinds = new Set(
+    []
+      .concat(request.kind || [])
+      .concat(request.kinds || [])
+      .filter(Boolean)
+      .map((item) => String(item).toLowerCase())
+  );
+  const modifiedAfter = parseDate(request.modifiedAfter);
+  const modifiedBefore = parseDate(request.modifiedBefore);
+  return candidates.filter((file) => {
+    if (kinds.size > 0 && !kinds.has(String(file.kind).toLowerCase())) return false;
+    const modifiedAt = Date.parse(file.modifiedAt);
+    if (modifiedAfter && modifiedAt < modifiedAfter.getTime()) return false;
+    if (modifiedBefore && modifiedAt > modifiedBefore.getTime()) return false;
+    return true;
+  });
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  const time = Date.parse(String(value));
+  return Number.isFinite(time) ? new Date(time) : null;
 }
 
 function isSearchableTextFile(relativePath) {
@@ -148,4 +187,3 @@ function clampNumber(value, min, max, fallback) {
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
 }
-

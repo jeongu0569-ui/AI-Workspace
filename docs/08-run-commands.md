@@ -11,6 +11,20 @@ AIW_PORT="8787" \
 aiw serve
 ```
 
+Optional bearer-token protection:
+
+```bash
+AIW_WORKSPACE_ROOT="$HOME/AIWorkspace" \
+AIW_HOST="0.0.0.0" \
+AIW_PORT="8787" \
+AIW_SERVER_TOKEN="choose-a-long-local-token" \
+aiw serve
+```
+
+When `AIW_SERVER_TOKEN` is set, the Apple client must store the same token in
+Settings. CLI commands also read `AIW_SERVER_TOKEN` and send it as
+`Authorization: Bearer <token>`.
+
 Equivalent development command:
 
 ```bash
@@ -38,6 +52,20 @@ http://<server-ip-or-tailscale-ip>:8787
 aiw status
 aiw status --json
 curl http://127.0.0.1:8787/api/workspace
+```
+
+## Index
+
+```bash
+aiw index status
+aiw index rebuild
+aiw index search "architecture" --scope Notes --limit 10
+```
+
+Current index state is stored at:
+
+```text
+<workspace>/.ai-workspace/index/files.json
 ```
 
 Expected runtime fields:
@@ -130,6 +158,7 @@ to the model provider.
 curl http://127.0.0.1:8787/api/tree?root=notes
 curl http://127.0.0.1:8787/api/models
 curl http://127.0.0.1:8787/api/sessions
+curl http://127.0.0.1:8787/api/doctor
 ```
 
 Create a session:
@@ -147,6 +176,20 @@ aiw code create Code/demo-app "change the greeting"
 aiw code list
 aiw approvals list
 ```
+
+General task resume/cancel commands:
+
+```bash
+aiw tasks list
+aiw tasks show <taskId>
+aiw tasks resume <taskId>
+aiw tasks cancel <taskId> --reason "No longer needed"
+```
+
+Runtime work that needs approval, such as a policy-gated MCP tool call, is
+stored as `approval_required` instead of blocking the server while it waits.
+After approval, `aiw tasks resume <taskId>` or
+`POST /api/agent/approvals/:id/respond` can continue the saved pending state.
 
 Manual patch proposal:
 

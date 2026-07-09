@@ -1,7 +1,5 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
-import fs from "node:fs/promises";
 import {
   BUILTIN_PROVIDERS,
   readCredentials,
@@ -381,34 +379,37 @@ export class OpenAICompatibleRuntime extends EventEmitter {
         }
 
         if (policyCheck.status === "approve" && params.approved !== true) {
-          // Record approval request and wait
-          const approval = await recordMcpApproval(this.workspaceRoot, mcpName, originalToolName, argsObj);
-          
-          this.emit("event", {
-            type: "approval.request",
+          const pendingState = {
+            type: "mcp.tool.call",
             sessionId: params.sessionId,
             taskId: params.taskId,
-            approvalId: approval.id,
+            toolCall: call,
+            serverName: mcpName,
+            toolName: originalToolName,
+            arguments: argsObj,
+            reason: policyCheck.reason
+          };
+
+          this.emit("event", {
+            type: "approval.required",
+            sessionId: params.sessionId,
+            taskId: params.taskId,
             category: "mcp.tool.call",
-            summary: approval.summary
+            summary: `Execute MCP tool '${originalToolName}' on server '${mcpName}'`,
+            reason: policyCheck.reason,
+            pendingState
           });
-
-          // Block and poll for status
-          let approved = false;
-          for (let i = 0; i < 600; i++) {
-            const status = await readMcpApproval(this.workspaceRoot, approval.id);
-            if (status && status.status === "approved") {
-              approved = true;
-              break;
-            } else if (status && status.status === "rejected") {
-              break;
+          throw Object.assign(
+            new Error(`Approval required for MCP tool '${originalToolName}' on server '${mcpName}'.`),
+            {
+              status: 409,
+              approvalRequired: true,
+              category: "mcp.tool.call",
+              summary: `Execute MCP tool '${originalToolName}' on server '${mcpName}'`,
+              reason: policyCheck.reason,
+              pendingState
             }
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-
-          if (!approved) {
-            throw new Error(`MCP tool execution '${call.name}' was rejected or timed out waiting for approval.`);
-          }
+          );
         }
 
         const mcpResult = await client.callTool(originalToolName, argsObj);
@@ -502,6 +503,23 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     const session = this.sessions.get(sessionId) || { id: sessionId };
     session.reasoningEffort = reasoningEffort;
     this.sessions.set(sessionId, session);
+  }
+
+  async resumePendingState(pendingState = {}, params = {}) {
+    if (pendingState.type !== "mcp.tool.call") {
+      throw Object.assign(new Error(`Unsupported pending state: ${pendingState.type || "(none)"}`), { status: 400 });
+    }
+    const result = await this.executeToolCall(pendingState.toolCall, {
+      sessionId: pendingState.sessionId || params.sessionId,
+      taskId: pendingState.taskId || params.taskId,
+      approved: true
+    });
+    return {
+      ok: result?.ok !== false,
+      status: result?.ok === false ? "failed" : "completed",
+      type: pendingState.type,
+      result
+    };
   }
 
   async getOrStartMcpClient(mcpConfig) {
@@ -882,35 +900,4 @@ export function isDangerousMcpTool(tool) {
     "curl", "wget", "rm", "kill", "stop"
   ];
   return dangerousKeywords.some((kw) => name.includes(kw) || desc.includes(kw));
-}
-
-export async function recordMcpApproval(workspaceRoot, mcpName, toolName, argsObj) {
-  const approvalsDir = path.join(workspaceRoot, ".ai-workspace", "approvals");
-  await fs.mkdir(approvalsDir, { recursive: true });
-  const id = `approval-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
-  const approval = {
-    id,
-    approvalId: id,
-    type: "approval.request",
-    category: "mcp.tool.call",
-    status: "pending",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    serverName: mcpName,
-    toolName,
-    arguments: argsObj,
-    summary: `Execute MCP tool '${toolName}' on server '${mcpName}'`
-  };
-  await fs.writeFile(path.join(approvalsDir, `${id}.json`), JSON.stringify(approval, null, 2) + "\n", "utf8");
-  return approval;
-}
-
-export async function readMcpApproval(workspaceRoot, id) {
-  const approvalsDir = path.join(workspaceRoot, ".ai-workspace", "approvals");
-  try {
-    const text = await fs.readFile(path.join(approvalsDir, `${id}.json`), "utf8");
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
