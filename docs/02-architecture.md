@@ -2,6 +2,8 @@
 
 ## High-Level Shape
 
+Current transitional shape:
+
 ```text
 iOS / macOS Client
         │
@@ -26,6 +28,33 @@ Agent Adapters
         │   └── MCP/docsearch
         └── Future local/Codex-style code runtime
 ```
+
+Final target shape:
+
+```text
+iOS / macOS Client
+        │
+        ▼
+aiw serve
+        │
+        ├── Workspace Server
+        ├── Unified Engine
+        │   ├── Chat/session runtime
+        │   ├── Model/provider/auth registry
+        │   ├── Tool/MCP router
+        │   ├── Notes/PDF context runtime
+        │   └── CodeAgentRuntime
+        ├── Filesystem workspace root
+        ├── Search/index state
+        ├── Task memory/log/diff store
+        └── Approval/safety gate
+```
+
+The final direction is not "Workspace Server as a thin client for the Hermes
+app." The goal is a self-owned Unified Engine started by `aiw serve`, without
+requiring the Hermes desktop app or a separate Hermes CLI process for normal
+operation. The existing Hermes adapter is a migration bridge while Workspace
+chat/model/provider/auth behavior is internalized.
 
 The client should not talk directly to random filesystem paths. It talks to the
 Workspace Server using workspace-relative paths.

@@ -133,6 +133,29 @@ This proves that the Workspace Agent Engine can host more than the Hermes live
 adapter while still leaving Hermes responsible for the general chat/model/MCP
 layer.
 
+## Unified Engine Direction
+
+The current Hermes integration is transitional. It exists so the app can reuse
+Hermes live chat, provider configuration, authentication, tools, and MCP while
+the Workspace-owned engine grows.
+
+The final product direction is:
+
+```text
+aiw serve
+  -> Workspace Server
+  -> Unified Engine
+  -> model/provider/auth/session/tool/code/index runtimes
+```
+
+In that final shape, users should not need to separately start the Hermes
+desktop app, run `hermes serve`, or use a separate Hermes CLI for ordinary AI
+Workspace operation. `aiw model`, `aiw provider`, and `aiw auth` are currently
+wrappers around Hermes CLI because that is the safest migration step. They are
+not the final engine boundary. The later `HermesAdapter` removal/internalization
+phase should move those capabilities behind AI Workspace's own provider/auth
+registry and keep `aiw` as the stable user-facing command.
+
 ## Why Workspace Server Should Bridge Hermes
 
 The client could connect directly to Hermes, but a server bridge is better:

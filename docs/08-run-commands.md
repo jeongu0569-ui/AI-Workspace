@@ -97,6 +97,95 @@ npm start
 [workspace] listening on http://0.0.0.0:8787
 ```
 
+## 2.1 AI Workspace CLI
+
+사용자-facing 명령어는 `aiw`로 통일한다. 레포지토리에서 바로 테스트할 때는
+아래처럼 한 번 연결해 둔다.
+
+```bash
+cd /Users/user/Desktop/AI-Workspace-on-hermes
+npm link
+```
+
+이후에는 `npm start`, `curl`, `hermes model` 등을 직접 외우기보다 아래 명령을
+사용한다.
+
+```bash
+aiw serve \
+  --root "$HOME/HermesWorkspace" \
+  --hermes "http://127.0.0.1:9119"
+```
+
+iPhone/iPad 또는 Tailscale에서 붙을 때는 bind host만 명시한다.
+
+```bash
+aiw serve \
+  --host 0.0.0.0 \
+  --port 8787 \
+  --root "$HOME/HermesWorkspace" \
+  --hermes "http://127.0.0.1:9119"
+```
+
+상태 확인:
+
+```bash
+aiw status
+aiw status --json
+```
+
+Hermes 모델/프로바이더/인증은 AI Workspace가 새로 구현하지 않고 Hermes CLI에
+그대로 위임한다. 이것은 현재 과도기 구현이다.
+
+```bash
+aiw model
+aiw provider
+aiw auth
+```
+
+즉 위 명령은 내부적으로 각각 `hermes model`, `hermes provider`,
+`hermes auth`를 실행하는 wrapper다. Hermes 실행 파일 이름이 다르면
+`HERMES_BIN`을 지정한다.
+
+```bash
+HERMES_BIN=/path/to/hermes aiw model
+```
+
+최종 목표는 `aiw serve`만으로 Workspace Server와 Unified Engine 전체를 실행하는
+것이다. 그 단계에서는 사용자가 별도의 Hermes 앱, `hermes serve`, 또는 Hermes
+CLI를 직접 실행하지 않아도 된다. 현재 `aiw model/provider/auth` wrapper는 그
+전까지 사용자-facing 명령어를 `aiw`로 먼저 통일하기 위한 호환 계층이다.
+
+작업 기록 조회:
+
+```bash
+aiw tasks
+aiw tasks --type code --limit 10
+aiw tasks show <taskId>
+```
+
+Code Agent Runtime 작업:
+
+```bash
+aiw code create Code/my-app "이 프로젝트 구조를 보고 수정 계획을 만들어줘"
+aiw code list
+aiw code show <taskId>
+aiw code patch <taskId> --path src/index.js --find "old text" --replace "new text"
+aiw code apply <taskId> <proposalId>
+aiw code reject <taskId> <proposalId> --reason "방향이 다름"
+aiw code check <taskId>
+```
+
+검색/index 상태:
+
+```bash
+aiw index status
+aiw index search "scheduler" --scope Notes --limit 5
+```
+
+현재 MVP의 `aiw index`는 Workspace Server의 `/api/search`와
+`/api/search/status`를 감싼다. docsearch-mcp나 vector index rebuild는 나중에
+같은 `aiw index` 하위 명령으로 붙이면 된다.
+
 서버 상태 확인:
 
 ```bash
