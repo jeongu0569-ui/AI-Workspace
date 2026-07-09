@@ -4,7 +4,7 @@ export class LLMRuntime {
   }
 
   /**
-   * Returns true when the underlying chat runtime has a Hermes-backed backend.
+   * Returns true when the underlying chat runtime has a model execution backend.
    */
   isAvailable() {
     return Boolean(this.chatRuntime && this.chatRuntime.isAvailable());
@@ -13,7 +13,7 @@ export class LLMRuntime {
   async generateCodePatch(params) {
     if (!this.isAvailable()) {
       throw Object.assign(
-        new Error("Automatic patch generation requires Hermes runtime. Start/connect Hermes serve first."),
+        new Error("Automatic patch generation requires a configured model execution backend."),
         { status: 503, setupRequired: true }
       );
     }

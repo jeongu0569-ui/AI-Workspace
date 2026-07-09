@@ -4,14 +4,20 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readHermesProviderCatalog } from "../server/lib/hermes-core-runtime.mjs";
+import {
+  listCredentialStatus,
+  listProviderRegistry,
+  listRuntimeModels,
+  removeCredentialValue,
+  setCredentialValue,
+  setDefaultModel
+} from "../server/lib/runtime/config-store.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const SERVER_ENTRY = path.join(REPO_ROOT, "server", "index.mjs");
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
-const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "HermesWorkspace");
-const HERMES_WRAPPER_COMMANDS = new Set(["model", "auth"]);
+const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "AIWorkspace");
 
 main(process.argv.slice(2)).catch((error) => {
   console.error(`aiw: ${error.message}`);
@@ -22,11 +28,6 @@ async function main(argv) {
   const [command, ...args] = argv;
   if (!command || command === "help" || command === "--help" || command === "-h") {
     printHelp();
-    return;
-  }
-
-  if (HERMES_WRAPPER_COMMANDS.has(command)) {
-    await runHermes(command, args);
     return;
   }
 
@@ -68,11 +69,11 @@ function printHelp() {
   console.log(`AI Workspace CLI
 
 Usage:
-  aiw serve [--host 0.0.0.0] [--port 8787] [--root PATH] [--hermes URL]
+  aiw serve [--host 0.0.0.0] [--port 8787] [--root PATH]
   aiw status [--url URL] [--json]
-  aiw model [...]                         -> hermes model [...]
-  aiw provider [list|help]                -> read Hermes provider registry
-  aiw auth [...]                          -> hermes auth [...]
+  aiw model [list|set-default|show] [...]
+  aiw provider [list|help]
+  aiw auth [list|set|remove] [...]
   aiw approvals [list|show|approve|reject] [...]
   aiw tasks [list|show] [...]
   aiw code <list|create|show|patch|apply|reject|check> [...]
@@ -80,7 +81,7 @@ Usage:
 
 Quick start:
   aiw serve
-  aiw model
+  aiw model list
   aiw auth list
 
 Aliases:
@@ -88,8 +89,9 @@ Aliases:
 
 Environment:
   AIW_SERVER_URL          Workspace Server URL for API commands
-  HERMES_WORKSPACE_ROOT   Workspace root used by aiw serve/tasks
-  HERMES_SERVER_URL       Hermes serve URL used by the workspace bridge
+  AIW_WORKSPACE_ROOT      Workspace root used by aiw serve/tasks
+  AIW_HOST                Workspace Server bind host
+  AIW_PORT                Workspace Server port
 `);
 }
 
@@ -97,28 +99,20 @@ async function runServe(args) {
   const options = parseOptions(args, { boolean: ["help"] });
   if (options.help) {
     console.log(`Usage:
-  aiw serve [--host 0.0.0.0] [--port 8787] [--root PATH] [--hermes URL]
+  aiw serve [--host 0.0.0.0] [--port 8787] [--root PATH]
 
 Options:
   --host VALUE       Bind host. Default: 127.0.0.1
   --port VALUE       Workspace Server port. Default: 8787
-  --root PATH        Workspace root. Default: ~/HermesWorkspace
-  --hermes URL       Hermes serve URL. Default: http://127.0.0.1:9119
-  --username VALUE   Dashboard username
-  --password VALUE   Dashboard password
-  --provider VALUE   Dashboard auth provider
+  --root PATH        Workspace root. Default: ~/AIWorkspace
 `);
     return;
   }
 
   const env = { ...process.env };
-  setEnvFromOption(env, options, ["host"], "WORKSPACE_HOST");
-  setEnvFromOption(env, options, ["port"], "PORT");
-  setEnvFromOption(env, options, ["root", "workspace-root"], "HERMES_WORKSPACE_ROOT", expandHome);
-  setEnvFromOption(env, options, ["hermes", "hermes-url"], "HERMES_SERVER_URL");
-  setEnvFromOption(env, options, ["username"], "HERMES_DASHBOARD_USERNAME");
-  setEnvFromOption(env, options, ["password"], "HERMES_DASHBOARD_PASSWORD");
-  setEnvFromOption(env, options, ["provider"], "HERMES_DASHBOARD_PROVIDER");
+  setEnvFromOption(env, options, ["host"], "AIW_HOST");
+  setEnvFromOption(env, options, ["port"], "AIW_PORT");
+  setEnvFromOption(env, options, ["root", "workspace-root"], "AIW_WORKSPACE_ROOT", expandHome);
 
   await runProcess(process.execPath, [SERVER_ENTRY], {
     cwd: REPO_ROOT,
@@ -145,18 +139,13 @@ async function runStatus(args) {
     return;
   }
 
-  const hermesCompatEnabled = workspace.hermes?.compatStatus === "enabled";
-
   console.log(`Workspace Server: ${health.ok ? "ok" : "unknown"}`);
   console.log(`Workspace Root: ${workspace.workspaceRoot || "(unknown)"}`);
   console.log(`Code Runtime: ok`);
   console.log(`Approval Inbox: ok`);
   console.log(`Search Provider: ${workspace.search?.provider || "(unknown)"}`);
   console.log(`Chat Runtime: ${workspace.chatRuntime?.status || "unavailable"}`);
-  console.log(`Hermes Compat: ${workspace.hermes?.compatStatus || "disabled"}`);
-  if (!hermesCompatEnabled) {
-    console.log(`Reason: ${workspace.hermes?.reason || "HERMES_SERVER_URL is not configured"}`);
-  }
+  console.log(`Runtime: ${workspace.runtime?.status || "unknown"}`);
 }
 
 async function runTasks(args) {
@@ -537,16 +526,6 @@ async function indexSearch(args) {
   }
 }
 
-async function runHermes(command, args) {
-  const hermesBin = process.env.HERMES_BIN || "hermes";
-  await runProcess(hermesBin, [command, ...args], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: "inherit",
-    notFoundMessage: `Hermes CLI was not found. Install Hermes or set HERMES_BIN. Tried: ${hermesBin}`
-  });
-}
-
 async function patchChangesFromOptions(options) {
   if (options.changes) {
     const file = expandHome(String(options.changes));
@@ -719,7 +698,12 @@ function workspaceUrl(options) {
 }
 
 function workspaceRoot(options) {
-  return path.resolve(expandHome(stringOption(options.root) || stringOption(options["workspace-root"]) || process.env.HERMES_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT));
+  return path.resolve(expandHome(
+    stringOption(options.root)
+    || stringOption(options["workspace-root"])
+    || process.env.AIW_WORKSPACE_ROOT
+    || DEFAULT_WORKSPACE_ROOT
+  ));
 }
 
 function setEnvFromOption(env, options, names, envName, transform = (value) => value) {
@@ -817,7 +801,53 @@ async function runProcess(command, args, options) {
 }
 
 async function runModel(args) {
-  await runHermes("model", args);
+  const options = parseOptions(args, { boolean: ["help", "json"] });
+  const [subcommand = "list", ...rest] = options._;
+  const root = workspaceRoot(options);
+
+  if (options.help || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+    console.log(`Usage:
+  aiw model [list] [--root PATH] [--json]
+  aiw model show [--root PATH] [--json]
+  aiw model set-default <provider> <model> [--root PATH] [--json]
+`);
+    return;
+  }
+
+  if (subcommand === "set-default") {
+    const [provider, model] = rest;
+    if (!provider || !model) throw new Error("Usage: aiw model set-default <provider> <model>");
+    const result = await setDefaultModel(root, provider, model);
+    if (options.json) {
+      printJson(result);
+      return;
+    }
+    console.log(`Default model: ${result.provider}/${result.model}`);
+    return;
+  }
+
+  const models = await listRuntimeModels(root);
+  if (options.json) {
+    printJson({ workspaceRoot: root, models });
+    return;
+  }
+  if (subcommand === "show") {
+    const active = models.find((model) => model.isActive);
+    console.log(active ? `Default model: ${active.provider}/${active.model}` : "Default model: not set");
+    return;
+  }
+  if (subcommand !== "list") throw new Error(`Unknown model subcommand '${subcommand}'.`);
+  printTable(models.map((model) => ({
+    active: model.isActive ? "*" : "",
+    provider: model.provider,
+    model: model.model || model.name,
+    source: model.source
+  })), [
+    ["active", "", 3],
+    ["provider", "PROVIDER", 18],
+    ["model", "MODEL", 30],
+    ["source", "SOURCE", 12]
+  ]);
 }
 
 async function runProvider(args) {
@@ -828,43 +858,98 @@ async function runProvider(args) {
     console.log(`Usage:
   aiw provider list [--json]
 
-AI Workspace does not own provider creation. Hermes owns providers through:
-  hermes model
-  hermes auth
-  hermes config
-
-This command reads Hermes' provider registry for orientation only.
+Lists the AI Workspace provider registry. Provider execution and credentials are
+owned by AI Workspace runtime config, not by an external CLI wrapper.
 `);
     return;
   }
 
   if (subcommand === "list") {
-    const providers = await readHermesProviderCatalog();
+    const providers = listProviderRegistry();
     if (options.json) {
       printJson(providers);
       return;
     }
     if (!providers.length) {
-      console.log("No Hermes providers could be read.");
+      console.log("No providers are registered.");
       return;
     }
     const rows = providers.map((item) => ({
-      provider: item.slug,
-      label: item.label || item.slug,
+      provider: item.id,
+      label: item.name || item.id,
       auth: item.authType || "",
-      transport: item.transport || ""
+      models: (item.models || []).join(", ")
     }));
     printTable(rows, [
       ["provider", "PROVIDER", 18],
       ["label", "LABEL", 28],
       ["auth", "AUTH", 18],
-      ["transport", "TRANSPORT", 20]
+      ["models", "MODELS", 36]
     ]);
   } else {
-    throw new Error("Provider mutation is owned by Hermes. Use 'hermes model', 'hermes auth', or 'hermes config'.");
+    throw new Error(`Unknown provider subcommand '${subcommand}'.`);
   }
 }
 
 async function runAuth(args) {
-  await runHermes("auth", args);
+  const options = parseOptions(args, { boolean: ["help", "json"] });
+  const [subcommand = "list", ...rest] = options._;
+  const root = workspaceRoot(options);
+
+  if (options.help || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+    console.log(`Usage:
+  aiw auth [list] [--root PATH] [--json]
+  aiw auth set <provider> <key> <value> [--root PATH] [--json]
+  aiw auth remove <provider> [key] [--root PATH] [--json]
+
+Credential values are stored under .ai-workspace/config/credentials.json.
+Environment variables such as AIW_OPENAI_API_KEY are also detected.
+`);
+    return;
+  }
+
+  if (subcommand === "set") {
+    const [provider, key, ...valueParts] = rest;
+    const value = valueParts.join(" ") || stringOption(options.value);
+    if (!provider || !key || !value) throw new Error("Usage: aiw auth set <provider> <key> <value>");
+    const result = await setCredentialValue(root, provider, key, value);
+    if (options.json) {
+      printJson(result);
+      return;
+    }
+    console.log(`Stored credential: ${result.provider}/${result.key}`);
+    return;
+  }
+
+  if (subcommand === "remove" || subcommand === "delete") {
+    const [provider, key = ""] = rest;
+    if (!provider) throw new Error(`Usage: aiw auth ${subcommand} <provider> [key]`);
+    const result = await removeCredentialValue(root, provider, key);
+    if (options.json) {
+      printJson(result);
+      return;
+    }
+    console.log(result.removed ? `Removed credential: ${provider}${key ? `/${key}` : ""}` : `No stored credential for ${provider}`);
+    return;
+  }
+
+  if (subcommand !== "list") throw new Error(`Unknown auth subcommand '${subcommand}'.`);
+  const rows = await listCredentialStatus(root, process.env);
+  if (options.json) {
+    printJson({ workspaceRoot: root, credentials: rows });
+    return;
+  }
+  printTable(rows.map((row) => ({
+    provider: row.provider,
+    auth: row.authType,
+    configured: row.configured ? "yes" : "no",
+    stored: row.storedKeys.join(", "),
+    env: row.envKeys.join(", ")
+  })), [
+    ["provider", "PROVIDER", 18],
+    ["auth", "AUTH", 12],
+    ["configured", "CONFIGURED", 10],
+    ["stored", "STORED KEYS", 24],
+    ["env", "ENV", 32]
+  ]);
 }

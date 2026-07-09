@@ -56,18 +56,18 @@ Implemented:
 - PDF rendering through `GET /api/raw` and PDFKit
 - image preview through `GET /api/raw`
 - workspace search UI
-- Hermes live chat connection through the Workspace Server
-- Hermes model picker backed by `GET /api/hermes/models`
-- Hermes session resume menu backed by `GET /api/hermes/sessions`
-- session menu syncs Hermes history whenever the menu is opened, so a separate
+- live chat connection through the Workspace Server
+- model picker backed by `GET /api/models`
+- session resume menu backed by `GET /api/sessions`
+- session menu syncs history whenever the menu is opened, so a separate
   refresh button is no longer required
-- Hermes session history loading backed by `GET /api/hermes/sessions/:id/messages`
+- session history loading backed by `GET /api/sessions/:id/messages`
 - History sheet for session search, resume, and guarded delete
 - a thin Obsidian-plugin-style session toolbar is shown even when the large Chat
   header is hidden. The left side opens session history management; the right
   side contains project grouping, session selection, and new-chat controls.
-- session project grouping uses Hermes session project/workspace metadata when
-  available and falls back to `All sessions` when Hermes does not expose project
+- session project grouping uses session project/workspace metadata when
+  available and falls back to `All sessions` when the runtime does not expose project
   fields for a session.
 - live session creation
 - message submit
@@ -249,16 +249,14 @@ same task/diff/approval model instead of inventing a separate client-side flow.
 
 ## Live Chat Flow
 
-The SwiftUI client does not connect to Hermes directly. It opens:
+The SwiftUI client connects only to AI Workspace Server. It opens:
 
 ```text
 WS /api/live
 ```
 
-on the Workspace Server. The server is responsible for Hermes dashboard login,
-WebSocket ticket creation, Hermes live session routing, and approval forwarding.
-Those calls now pass through the server-side `WorkspaceAgentEngine`, whose first
-adapter is `HermesCoreRuntime`.
+on the Workspace Server. Runtime calls pass through the server-side
+`WorkspaceAgentEngine`.
 
 Chat can be used in two places:
 
@@ -311,24 +309,24 @@ Connect button or first message
   -> connect
   -> session.create
   -> prompt.submit with optional contextRequest
-  -> render hermes.event messages
+  -> render runtime.event messages
   -> approval.respond when the user approves or denies a request
 ```
 
-When the user chooses an existing Hermes session, the client first loads saved
+When the user chooses an existing session, the client first loads saved
 messages from:
 
 ```text
-GET /api/hermes/sessions/:id/messages
+GET /api/sessions/:id/messages
 ```
 
 Then it resumes the live WebSocket session. This keeps the visible chat history
-aligned with the Hermes session instead of showing only local system messages
+aligned with the selected session instead of showing only local system messages
 such as "Live bridge ready".
 
-The `+` button starts a local blank chat state only. Hermes session creation is
+The `+` button starts a local blank chat state only. Session creation is
 deferred until the user sends the first message, which avoids empty orphan
-sessions in Hermes history.
+sessions in history.
 
 The session menu refreshes Hermes metadata immediately before opening, and the
 History sheet also refreshes on presentation. This mirrors the Obsidian plugin

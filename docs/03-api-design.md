@@ -14,16 +14,16 @@ Returns service health.
 
 ### `GET /api/workspace`
 
-Returns configured workspace root, top-level roots, and Hermes connection
-status. It also reports the active workspace agent engine capabilities:
+Returns configured workspace root, top-level roots, runtime status, and active
+workspace agent engine capabilities:
 
 ```json
 {
   "agent": {
     "engine": "workspace-agent",
     "statePath": ".ai-workspace",
-    "adapters": ["hermes-core"],
-    "runtimes": ["code-agent"],
+    "adapters": ["ai-workspace-runtime"],
+    "runtimes": ["chat", "models", "sessions", "code-agent"],
     "taskEndpoint": "/api/agent/tasks",
     "approvalEndpoint": "/api/agent/approvals",
     "codeTaskEndpoint": "/api/agent/code-task",
@@ -115,19 +115,17 @@ Deletes a file or folder.
 This endpoint exists for MVP development, but production UI should add undo or
 trash semantics before exposing it casually.
 
-### Workspace Config Boundary
+### Runtime Config Boundary
 
-AI Workspace does not expose model/provider/auth configuration APIs. Hermes owns
-that state through `hermes model`, `hermes auth`, `hermes config`, and its
-provider plugins. Workspace APIs own files, context, search, tasks, approvals,
-diffs, and code runtime orchestration.
+AI Workspace owns model/provider/auth configuration under
+`.ai-workspace/config`. CLI commands such as `aiw model`, `aiw provider list`,
+and `aiw auth` operate on that AI Workspace-owned state.
 
 ## Context Router
 
 ### `POST /api/context`
 
-Builds a Hermes-ready workspace context object from a client mention/scope
-request.
+Builds a workspace context object from a client mention/scope request.
 
 Example for a single note:
 
@@ -469,7 +467,7 @@ Response:
 
 ### `POST /api/agent/code-task/:id/patches/generate`
 
-Invokes the LLM to automatically generate a patch proposal for the code task. This streams response blocks from the Hermes live agent, parses the resulting find/replace JSON changes, and proposes the patch (saving a diff artifact and queuing it for approval).
+Invokes the configured model runtime to automatically generate a patch proposal for the code task. This streams response blocks, parses the resulting find/replace JSON changes, and proposes the patch (saving a diff artifact and queuing it for approval).
 
 Response is identical to `POST /api/agent/code-task/:id/patches` on success.
 
@@ -705,41 +703,24 @@ Response:
 }
 ```
 
-## Workspace & Hermes Proxy (Compatibility Aliases)
+## Runtime API
 
-### `GET /api/workspace/models`
-### `GET /api/hermes/models` (Legacy Alias)
+### `GET /api/models`
 
-Proxies model options.
+Returns AI Workspace model options from `.ai-workspace/config` and the built-in
+provider registry.
 
-Current target:
+### `GET /api/sessions`
 
-```text
-GET {HERMES_SERVER_URL}/api/model/options
-```
-
-### `GET /api/workspace/sessions`
-### `GET /api/hermes/sessions` (Legacy Alias)
-
-Returns normalized sessions for client menus.
-
-Current target:
-
-```text
-GET {HERMES_SERVER_URL}/api/sessions?limit=200
-```
-
-Hermes may return raw session rows where `title` is empty and the generated
-session id is the only stable value. The Workspace Server filters archived or
-empty zero-message sessions and returns a compact shape:
+Returns normalized AI Workspace sessions for client menus:
 
 ```json
 {
   "sessions": [
     {
       "id": "20260707_...",
-      "title": "Hermes AI Introduction",
-      "model": "gemma4:e2b-mlx",
+      "title": "Project planning",
+      "model": "gpt-5.4-mini",
       "preview": "안녕",
       "updatedAt": "1783412528.4681878",
       "isActive": false
@@ -748,16 +729,9 @@ empty zero-message sessions and returns a compact shape:
 }
 ```
 
-### `GET /api/workspace/sessions/:id/messages`
-### `GET /api/hermes/sessions/:id/messages` (Legacy Alias)
+### `GET /api/sessions/:id/messages`
 
 Returns normalized saved messages for a session.
-
-Current target:
-
-```text
-GET {HERMES_SERVER_URL}/api/sessions/:id/messages
-```
 
 Response:
 
@@ -788,27 +762,16 @@ Response:
 The Apple client uses this endpoint before `session.resume` so selecting an
 existing session shows its previous user/assistant messages immediately.
 
-### `DELETE /api/workspace/sessions/:id`
-### `DELETE /api/hermes/sessions/:id` (Legacy Alias)
+### `DELETE /api/sessions/:id`
 
-Deletes a session through the dashboard API.
-
-Current target:
-
-```text
-DELETE {HERMES_SERVER_URL}/api/sessions/:id
-```
+Deletes a saved AI Workspace session.
 
 The Apple client disables deletion for the currently active live session and
 shows a confirmation dialog before calling this endpoint.
 
-### `POST /api/workspace/sessions`
-### `POST /api/hermes/sessions` (Legacy Alias)
+### `POST /api/sessions`
 
-Creates a session through the REST endpoint when available.
-
-Live WebSocket session creation will be added separately because it needs a
-stateful `/api/ws` bridge.
+Creates a saved AI Workspace session.
 
 ## Live API
 
@@ -818,27 +781,21 @@ The client can connect to:
 WS /api/live
 ```
 
-The Workspace Server then connects to Hermes:
-
-```text
-POST /api/auth/ws-ticket
-WS   /api/ws?ticket=...
-```
-
-Internally this WebSocket is now routed through:
+Internally this WebSocket is routed through:
 
 ```text
 WorkspaceAgentEngine
-  -> ChatRuntime / ModelRuntime / SessionRuntime
-  -> HermesCoreRuntime
-  -> HermesLiveClient
+  -> ChatRuntime
+  -> SessionRuntime
+  -> ModelRuntime
+  -> CodeAgentRuntime
 ```
 
 The client protocol remains stable while the server gains an engine boundary.
 That boundary is where future local/Codex-style code agent runtimes can be
 added without changing the Apple app's live WebSocket API.
 
-Client-friendly messages should stay close to Hermes event names:
+Client-friendly messages should stay close to runtime event names:
 
 ```json
 { "type": "message.delta", "sessionId": "...", "text": "..." }
@@ -855,7 +812,7 @@ Client-to-server WebSocket messages are JSON:
 { "id": "1", "command": "connect" }
 ```
 
-Create a Hermes session:
+Create a session:
 
 ```json
 {
@@ -927,18 +884,16 @@ Server responses use:
 ```json
 { "kind": "ready", "service": "ai-workspace-live" }
 { "kind": "result", "id": "3", "result": { "ok": true, "taskId": "task-..." } }
-{ "kind": "hermes.event", "engine": "workspace-agent", "adapter": "hermes-core", "type": "message.delta", "text": "..." }
+{ "kind": "runtime.event", "engine": "workspace-agent", "adapter": "ai-workspace-runtime", "type": "message.delta", "text": "..." }
 { "kind": "error", "id": "3", "error": "..." }
 ```
-
-The event kind is still named `hermes.event` for client compatibility. New
-server work should treat `engine` and `adapter` as the more durable boundary.
 
 ---
 
 ## Model / Provider / Auth Boundary
 
-Workspace-owned provider and credential APIs were removed. Do not add:
+AI Workspace provider and credential APIs are owned by the runtime config store.
+Do not add endpoints that bypass the runtime store:
 
 ```text
 GET/POST /api/config
@@ -949,17 +904,19 @@ DELETE /api/workspace/credentials/:id
 POST /api/workspace/models/default
 ```
 
-Use Hermes instead:
+Use AI Workspace CLI commands:
 
 ```text
-aiw model  -> hermes model
-aiw auth   -> hermes auth
-aiw provider list -> read-only Hermes provider catalog
+aiw model list
+aiw model set-default <provider> <model>
+aiw auth list
+aiw auth set <provider> <key> <value>
+aiw provider list
 ```
 
-### `GET /api/workspace/models`
+### `GET /api/models`
 
-Returns the Hermes model list through the Workspace Server wrapper.
+Returns the AI Workspace model list.
 
 ---
 

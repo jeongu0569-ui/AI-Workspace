@@ -1,21 +1,21 @@
 import { ChatBackend } from "./chat-backend.mjs";
 
-export class HermesCompatChatBackend extends ChatBackend {
-  constructor(hermesCompat) {
+export class RuntimeChatBackend extends ChatBackend {
+  constructor(runtimeAdapter) {
     super();
-    this.compat = hermesCompat;
+    this.adapter = runtimeAdapter;
   }
 
   async connect() {
-    await this.compat.connect();
+    await this.adapter.connect();
   }
 
   async createSession(params) {
-    return await this.compat.createSession(params);
+    return await this.adapter.createSession(params);
   }
 
   async resumeSession(sessionId) {
-    return await this.compat.resumeSession(sessionId);
+    return await this.adapter.resumeSession(sessionId);
   }
 
   async submitPrompt(params) {
@@ -46,7 +46,7 @@ export class HermesCompatChatBackend extends ChatBackend {
 
         const onClose = () => {
           cleanup();
-          reject(new Error("Hermes live connection closed prematurely."));
+          reject(new Error("Live runtime connection closed prematurely."));
         };
 
         const onError = (err) => {
@@ -55,16 +55,16 @@ export class HermesCompatChatBackend extends ChatBackend {
         };
 
         const cleanup = () => {
-          this.compat.off("event", onEvent);
-          this.compat.off("close", onClose);
-          this.compat.off("error", onError);
+          this.adapter.off("event", onEvent);
+          this.adapter.off("close", onClose);
+          this.adapter.off("error", onError);
         };
 
-        this.compat.on("event", onEvent);
-        this.compat.on("close", onClose);
-        this.compat.on("error", onError);
+        this.adapter.on("event", onEvent);
+        this.adapter.on("close", onClose);
+        this.adapter.on("error", onError);
 
-        this.compat.submitPrompt(params).catch((err) => {
+        this.adapter.submitPrompt(params).catch((err) => {
           cleanup();
           reject(err);
         });
@@ -73,30 +73,30 @@ export class HermesCompatChatBackend extends ChatBackend {
       return await replyPromise;
     }
 
-    return await this.compat.submitPrompt(params);
+    return await this.adapter.submitPrompt(params);
   }
 
   async respondToApproval(params) {
-    return await this.compat.respondToApproval(params);
+    return await this.adapter.respondToApproval(params);
   }
 
   async setAccessMode(sessionId, accessMode) {
-    await this.compat.setAccessMode(sessionId, accessMode);
+    await this.adapter.setAccessMode(sessionId, accessMode);
   }
 
   async setReasoning(sessionId, reasoningEffort) {
-    await this.compat.setReasoning(sessionId, reasoningEffort);
+    await this.adapter.setReasoning(sessionId, reasoningEffort);
   }
 
   close() {
-    this.compat.close();
+    this.adapter.close();
   }
 }
 
 export class ChatRuntime {
-  constructor({ hermesCompat } = {}) {
-    if (hermesCompat) {
-      this.backend = new HermesCompatChatBackend(hermesCompat);
+  constructor({ runtimeAdapter } = {}) {
+    if (runtimeAdapter) {
+      this.backend = new RuntimeChatBackend(runtimeAdapter);
     } else {
       this.backend = null;
     }
@@ -109,7 +109,7 @@ export class ChatRuntime {
   async connect() {
     if (!this.backend) {
       throw Object.assign(
-        new Error("Chat runtime is unavailable because Hermes runtime is not configured."),
+        new Error("Chat runtime is unavailable because no model execution backend is configured."),
         { status: 503 }
       );
     }
@@ -119,7 +119,7 @@ export class ChatRuntime {
   async createSession(params) {
     if (!this.backend) {
       throw Object.assign(
-        new Error("Chat runtime is unavailable because Hermes runtime is not configured."),
+        new Error("Chat runtime is unavailable because no model execution backend is configured."),
         { status: 503 }
       );
     }
@@ -129,7 +129,7 @@ export class ChatRuntime {
   async resumeSession(sessionId) {
     if (!this.backend) {
       throw Object.assign(
-        new Error("Chat runtime is unavailable because Hermes runtime is not configured."),
+        new Error("Chat runtime is unavailable because no model execution backend is configured."),
         { status: 503 }
       );
     }
@@ -139,7 +139,7 @@ export class ChatRuntime {
   async submitPrompt(params) {
     if (!this.backend) {
       throw Object.assign(
-        new Error("Chat runtime is unavailable because Hermes runtime is not configured."),
+        new Error("Chat runtime is unavailable because no model execution backend is configured."),
         { status: 503 }
       );
     }
@@ -149,7 +149,7 @@ export class ChatRuntime {
   async respondToApproval(params) {
     if (!this.backend) {
       throw Object.assign(
-        new Error("Chat runtime is unavailable because Hermes runtime is not configured."),
+        new Error("Chat runtime is unavailable because no model execution backend is configured."),
         { status: 503 }
       );
     }

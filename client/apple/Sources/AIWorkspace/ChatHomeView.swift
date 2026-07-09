@@ -62,7 +62,7 @@ struct ChatHomeView: View {
                 }
 
                 VStack(spacing: 8) {
-                    TextField("Message Hermes...", text: $draft, axis: .vertical)
+                    TextField("Message AI Workspace...", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(1...(compact ? 3 : 4))
                         .focused($isDraftFocused)
@@ -164,9 +164,9 @@ struct ChatHomeView: View {
     private var chatHeader: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Hermes Chat")
+                Text("AI Workspace Chat")
                     .font(compact ? .headline.weight(.semibold) : .title2.weight(.semibold))
-                Text(store.workspace?.hermes.serverUrl ?? "No Hermes server loaded")
+                Text(store.workspace?.runtime?.status ?? "No runtime status loaded")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -319,7 +319,7 @@ struct ChatHomeView: View {
         .simultaneousGesture(TapGesture().onEnded {
             Task { await store.refreshHermesMetadata() }
         })
-        .help("Select Hermes session")
+        .help("Select session")
     }
 
     private func chatControlMenu<Value>(
@@ -370,7 +370,7 @@ struct SessionManagerView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("History")
                         .font(.title2.weight(.semibold))
-                    Text("Search and manage Hermes sessions.")
+                    Text("Search and manage sessions.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -393,7 +393,7 @@ struct SessionManagerView: View {
                 .textFieldStyle(.roundedBorder)
 
             if store.filteredHermesSessions.isEmpty {
-                ContentUnavailableView("No sessions", systemImage: "clock", description: Text("No saved Hermes sessions match this search."))
+                ContentUnavailableView("No sessions", systemImage: "clock", description: Text("No saved sessions match this search."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(store.filteredHermesSessions) { session in
@@ -443,7 +443,7 @@ struct SessionManagerView: View {
             await store.refreshHermesMetadata()
         }
         .confirmationDialog(
-            "Delete this Hermes session?",
+            "Delete this session?",
             isPresented: Binding(
                 get: { pendingDelete != nil },
                 set: { if !$0 { pendingDelete = nil } }
@@ -460,7 +460,7 @@ struct SessionManagerView: View {
                 pendingDelete = nil
             }
         } message: { session in
-            Text("This deletes the saved Hermes session, not just the local row: \(session.title)")
+            Text("This deletes the saved session, not just the local row: \(session.title)")
         }
     }
 }

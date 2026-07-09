@@ -14,7 +14,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var isEditingFile = false
     @Published var searchResponse: SearchResponse?
     @Published var chatLines: [ChatLine] = [
-        ChatLine(role: "system", text: "Connect to the Workspace Server, then start a Hermes live session.")
+        ChatLine(role: "system", text: "Connect to the Workspace Server, then start a live session.")
     ]
     @Published var liveSessionId: String?
     @Published var hermesModels: [HermesModelOption] = []
@@ -113,7 +113,7 @@ final class WorkspaceStore: ObservableObject {
             let codeTree = try await api.tree(root: "code", path: codePath)
             notes = notesTree.children
             code = codeTree.children
-            connectionStep = "Loading Hermes metadata"
+            connectionStep = "Loading runtime metadata"
             await refreshHermesMetadata()
             connectionStep = "Loading pending approvals"
             await refreshApprovals()
@@ -139,7 +139,7 @@ final class WorkspaceStore: ObservableObject {
             }
             updateActiveSessionTitle()
         } catch {
-            statusMessage = "Hermes metadata: \(error.localizedDescription)"
+            statusMessage = "Runtime metadata: \(error.localizedDescription)"
         }
     }
 
@@ -781,7 +781,7 @@ final class WorkspaceStore: ObservableObject {
         activeHermesSessionTitle = "No session"
         activeActivityLineId = nil
         isChatTurnOpen = false
-        chatLines = [ChatLine(role: "system", text: "New chat ready. Send a message to create a Hermes session.")]
+        chatLines = [ChatLine(role: "system", text: "New chat ready. Send a message to create a session.")]
         statusMessage = "New chat ready"
     }
 
@@ -996,10 +996,10 @@ final class WorkspaceStore: ObservableObject {
         switch envelope.kind {
         case "ready":
             statusMessage = "Live bridge ready"
-        case "hermes.event":
-            appendHermesEvent(envelope)
-        case "hermes.close":
-            chatLines.append(ChatLine(role: "system", text: "Hermes live connection closed."))
+        case "runtime.event", "hermes.event":
+            appendRuntimeEvent(envelope)
+        case "runtime.close", "hermes.close":
+            chatLines.append(ChatLine(role: "system", text: "Live runtime connection closed."))
         case "error":
             chatLines.append(ChatLine(role: "system", text: envelope.error ?? "Live bridge error."))
         default:
@@ -1007,7 +1007,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    private func appendHermesEvent(_ envelope: LiveEnvelope) {
+    private func appendRuntimeEvent(_ envelope: LiveEnvelope) {
         let type = envelope.type ?? "event"
         let text = envelope.text ?? ""
         if isAssistantDelta(type) {

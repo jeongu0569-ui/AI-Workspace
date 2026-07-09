@@ -1,9 +1,9 @@
 /**
  * @file hermes-compat.mjs
  * @description LEGACY / COMPATIBILITY LAYER ONLY.
- * This file serves as a fallback compatibility driver connecting to Hermes Server.
- * Do NOT add new workspace-owned features here. New Hermes integration behavior belongs
- * behind HermesCoreRuntime; workspace behavior belongs in the dedicated runtimes.
+ * This file is kept as a temporary migration reference for the original prototype.
+ * Do NOT add new workspace-owned features here. New behavior belongs in the
+ * dedicated AI Workspace runtimes under server/lib/runtime and server/lib/*-runtime.
  */
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";

@@ -177,7 +177,7 @@ struct RootView: View {
     private func iOSSidebar(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Hermes")
+                Text("AI Workspace")
                     .font(.title2.weight(.semibold))
                 Text(store.workspace?.rootName ?? "AI Workspace")
                     .font(.caption)

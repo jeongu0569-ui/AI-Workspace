@@ -7,9 +7,15 @@ struct WorkspaceInfo: Codable {
         let path: String
     }
 
-    struct HermesInfo: Codable {
+    struct LegacyHermesInfo: Codable {
         let serverUrl: String
         let dashboardLoginConfigured: Bool
+    }
+
+    struct RuntimeInfo: Codable {
+        let status: String
+        let owner: String?
+        let configPath: String?
     }
 
     struct SearchInfo: Codable {
@@ -24,7 +30,8 @@ struct WorkspaceInfo: Codable {
     let rootName: String
     let workspaceRoot: String
     let roots: [Root]
-    let hermes: HermesInfo
+    let runtime: RuntimeInfo?
+    let hermes: LegacyHermesInfo?
     let search: SearchInfo?
 }
 

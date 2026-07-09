@@ -79,11 +79,11 @@ index_entries
 `docsearch-mcp` should be treated as a server-side index/search capability, not
 as a client plugin detail.
 
-## Hermes Session Associations
+## Session Associations
 
 ```text
 workspace_sessions
-- hermes_session_id
+- session_id
 - area
 - scope_type
 - scope_path
@@ -98,8 +98,9 @@ notes
 code
 ```
 
-The app should not duplicate Hermes messages. Hermes remains the source of truth
-for conversation history while Hermes is the active adapter.
+AI Workspace stores session rows and message history under `.ai-workspace`.
+External provider/runtime integrations may add their own runtime ids, but the
+workspace session id is the app's source of truth.
 
 ## Workspace Agent State
 
@@ -117,9 +118,8 @@ The newer agent-engine state root is:
 └── index/
 ```
 
-This folder belongs to the Workspace Server, not to Hermes. It is designed so
-Hermes-style chat and Codex-style code work can share one workspace-owned state
-layer.
+This folder belongs to AI Workspace Server. Chat, notes, search, approvals, and
+code work share one workspace-owned state layer.
 
 Current implemented files:
 
@@ -134,8 +134,9 @@ Current implemented files:
 .ai-workspace/tool-logs/tool-events.jsonl
 ```
 
-Model, provider, auth, Codex, and Google Antigravity credentials are not stored
-in `.ai-workspace`. They are owned by Hermes' config/auth stores.
+Model, provider, and auth config is stored under `.ai-workspace/config`.
+Credential storage is still an MVP file store and should later move to an
+encrypted/keychain-backed store.
 
 ## Workspace-Owned Sessions
 
@@ -203,14 +204,12 @@ reason
 response
 ```
 
-The approval inbox is workspace-owned. It is separate from Hermes live
-`approval.request` events so code patch/check approvals can be listed, resumed,
-approved, or rejected even if the chat stream is no longer visible.
+The approval inbox is workspace-owned. Code patch/check approvals can be listed,
+resumed, approved, or rejected even if the chat stream is no longer visible.
 
-This is intentionally small. It does not yet replace Hermes conversation
-history. It records the Workspace Server's own view of the work so future code
-agent loops can attach diffs, test results, shell output, approvals, and
-decision logs to the same task id.
+This records AI Workspace Server's own view of the work so code agent loops can
+attach diffs, test results, shell output, approvals, and decision logs to the
+same task id.
 
 The current code inspect task already adds:
 

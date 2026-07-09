@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { createHermesCoreRuntime } from "./hermes-core-runtime.mjs";
 import { buildWorkspaceContext } from "./context-router.mjs";
 import { CodeAgentRuntime } from "./code-agent-runtime.mjs";
 import { ChatRuntime } from "./chat-runtime.mjs";
@@ -11,8 +10,7 @@ import { SessionRuntime } from "./session-runtime.mjs";
 import { LLMRuntime } from "./llm-runtime.mjs";
 
 export function createWorkspaceAgentEngine(config) {
-  const hermesRuntime = createHermesCoreRuntime(config.hermes || {});
-  return new WorkspaceAgentEngine(config, hermesRuntime);
+  return new WorkspaceAgentEngine(config, config.runtimeAdapter || null);
 }
 
 export async function ensureAgentWorkspaceState(workspaceRoot) {
@@ -20,17 +18,17 @@ export async function ensureAgentWorkspaceState(workspaceRoot) {
 }
 
 export class WorkspaceAgentEngine extends EventEmitter {
-  constructor(config, hermesRuntime) {
+  constructor(config, runtimeAdapter) {
     super();
     this.config = config;
-    this.hermesRuntime = hermesRuntime;
+    this.runtimeAdapter = runtimeAdapter;
     
     this.state = new WorkspaceAgentStateStore(config.workspaceRoot);
     this.chatRuntime = new ChatRuntime({
-      hermesCompat: hermesRuntime || null
+      runtimeAdapter: runtimeAdapter || null
     });
-    this.modelRuntime = new ModelRuntime({ hermesCompat: hermesRuntime });
-    this.sessionRuntime = new SessionRuntime({ hermesCompat: hermesRuntime, stateStore: this.state });
+    this.modelRuntime = new ModelRuntime({ workspaceRoot: config.workspaceRoot });
+    this.sessionRuntime = new SessionRuntime({ runtimeAdapter, stateStore: this.state });
     this.llmRuntime = new LLMRuntime({ chatRuntime: this.chatRuntime });
     this.codeRuntime = new CodeAgentRuntime({
       workspaceRoot: config.workspaceRoot,
@@ -39,8 +37,8 @@ export class WorkspaceAgentEngine extends EventEmitter {
     });
     this.eventWrites = new Set();
 
-    if (this.hermesRuntime) {
-      this.hermesRuntime.on("event", (event) => {
+    if (this.runtimeAdapter) {
+      this.runtimeAdapter.on("event", (event) => {
         const enriched = {
           engine: "workspace-agent",
           adapter: this.adapterName(),
@@ -49,14 +47,14 @@ export class WorkspaceAgentEngine extends EventEmitter {
         this.trackEventWrite(this.state.recordAgentEvent(enriched));
         this.emit("event", enriched);
       });
-      this.hermesRuntime.on("close", () => this.emit("close"));
-      this.hermesRuntime.on("error", (error) => {
+      this.runtimeAdapter.on("close", () => this.emit("close"));
+      this.runtimeAdapter.on("error", (error) => {
         const enriched = {
           engine: "workspace-agent",
           adapter: this.adapterName(),
           type: "runtime.error",
-          error: error?.message || "Hermes runtime error.",
-          text: error?.message || "Hermes runtime error."
+          error: error?.message || "Runtime error.",
+          text: error?.message || "Runtime error."
         };
         this.trackEventWrite(this.state.recordAgentEvent(enriched));
         this.emit("event", enriched);
@@ -66,7 +64,9 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
   async connect() {
     await this.state.ensure();
-    await this.chatRuntime.connect();
+    if (this.chatRuntime.isAvailable()) {
+      await this.chatRuntime.connect();
+    }
     await this.state.recordSessionEvent({
       type: "engine.connect",
       adapter: this.adapterName()
@@ -75,7 +75,13 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
   async createSession(params = {}) {
     await this.state.ensure();
-    const result = await this.chatRuntime.createSession(params);
+    const result = this.chatRuntime.isAvailable()
+      ? await this.chatRuntime.createSession(params)
+      : {
+          sessionId: `session-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`,
+          runtimeSessionId: "",
+          source: "ai-workspace"
+        };
     const sessionObj = {
       id: result.sessionId,
       title: params.title || `Session ${new Date().toLocaleDateString()}`,
@@ -107,7 +113,9 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
   async resumeSession(sessionId) {
     await this.state.ensure();
-    const runtimeSessionId = await this.chatRuntime.resumeSession(sessionId);
+    const runtimeSessionId = this.chatRuntime.isAvailable()
+      ? await this.chatRuntime.resumeSession(sessionId)
+      : sessionId;
     await this.state.recordSessionEvent({
       type: "session.resume",
       adapter: this.adapterName(),
@@ -136,6 +144,9 @@ export class WorkspaceAgentEngine extends EventEmitter {
         ...params,
         context,
         taskId: task.id
+      }).catch((error) => {
+        if (this.chatRuntime.isAvailable()) throw error;
+        return workspaceRuntimeNotConfiguredReply(params);
       });
       await this.state.finishTask(task.id, {
         status: "submitted",
@@ -370,7 +381,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
   }
 
   adapterName() {
-    return this.hermesRuntime?.name || "hermes-core";
+    return this.runtimeAdapter?.name || "ai-workspace-runtime";
   }
 
   close() {
@@ -689,6 +700,19 @@ function definedFields(value) {
   return Object.fromEntries(
     Object.entries(value || {}).filter(([, item]) => item !== undefined && item !== null && item !== "")
   );
+}
+
+function workspaceRuntimeNotConfiguredReply(params = {}) {
+  return {
+    ok: true,
+    sessionId: params.sessionId,
+    runtimeSessionId: "",
+    source: "ai-workspace",
+    reply: [
+      "AI Workspace runtime is running, but no model execution backend is configured yet.",
+      "Configure a provider with `aiw auth` and select a model with `aiw model set-default`."
+    ].join("\n")
+  };
 }
 
 function safeArtifactName(value) {

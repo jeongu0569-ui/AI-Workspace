@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export class SessionRuntime {
-  constructor({ hermesCompat, stateStore }) {
-    this.compat = hermesCompat;
+  constructor({ runtimeAdapter, stateStore }) {
+    this.adapter = runtimeAdapter;
     this.stateStore = stateStore;
   }
 
@@ -15,23 +15,23 @@ export class SessionRuntime {
       } catch {}
     }
 
-    let compatSessions = [];
-    if (this.compat) {
+    let adapterSessions = [];
+    if (this.adapter) {
       try {
-        const result = await this.compat.fetchHermesJson(`/api/sessions?limit=${limit}`);
+        const result = await this.adapter.fetchJson(`/api/sessions?limit=${limit}`);
         const list = Array.isArray(result?.sessions) ? result.sessions
           : Array.isArray(result?.items) ? result.items
             : Array.isArray(result?.data) ? result.data
               : Array.isArray(result) ? result
                 : [];
-        compatSessions = list.map(s => ({
+        adapterSessions = list.map(s => ({
           id: s.id,
           title: s.title || `Legacy Session ${s.id}`,
           model: s.model || "unknown",
           preview: s.preview || "",
           updatedAt: s.updatedAt || new Date().toISOString(),
-          source: "hermes-core",
-          runtime: "hermes-live",
+          source: "runtime-adapter",
+          runtime: "external",
           isActive: s.isActive || false
         }));
       } catch (err) {
@@ -53,7 +53,7 @@ export class SessionRuntime {
       }
     }
 
-    for (const s of compatSessions) {
+    for (const s of adapterSessions) {
       if (s.id && !seen.has(s.id)) {
         seen.add(s.id);
         merged.push(s);
@@ -84,9 +84,9 @@ export class SessionRuntime {
         }
       } catch {}
     }
-    if (this.compat) {
+    if (this.adapter) {
       try {
-        const result = await this.compat.fetchHermesJson(`/api/sessions/${encodeURIComponent(sessionId)}/messages`);
+        const result = await this.adapter.fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}/messages`);
         return result;
       } catch {}
     }
@@ -100,9 +100,9 @@ export class SessionRuntime {
         await fs.unlink(filePath).catch(() => {});
       } catch {}
     }
-    if (this.compat) {
+    if (this.adapter) {
       try {
-        return await this.compat.fetchHermesJson(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        return await this.adapter.fetchJson(`/api/sessions/${encodeURIComponent(sessionId)}`, {
           method: "DELETE"
         });
       } catch {}

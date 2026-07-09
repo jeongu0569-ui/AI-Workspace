@@ -114,7 +114,7 @@ actor LiveChatClient {
             params: CreateSessionParams(provider: provider, model: model, reasoningEffort: reasoningEffort, accessMode: accessMode)
         )
         guard let sessionId = response.result?.sessionId else {
-            throw LiveChatClientError.serverError("Hermes did not return a session id.")
+            throw LiveChatClientError.serverError("Runtime did not return a session id.")
         }
         return sessionId
     }

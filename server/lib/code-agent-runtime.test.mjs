@@ -27,7 +27,7 @@ test("parseGitCommand preserves quotes and partitions tokens correctly", () => {
   ]);
 });
 
-test("LLMRuntime availability follows Hermes chat runtime availability", () => {
+test("LLMRuntime availability follows chat runtime backend availability", () => {
   const emptyChat = new ChatRuntime({});
   const unavailable = new LLMRuntime({ chatRuntime: emptyChat });
   assert.equal(unavailable.isAvailable(), false);
@@ -44,8 +44,8 @@ test("LLMRuntime availability follows Hermes chat runtime availability", () => {
     on: () => {},
     off: () => {}
   };
-  const hermesChat = new ChatRuntime({ hermesCompat: fakeCompat });
-  const available = new LLMRuntime({ chatRuntime: hermesChat });
+  const runtimeChat = new ChatRuntime({ runtimeAdapter: fakeCompat });
+  const available = new LLMRuntime({ chatRuntime: runtimeChat });
   assert.equal(available.isAvailable(), true);
 });
 
@@ -425,7 +425,7 @@ test("code agent runtime generates automatic patches using mock LLM server", asy
     const root = await fixtureCodeWorkspace();
     const state = new WorkspaceAgentStateStore(root);
     const chatRuntime = new ChatRuntime({
-      hermesCompat: new HermesLiveClient({
+      runtimeAdapter: new HermesLiveClient({
         hermesServerUrl: `http://127.0.0.1:${port}`,
         dashboardUsername: "test",
         dashboardPassword: "test"

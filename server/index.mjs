@@ -24,14 +24,10 @@ import { buildWorkspaceContext } from "./lib/context-router.mjs";
 import { renderCodeDocument, renderMarkdownDocument } from "./lib/render-service.mjs";
 import { searchStatus, searchWorkspace } from "./lib/search-service.mjs";
 
-const DEFAULT_PORT = Number.parseInt(process.env.PORT || "8787", 10);
-const WORKSPACE_HOST = process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
-const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "HermesWorkspace");
-const WORKSPACE_ROOT = path.resolve(process.env.HERMES_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
-const HERMES_SERVER_URL = trimTrailingSlash(process.env.HERMES_SERVER_URL || "http://127.0.0.1:9119");
-const HERMES_DASHBOARD_USERNAME = process.env.HERMES_DASHBOARD_USERNAME || "";
-const HERMES_DASHBOARD_PASSWORD = process.env.HERMES_DASHBOARD_PASSWORD || "";
-const HERMES_DASHBOARD_PROVIDER = process.env.HERMES_DASHBOARD_PROVIDER || "";
+const DEFAULT_PORT = Number.parseInt(process.env.AIW_PORT || process.env.PORT || "8787", 10);
+const WORKSPACE_HOST = process.env.AIW_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
+const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "AIWorkspace");
+const WORKSPACE_ROOT = path.resolve(process.env.AIW_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
 
 const TEXT_FILE_LIMIT = 5 * 1024 * 1024;
 
@@ -42,7 +38,6 @@ async function main() {
   server.listen(DEFAULT_PORT, WORKSPACE_HOST, () => {
     console.log(`[workspace] listening on http://${WORKSPACE_HOST}:${DEFAULT_PORT}`);
     console.log(`[workspace] root ${WORKSPACE_ROOT}`);
-    console.log(`[workspace] hermes ${HERMES_SERVER_URL}`);
   });
 }
 
@@ -77,8 +72,8 @@ function startLiveBridge(socket) {
       socket.end();
     } catch {}
   };
-  engine.on("event", (event) => send({ kind: "hermes.event", ...event }));
-  engine.on("close", () => send({ kind: "hermes.close" }));
+  engine.on("event", (event) => send({ kind: "runtime.event", ...event }));
+  engine.on("close", () => send({ kind: "runtime.close" }));
   socket.on("error", close);
   socket.on("close", close);
   const decode = createFrameDecoder(async (text) => {
@@ -102,13 +97,7 @@ function startLiveBridge(socket) {
 
 function createAgentEngine() {
   return createWorkspaceAgentEngine({
-    workspaceRoot: WORKSPACE_ROOT,
-    hermes: {
-      hermesServerUrl: HERMES_SERVER_URL,
-      dashboardUsername: HERMES_DASHBOARD_USERNAME,
-      dashboardPassword: HERMES_DASHBOARD_PASSWORD,
-      dashboardProvider: HERMES_DASHBOARD_PROVIDER
-    }
+    workspaceRoot: WORKSPACE_ROOT
   });
 }
 
@@ -169,13 +158,12 @@ async function handleLiveCommand(engine, message) {
 
 async function ensureWorkspace() {
   await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
-  await fs.mkdir(path.join(WORKSPACE_ROOT, ".hermes-workspace"), { recursive: true });
   await ensureAgentWorkspaceState(WORKSPACE_ROOT);
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.notes), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.code), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.documents), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.attachments), { recursive: true });
-  await writeJsonIfMissing(path.join(WORKSPACE_ROOT, ".hermes-workspace", "metadata.json"), {
+  await writeJsonIfMissing(path.join(WORKSPACE_ROOT, ".ai-workspace", "metadata.json"), {
     schemaVersion: 1,
     workspaceRoot: WORKSPACE_ROOT,
     createdAt: new Date().toISOString(),
@@ -199,7 +187,7 @@ async function handleRequest(req, res) {
     setCors(res);
 
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return sendJson(res, { ok: true, service: "ai-workspace-on-hermes" });
+      return sendJson(res, { ok: true, service: "ai-workspace" });
     }
     if (req.method === "GET" && url.pathname === "/api/workspace") {
       return sendJson(res, await workspaceInfo());
@@ -312,7 +300,7 @@ async function handleRequest(req, res) {
       const engine = createAgentEngine();
       try {
         if (req.method === "GET") {
-          return sendJson(res, normalizeHermesSessionsResponse(await engine.listSessions(200)));
+          return sendJson(res, normalizeSessionsResponse(await engine.listSessions(200)));
         }
         if (req.method === "POST") {
           const body = await readJsonBody(req);
@@ -328,7 +316,7 @@ async function handleRequest(req, res) {
       try {
         if (req.method === "GET") {
           const sessionId = decodeURIComponent(wsSessionMsgMatch[1]);
-          return sendJson(res, normalizeHermesSessionMessagesResponse(
+          return sendJson(res, normalizeSessionMessagesResponse(
             await engine.getSessionMessages(sessionId)
           ));
         }
@@ -348,9 +336,14 @@ async function handleRequest(req, res) {
         engine.close();
       }
     }
-    // --- Legacy Hermes proxy and workspace/models ---
-    if (url.pathname.startsWith("/api/hermes/") || url.pathname.startsWith("/api/workspace/models")) {
-      return handleHermesProxy(req, res, url);
+    // --- AI Workspace runtime routes ---
+    if (
+      url.pathname === "/api/models"
+      || url.pathname === "/api/workspace/models"
+      || url.pathname === "/api/sessions"
+      || url.pathname.startsWith("/api/sessions/")
+    ) {
+      return handleRuntimeProxy(req, res, url);
     }
 
     throw Object.assign(new Error("Not found."), { status: 404 });
@@ -360,9 +353,6 @@ async function handleRequest(req, res) {
 }
 
 async function workspaceInfo() {
-  const hasHermes = Boolean(HERMES_SERVER_URL);
-  const hermesStatus = await checkHermesReachability();
-  const hermesAvailable = hasHermes && hermesStatus.reachable;
   return {
     rootName: path.basename(WORKSPACE_ROOT),
     workspaceRoot: WORKSPACE_ROOT,
@@ -371,21 +361,20 @@ async function workspaceInfo() {
       name: folder,
       path: folder
     })),
-    hermes: {
-      serverUrl: HERMES_SERVER_URL || "",
-      dashboardLoginConfigured: Boolean(HERMES_DASHBOARD_USERNAME && HERMES_DASHBOARD_PASSWORD),
-      compatStatus: hermesAvailable ? "enabled" : hasHermes ? "unreachable" : "disabled",
-      reason: hermesAvailable ? "" : hermesStatus.reason
+    runtime: {
+      status: "ok",
+      owner: "ai-workspace",
+      configPath: ".ai-workspace/config"
     },
     chatRuntime: {
-      status: hermesAvailable ? "ok" : "unavailable",
-      reason: hermesAvailable ? "" : hermesStatus.reason
+      status: "ok",
+      reason: ""
     },
     agent: {
       engine: "workspace-agent",
       statePath: ".ai-workspace",
-      adapters: ["hermes-core"],
-      runtimes: ["code-agent"],
+      adapters: ["ai-workspace-runtime"],
+      runtimes: ["chat", "models", "sessions", "code-agent"],
       taskEndpoint: "/api/agent/tasks",
       approvalEndpoint: "/api/agent/approvals",
       codeTaskEndpoint: "/api/agent/code-task",
@@ -396,23 +385,6 @@ async function workspaceInfo() {
     },
     search: searchStatus(WORKSPACE_ROOT)
   };
-}
-
-async function checkHermesReachability() {
-  if (!HERMES_SERVER_URL) {
-    return { reachable: false, reason: "HERMES_SERVER_URL is not configured" };
-  }
-  try {
-    const response = await fetch(`${HERMES_SERVER_URL}/api/status`, {
-      signal: AbortSignal.timeout(800)
-    });
-    if (response.ok || response.status === 401 || response.status === 403 || response.status === 404) {
-      return { reachable: true, reason: "", status: response.status };
-    }
-    return { reachable: false, reason: `Hermes server returned HTTP ${response.status}` };
-  } catch (error) {
-    return { reachable: false, reason: `Hermes server unreachable: ${error.message}` };
-  }
 }
 
 async function readTree(url) {
@@ -777,43 +749,43 @@ async function renderCode(req) {
   return { html };
 }
 
-async function handleHermesProxy(req, res, url) {
+async function handleRuntimeProxy(req, res, url) {
   const engine = createAgentEngine();
   try {
-    const isModels = url.pathname === "/api/hermes/models" || url.pathname === "/api/workspace/models";
-    const isSessionsGet = (url.pathname === "/api/hermes/sessions" || url.pathname === "/api/workspace/sessions") && req.method === "GET";
-    const isSessionsPost = (url.pathname === "/api/hermes/sessions" || url.pathname === "/api/workspace/sessions") && req.method === "POST";
+    const isModels = url.pathname === "/api/models" || url.pathname === "/api/workspace/models";
+    const isSessionsGet = url.pathname === "/api/sessions" && req.method === "GET";
+    const isSessionsPost = url.pathname === "/api/sessions" && req.method === "POST";
     
-    const messagesMatch = url.pathname.match(/^\/api\/(hermes|workspace)\/sessions\/([^/]+)\/messages$/);
-    const sessionMatch = url.pathname.match(/^\/api\/(hermes|workspace)\/sessions\/([^/]+)$/);
+    const messagesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
+    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
 
     if (isModels && req.method === "GET") {
       return sendJson(res, await engine.listModels());
     }
     if (isSessionsGet) {
-      return sendJson(res, normalizeHermesSessionsResponse(await engine.listSessions(200)));
+      return sendJson(res, normalizeSessionsResponse(await engine.listSessions(200)));
     }
     if (messagesMatch && req.method === "GET") {
-      const sessionId = decodeURIComponent(messagesMatch[2]);
-      return sendJson(res, normalizeHermesSessionMessagesResponse(
+      const sessionId = decodeURIComponent(messagesMatch[1]);
+      return sendJson(res, normalizeSessionMessagesResponse(
         await engine.getSessionMessages(sessionId)
       ));
     }
     if (sessionMatch && req.method === "DELETE") {
-      const sessionId = decodeURIComponent(sessionMatch[2]);
+      const sessionId = decodeURIComponent(sessionMatch[1]);
       return sendJson(res, await engine.deleteSession(sessionId));
     }
     if (isSessionsPost) {
       const body = await readJsonBody(req);
       return sendJson(res, await engine.createSession(body), 201);
     }
-    throw Object.assign(new Error("Unknown Workspace/Hermes proxy endpoint."), { status: 404 });
+    throw Object.assign(new Error("Unknown AI Workspace runtime endpoint."), { status: 404 });
   } finally {
     engine.close();
   }
 }
 
-function normalizeHermesSessionsResponse(value) {
+function normalizeSessionsResponse(value) {
   const source = Array.isArray(value?.sessions) ? value.sessions
     : Array.isArray(value?.items) ? value.items
       : Array.isArray(value?.data) ? value.data
@@ -830,7 +802,6 @@ function normalizeHermesSessionsResponse(value) {
     const explicitTitle = stringField(item.display_name, item.displayName, item.title, item.name, item.summary);
     const title = explicitTitle || preview
       || fallbackSessionTitle(item.model, id);
-    if (messageCount <= 0) continue;
     seen.add(id);
     sessions.push({
       id,
@@ -846,7 +817,7 @@ function normalizeHermesSessionsResponse(value) {
   return { sessions };
 }
 
-function normalizeHermesSessionMessagesResponse(value) {
+function normalizeSessionMessagesResponse(value) {
   const source = Array.isArray(value?.messages) ? value.messages
     : Array.isArray(value?.items) ? value.items
       : Array.isArray(value?.data) ? value.data
@@ -894,74 +865,8 @@ function stringField(...values) {
   return "";
 }
 
-async function hermesJson(endpoint, options = {}) {
-  const cookie = await hermesDashboardCookie();
-  const headers = {
-    accept: "application/json",
-    ...(options.body ? { "content-type": "application/json" } : {}),
-    ...(cookie ? { cookie } : {})
-  };
-  const response = await fetch(HERMES_SERVER_URL + endpoint, { ...options, headers });
-  const text = await response.text();
-  if (!response.ok) {
-    throw Object.assign(new Error(`Hermes request failed: ${response.status} ${text}`), { status: 502 });
-  }
-  return text ? JSON.parse(text) : {};
-}
-
-let dashboardCookieCache = null;
-
-async function hermesDashboardCookie() {
-  if (!HERMES_DASHBOARD_USERNAME || !HERMES_DASHBOARD_PASSWORD) return "";
-  if (dashboardCookieCache) return dashboardCookieCache;
-  const providers = await fetchJsonWithCookies("/api/auth/providers", {});
-  const provider = HERMES_DASHBOARD_PROVIDER
-    || providers.providers?.find((item) => item.supports_password)?.name
-    || providers.providers?.[0]?.name;
-  if (!provider) throw Object.assign(new Error("Hermes dashboard has no auth provider."), { status: 502 });
-  const jar = {};
-  await fetchJsonWithCookies("/auth/password-login", jar, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      provider,
-      username: HERMES_DASHBOARD_USERNAME,
-      password: HERMES_DASHBOARD_PASSWORD,
-      next: "/"
-    })
-  });
-  dashboardCookieCache = cookieHeader(jar);
-  return dashboardCookieCache;
-}
-
-async function fetchJsonWithCookies(endpoint, jar, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  const cookie = cookieHeader(jar);
-  if (cookie) headers.cookie = cookie;
-  const response = await fetch(HERMES_SERVER_URL + endpoint, { ...options, headers });
-  absorbSetCookie(jar, response.headers);
-  const text = await response.text();
-  if (!response.ok) {
-    throw Object.assign(new Error(`Hermes dashboard request failed: ${response.status} ${text}`), { status: 502 });
-  }
-  return text ? JSON.parse(text) : {};
-}
-
-function absorbSetCookie(jar, headers) {
-  const values = headers.getSetCookie ? headers.getSetCookie() : headers.get("set-cookie") ? [headers.get("set-cookie")] : [];
-  for (const value of values) {
-    const first = String(value).split(";")[0];
-    const index = first.indexOf("=");
-    if (index > 0) jar[first.slice(0, index).trim()] = first.slice(index + 1).trim();
-  }
-}
-
-function cookieHeader(jar) {
-  return Object.entries(jar).map(([key, value]) => `${key}=${value}`).join("; ");
-}
-
 function uploadTempDir() {
-  return path.join(WORKSPACE_ROOT, ".hermes-workspace", "uploads");
+  return path.join(WORKSPACE_ROOT, ".ai-workspace", "uploads");
 }
 
 function requireUploadId(value) {

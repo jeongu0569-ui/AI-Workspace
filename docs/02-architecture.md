@@ -1,97 +1,91 @@
 # Architecture
 
-## High-Level Shape
-
-Current shape (`aiw serve` workspace bridge + Hermes core wrapper):
+## Current Shape
 
 ```text
-iOS / macOS Client
-        │
-        ▼
-aiw serve (Workspace Server)
-        │
-        ├── Filesystem workspace root
-        ├── .ai-workspace/ state store
-        │   ├── tasks/, approvals/, decisions/
-        │   ├── diffs/, tool-logs/, memory/
-        │   └── sessions/<id>.json
-        └── WorkspaceAgentEngine
-            ├── ChatRuntime       – Hermes live backend wrapper
-            ├── ModelRuntime      – Hermes model options wrapper
-            ├── SessionRuntime    – Hermes sessions + workspace summaries
-            ├── LLMRuntime        – structured LLM calls through Hermes
-            └── CodeAgentRuntime  – task/patch/approval/git loop
+Apple Client / Web clients / CLI
+  -> AI Workspace Server
+      -> WorkspaceAgentEngine
+          -> ChatRuntime
+          -> ModelRuntime
+          -> SessionRuntime
+          -> LLMRuntime
+          -> CodeAgentRuntime
+          -> WorkspaceAgentStateStore
+      -> Workspace file APIs
+      -> Render/search/context services
 ```
 
-Target shape:
+AI Workspace owns the server and runtime state. External runtime behavior from
+the original prototype is treated as migration reference, not as the product
+boundary.
+
+## Runtime Modules
+
+Current runtime files:
 
 ```text
-iOS / macOS Client
-        │
-        ▼
-aiw serve
-        │
-        ├── Workspace Server
-        ├── Workspace Engine
-        │   ├── Hermes chat/session/model/provider/auth wrapper
-        │   ├── Tool/MCP router
-        │   ├── Notes/PDF context runtime
-        │   └── CodeAgentRuntime
-        ├── Filesystem workspace root
-        ├── Search/index state
-        ├── Task memory/log/diff store
-        └── Approval/safety gate
+server/lib/agent-engine.mjs
+server/lib/chat-runtime.mjs
+server/lib/model-runtime.mjs
+server/lib/session-runtime.mjs
+server/lib/llm-runtime.mjs
+server/lib/code-agent-runtime.mjs
+server/lib/runtime/config-store.mjs
 ```
 
-Hermes remains the owner of model/provider/auth/codex/provider-plugin behavior.
-AI Workspace does not keep a parallel provider registry or credential store.
-When Hermes is unavailable, chat and automatic LLM patch generation are
-unavailable, while filesystem, search, task, diff, approval, and manual patch
-features continue to work.
-
-## Why App → Workspace Server → Agent Engine
-
-The Obsidian plugin connected directly to Hermes because the Vault already lived
-inside Obsidian. The new app puts the Workspace Server in the middle.
-
-Benefits:
-
-- One place to enforce path safety.
-- One place to map file IDs, relative paths, and metadata.
-- One place to issue Hermes login and WebSocket tickets.
-- One place to control mobile caching.
-- One place to translate `@folder`, `@pdf`, and `@workspace` into RAG/search
-  scope metadata.
-- One place to own task logs, decisions, diffs, and memory even if the live
-  model/tool backend changes later.
-
-## Filesystem As Source Of Truth
-
-Files remain visible as normal folders and files:
+Planned runtime layout:
 
 ```text
-HermesWorkspace/Notes/Work/meeting.md
-HermesWorkspace/Documents/os-book.pdf
-HermesWorkspace/Code/my-app/package.json
-HermesWorkspace/.ai-workspace/tasks/task-....json
-HermesWorkspace/.ai-workspace/sessions/<sessionId>.json
+server/lib/runtime/
+  session.mjs
+  model.mjs
+  provider.mjs
+  auth.mjs
+  stream.mjs
+  tools.mjs
+  approvals.mjs
+  mcp.mjs
+  sandbox.mjs
 ```
 
-The metadata DB should not replace files. It augments them:
+`config-store.mjs` is the first step. It stores runtime configuration under
+`.ai-workspace/config` and exposes provider, model, and credential commands for
+`aiw`.
 
-- stable file ID
-- relative path
-- type
-- tags
-- backlinks
-- checksum
-- indexed status
-- thumbnail/cache paths
-- session associations
+## Workspace State
+
+The workspace root is a normal server-side folder:
+
+```text
+AIWorkspace/
+├── Notes/
+├── Code/
+├── Documents/
+├── Attachments/
+└── .ai-workspace/
+```
+
+Runtime state lives under:
+
+```text
+.ai-workspace/
+├── config/
+│   ├── runtime.json
+│   └── credentials.json
+├── sessions/
+├── tasks/
+├── memory/
+├── approvals/
+├── decisions/
+├── tool-logs/
+├── diffs/
+└── index/
+```
 
 ## Path Rule
 
-Clients only send relative paths:
+Clients only send workspace-relative paths:
 
 ```text
 Notes/Work/meeting.md
@@ -99,7 +93,7 @@ Code/project-a/src/main.ts
 Documents/os-book.pdf
 ```
 
-The server rejects:
+The server rejects absolute paths and traversal:
 
 ```text
 /Users/user/Desktop/secret.txt
@@ -107,120 +101,41 @@ The server rejects:
 C:/Users/user/secret.txt
 ```
 
-This is the most important early invariant.
+## Public API Rule
 
-## Hermes Core Wrapper Layer
-
-`server/lib/hermes-core-runtime.mjs` is the formal Hermes boundary. It owns the
-Workspace Server's view of Hermes and delegates live chat/session work to the
-lower-level `HermesLiveClient` compatibility transport in
-`server/lib/hermes-compat.mjs`.
-
-- `HermesCoreRuntime` relays Hermes live events, exposes session/model helper
-  methods, and is the only place that imports or calls Hermes Python modules for
-  read-only orientation data such as the provider catalog.
-- `HermesCompatChatBackend` wraps `HermesCoreRuntime` with the `ChatBackend`
-  interface.
-- `ChatRuntime` uses this Hermes backend only. There is no direct
-  OpenAI-compatible fallback inside AI Workspace.
-- `ModelRuntime` reads Hermes model options instead of scanning workspace
-  provider settings.
-- `SessionRuntime` keeps workspace-friendly normalized session views but does
-  not replace Hermes session ownership.
-
-Future work can tighten the implementation behind `HermesCoreRuntime`, but it
-should still reuse Hermes' `hermes_cli` provider/auth/model implementation
-rather than cloning it.
-
-## Chat / Provider / Auth Ownership
-
-Hermes owns:
+Clients should talk to AI Workspace APIs only:
 
 ```text
-hermes model
-hermes auth
-hermes config
-hermes_cli/providers.py
-hermes_cli/auth.py
-hermes_cli/runtime_provider.py
-plugins/model-providers/*
+GET  /api/models
+GET  /api/sessions
+POST /api/sessions
+GET  /api/sessions/:id/messages
+WS   /api/live
 ```
 
-AI Workspace owns task state and UI-facing workflow state, not model
-credentials. The `aiw model` and `aiw auth` commands delegate directly to
-Hermes. `aiw provider list` is read-only orientation output from Hermes'
-provider catalog; provider mutation stays in Hermes.
+The Apple client should not know about any external server URL or dashboard
+credential. It only needs the AI Workspace Server URL.
 
-## Notes Context Router
+## Code Runtime
 
-Small context can be sent inline:
-
-- selected text
-- current markdown note
-- one short note
-
-Large context should be passed as search scope metadata:
-
-- PDF
-- folder
-- tag
-- linked resources
-- whole workspace
-
-Example metadata:
-
-```json
-{
-  "workspace": {
-    "scopeType": "folder",
-    "scopePath": "Notes/Operating Systems",
-    "ragRecommended": true,
-    "ragSearchProvider": "docsearch-mcp"
-  }
-}
-```
-
-Implemented server API:
+Code work is handled through the server:
 
 ```text
-POST /api/context
-POST /api/search
-GET  /api/search/status
+inspect
+  -> proposed patch
+  -> approval
+  -> apply
+  -> checks
+  -> git diff/status
+  -> task memory update
 ```
 
-The same context request shape can be sent inside live `prompt.submit` as
-`contextRequest`, so clients do not need to duplicate folder/PDF/RAG routing
-logic.
+The client never runs a local shell on iOS. Shell/check/git commands are
+server-side operations with scope limits, approval, timeout, and logs.
 
-The first search implementation is `workspace-scan`, a dependency-free text scan
-fallback. It is intentionally simple. The API boundary exists so `docsearch-mcp`
-or a vector index can replace the internals without changing the client.
+## Migration Reference
 
-## Code Area
-
-Code projects live under `Code/`. Permission handling is stricter than Notes.
-
-The Code Agent safety policy:
-
-```text
-git status / add / commit / diff / log  – requires approved: true on the task
-git push                                 – requires gitPushApproved: true (or dangerApproved: true)
-git push --force / -f                    – requires dangerApproved: true only
-shell metacharacters in git arguments   – blocked unconditionally
-```
-
-`CodeAgentRuntime` owns the full loop:
-
-1. `inspectProject` – scan files, detect test/package commands, record git status
-2. `proposePatch` – store LLM-authored or human diff artifact (no file writes yet)
-3. `rejectPatch` – discard proposal without applying
-4. `applyPatch` – write file changes only after `approved: true` decision
-5. `runChecks` – execute test/lint commands inside the task scope
-6. `runGitCommand` – execute safe git commands via `execFile` (no shell expansion)
-7. `generateAutomaticPatch` – call `LLMRuntime.generateCodePatch` to produce a
-   structured `{ summary, changes: [{ path, find, replace }] }` response
-
-A coding task is recorded under `.ai-workspace/tasks`, approval requests under
-`.ai-workspace/approvals`, tool activity under `.ai-workspace/tool-logs`,
-decisions under `.ai-workspace/decisions`, and produced or captured diffs under
-`.ai-workspace/diffs`.
+The local reference implementation remains useful for provider catalog,
+credential, streaming, tool, approval, MCP, and sandbox ideas. Those ideas
+should be ported into AI Workspace-owned modules instead of being kept behind an
+external server dependency.

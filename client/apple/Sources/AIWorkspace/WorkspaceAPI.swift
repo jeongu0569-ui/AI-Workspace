@@ -235,27 +235,27 @@ struct WorkspaceAPI {
     }
 
     func hermesModelOptions() async throws -> [HermesModelOption] {
-        let data = try await dataRequest(try components("/api/hermes/models"))
+        let data = try await dataRequest(try components("/api/models"))
         let object = try JSONSerialization.jsonObject(with: data)
         return extractHermesModels(from: object)
     }
 
     func hermesSessions() async throws -> [HermesSessionSummary] {
-        let data = try await dataRequest(try components("/api/hermes/sessions"))
+        let data = try await dataRequest(try components("/api/sessions"))
         let object = try JSONSerialization.jsonObject(with: data)
         return extractHermesSessions(from: object)
     }
 
     func hermesSessionMessages(sessionId: String) async throws -> [HermesSessionMessage] {
-        var components = try components("/api/hermes/sessions/\(sessionId)/messages")
-        components.percentEncodedPath = "/api/hermes/sessions/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)/messages"
+        var components = try components("/api/sessions/\(sessionId)/messages")
+        components.percentEncodedPath = "/api/sessions/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)/messages"
         let response: HermesSessionMessagesResponse = try await request(components)
         return response.messages
     }
 
     func deleteHermesSession(sessionId: String) async throws {
-        var components = try components("/api/hermes/sessions/\(sessionId)")
-        components.percentEncodedPath = "/api/hermes/sessions/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)"
+        var components = try components("/api/sessions/\(sessionId)")
+        components.percentEncodedPath = "/api/sessions/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)"
         let _: EmptyResponse = try await request(components, method: "DELETE")
     }
 
