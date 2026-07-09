@@ -1,0 +1,151 @@
+export const TOOL_DISCOVERY_DEFINITION = {
+  type: "function",
+  function: {
+    name: "tool_discovery",
+    description: "Discover tools and capabilities that are not currently available or enabled in the current surface/mode.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        reason: {
+          type: "string",
+          description: "The reason why you are searching for additional tools."
+        },
+        desiredCapability: {
+          type: "string",
+          description: "The description of the capability you need (e.g. 'read files', 'git operations', 'search notes')."
+        }
+      },
+      required: ["reason", "desiredCapability"]
+    }
+  }
+};
+
+export const TOOL_REGISTRY = [
+  {
+    name: "workspace_search",
+    description: "Search workspace text and file contents.",
+    group: "notes_search",
+    surfaces: ["notes"]
+  },
+  {
+    name: "docsearch_search",
+    description: "Search indexed notes, documents, and PDFs.",
+    group: "notes_search",
+    surfaces: ["notes"]
+  },
+  {
+    name: "read_note_file",
+    description: "Read the content of notes or document files.",
+    group: "notes_read",
+    surfaces: ["notes"]
+  },
+  {
+    name: "read_file_metadata",
+    description: "Get metadata for note files.",
+    group: "notes_read",
+    surfaces: ["notes"]
+  },
+  {
+    name: "search_project",
+    description: "Search source files and directories in code projects.",
+    group: "code_tools",
+    surfaces: ["code"]
+  },
+  {
+    name: "read_project_file",
+    description: "Read code project source files.",
+    group: "code_tools",
+    surfaces: ["code"]
+  },
+  {
+    name: "propose_patch",
+    description: "Propose modifications or edits to project code files.",
+    group: "code_tools",
+    surfaces: ["code"]
+  },
+  {
+    name: "apply_patch",
+    description: "Apply a proposed patch to project files.",
+    group: "code_tools",
+    surfaces: ["code"],
+    requiresApproval: true
+  },
+  {
+    name: "inspect_git",
+    description: "Inspect the current git repository status.",
+    group: "git_tools",
+    surfaces: ["code"]
+  },
+  {
+    name: "get_git_diff",
+    description: "View git diff for the current changes or commits.",
+    group: "git_tools",
+    surfaces: ["code"]
+  },
+  {
+    name: "run_git_command",
+    description: "Run safe or arbitrary git commands.",
+    group: "git_tools",
+    surfaces: ["code"],
+    requiresApproval: true
+  },
+  {
+    name: "run_checks",
+    description: "Run automated tests, builds, and linting checks.",
+    group: "checks_tools",
+    surfaces: ["code"],
+    requiresApproval: true
+  }
+];
+
+export async function executeToolDiscovery(workspaceRoot, surface, args = {}) {
+  const desiredCapability = String(args.desiredCapability || "").toLowerCase();
+  const queryWords = desiredCapability.split(/\s+/).filter(Boolean);
+  
+  // Find matching tool groups based on desiredCapability keywords or description match
+  const matchedTools = TOOL_REGISTRY.filter(tool => {
+    if (queryWords.length === 0) return false;
+    return queryWords.every(word => {
+      const inName = tool.name.toLowerCase().includes(word);
+      const inDesc = tool.description.toLowerCase().includes(word);
+      const inGroup = tool.group.toLowerCase().includes(word);
+      return inName || inDesc || inGroup;
+    });
+  });
+
+  // Group matched tools
+  const groupsMap = new Map();
+  for (const tool of matchedTools) {
+    if (!groupsMap.has(tool.group)) {
+      groupsMap.set(tool.group, {
+        group: tool.group,
+        tools: [],
+        requiresUserEnabled: false,
+        requiresApproval: false
+      });
+    }
+    const g = groupsMap.get(tool.group);
+    g.tools.push({
+      name: tool.name,
+      description: tool.description
+    });
+    if (tool.requiresApproval) {
+      g.requiresApproval = true;
+    }
+  }
+
+  const availableToolGroups = Array.from(groupsMap.values());
+  const recommendTools = matchedTools
+    .filter(t => !t.requiresApproval) // Recommend safe tools first
+    .map(t => t.name)
+    .slice(0, 3);
+
+  return {
+    availableToolGroups,
+    recommendation: {
+      enableForThisTurn: recommendTools,
+      reason: `Found tools matching your request for '${desiredCapability}'`
+    }
+  };
+}

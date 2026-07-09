@@ -97,9 +97,30 @@ export class WorkspaceAgentEngine extends EventEmitter {
       updatedAt: new Date().toISOString(),
       source: "workspace",
       runtime: "chat-runtime",
-      isActive: true
+      isActive: true,
+      kind: params.kind || (params.folderId ? "folder" : (params.projectId ? "project" : "general")),
+      surface: params.surface || null,
+      folderId: params.folderId || null,
+      projectId: params.projectId || null,
+      createdAt: new Date().toISOString(),
+      lastOpenedAt: new Date().toISOString(),
+      archivedAt: null,
+      visibleInSidebar: true,
+      searchable: true,
+      pinned: Boolean(params.pinned),
+      summary: {
+        content: "",
+        coveredMessageIds: [],
+        updatedAt: new Date().toISOString()
+      }
     };
     await this.state.writeSession(sessionObj);
+
+    // Index the new session metadata
+    try {
+      const { indexSession } = await import("./runtime/conversation-index.mjs");
+      await indexSession(this.config.workspaceRoot, sessionObj);
+    } catch {}
 
     await this.state.recordSessionEvent({
       type: "session.create",
@@ -161,6 +182,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
         ...params,
         context,
         history,
+        surface: priorSession?.surface || params.surface || null,
         taskId: task.id
       }).catch((error) => {
         if (this.chatRuntime.isAvailable()) throw error;

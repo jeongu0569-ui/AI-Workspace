@@ -203,8 +203,27 @@ export class OpenAICompatibleRuntime extends EventEmitter {
 
     // Read toggles & MCP servers to merge active tools
     const config = await readRuntimeConfig(this.workspaceRoot);
-    const disabledTools = new Set(config.disabledTools || []);
+    const { getEffectiveToolMode } = await import("./tool-mode-registry.mjs");
+    const { TOOL_DISCOVERY_DEFINITION } = await import("./tool-discovery.mjs");
+    const { CONVERSATION_SEARCH_DEFINITION, CONVERSATION_READ_DEFINITION } = await import("./conversation-tools.mjs");
+
+    const effectiveMode = await getEffectiveToolMode(this.workspaceRoot, params.surface || "chat");
+    const enabledTools = new Set(effectiveMode.enabledTools || []);
+
     const activeTools = [...WORKSPACE_TOOL_DEFINITIONS];
+    
+    // Inject mandatory ones if not present (only when surface is specified)
+    if (params.surface) {
+      if (!activeTools.some(t => t.function.name === "tool_discovery")) {
+        activeTools.push(TOOL_DISCOVERY_DEFINITION);
+      }
+      if (!activeTools.some(t => t.function.name === "conversation_search")) {
+        activeTools.push(CONVERSATION_SEARCH_DEFINITION);
+      }
+      if (!activeTools.some(t => t.function.name === "conversation_read")) {
+        activeTools.push(CONVERSATION_READ_DEFINITION);
+      }
+    }
 
     if (config.mcpServers) {
       const enabledMcpNames = new Set(
@@ -249,7 +268,20 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       }
     }
 
-    const filteredTools = activeTools.filter((t) => !disabledTools.has(t.function.name));
+    // Filter tools based on tool mode enabledTools list
+    const filteredTools = activeTools.filter((t) => {
+      const name = t.function.name;
+      if (name === "tool_discovery" || name === "conversation_search" || name === "conversation_read") {
+        return true;
+      }
+      if (config.disabledTools && config.disabledTools.includes(name)) {
+        return false;
+      }
+      if (params.surface) {
+        return enabledTools.has(name);
+      }
+      return true;
+    });
 
     const response = await this.fetch(`${selection.baseUrl}/chat/completions`, {
       method: "POST",
@@ -306,8 +338,13 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   }
 
   async executeToolCall(call, params) {
-    // Check if tool is disabled
     const config = await readRuntimeConfig(this.workspaceRoot);
+    const { getEffectiveToolMode } = await import("./tool-mode-registry.mjs");
+    const effectiveMode = await getEffectiveToolMode(this.workspaceRoot, params.surface || "chat");
+    const enabledTools = new Set(effectiveMode.enabledTools || []);
+    const mandatory = new Set(["tool_discovery", "conversation_search", "conversation_read"]);
+
+    // Check if tool is disabled in config first
     const disabledTools = new Set(config.disabledTools || []);
     if (disabledTools.has(call.name)) {
       const errorMsg = `Tool '${call.name}' is currently disabled in config.`;
@@ -321,6 +358,55 @@ export class OpenAICompatibleRuntime extends EventEmitter {
         error: errorMsg
       });
       return { ok: false, error: errorMsg };
+    }
+
+    // Gating check by tool modes (only when surface is specified)
+    if (params.surface && !mandatory.has(call.name) && !enabledTools.has(call.name)) {
+      const errorMsg = `Tool '${call.name}' is not enabled in current mode.`;
+      this.emit("event", {
+        type: "tool.error",
+        sessionId: params.sessionId,
+        taskId: params.taskId,
+        toolCallId: call.id,
+        toolName: call.name,
+        text: errorMsg,
+        error: errorMsg
+      });
+      return { ok: false, error: errorMsg };
+    }
+
+    // Requires approval check for workspace tools (only when surface is specified)
+    const requiresApprovalList = new Set(effectiveMode.requiresApproval || []);
+    if (params.surface && requiresApprovalList.has(call.name) && params.approved !== true && !call.name.startsWith("mcp_")) {
+      const pendingState = {
+        type: "workspace.tool.call",
+        sessionId: params.sessionId,
+        taskId: params.taskId,
+        toolCall: call,
+        toolName: call.name,
+        arguments: call.arguments,
+        reason: "Approval required for this tool in current mode."
+      };
+      this.emit("event", {
+        type: "approval.required",
+        sessionId: params.sessionId,
+        taskId: params.taskId,
+        category: "workspace.tool.call",
+        summary: `Execute tool '${call.name}'`,
+        reason: "Tool execution requires approval in this mode.",
+        pendingState
+      });
+      throw Object.assign(
+        new Error(`Approval required for tool '${call.name}'.`),
+        {
+          status: 409,
+          approvalRequired: true,
+          category: "workspace.tool.call",
+          summary: `Execute tool '${call.name}'`,
+          reason: "Tool execution requires approval in this mode.",
+          pendingState
+        }
+      );
     }
 
     // Check if it is MCP tool execution
@@ -466,7 +552,20 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       text: call.name
     });
     try {
-      const result = await executeWorkspaceTool(this.workspaceRoot, call.name, call.arguments);
+      let result;
+      const args = typeof call.arguments === "string" ? JSON.parse(call.arguments || "{}") : call.arguments;
+      if (call.name === "tool_discovery") {
+        const { executeToolDiscovery } = await import("./tool-discovery.mjs");
+        result = await executeToolDiscovery(this.workspaceRoot, params.surface || "chat", args);
+      } else if (call.name === "conversation_search") {
+        const { executeConversationSearch } = await import("./conversation-tools.mjs");
+        result = await executeConversationSearch(this.workspaceRoot, args);
+      } else if (call.name === "conversation_read") {
+        const { executeConversationRead } = await import("./conversation-tools.mjs");
+        result = await executeConversationRead(this.workspaceRoot, args);
+      } else {
+        result = await executeWorkspaceTool(this.workspaceRoot, call.name, call.arguments);
+      }
       this.emit("event", {
         type: "tool.complete",
         sessionId: params.sessionId,
@@ -516,7 +615,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   }
 
   async resumePendingState(pendingState = {}, params = {}) {
-    if (pendingState.type !== "mcp.tool.call") {
+    if (pendingState.type !== "mcp.tool.call" && pendingState.type !== "workspace.tool.call") {
       throw Object.assign(new Error(`Unsupported pending state: ${pendingState.type || "(none)"}`), { status: 400 });
     }
     const result = await this.executeToolCall(pendingState.toolCall, {

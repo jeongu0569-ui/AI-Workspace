@@ -426,6 +426,150 @@ async function handleRequest(req, res) {
     if (req.method === "POST" && url.pathname === "/api/render/code") {
       return sendJson(res, await renderCode(req));
     }
+    // --- Tool Mode & Surface Routes ---
+    if (req.method === "GET" && url.pathname === "/api/tool-modes") {
+      const { loadToolModes } = await import("./lib/runtime/tool-mode-registry.mjs");
+      return sendJson(res, await loadToolModes(WORKSPACE_ROOT));
+    }
+    const toolModeSurfaceMatch = url.pathname.match(/^\/api\/tool-modes\/([^/]+)$/);
+    if (req.method === "POST" && toolModeSurfaceMatch) {
+      const surface = decodeURIComponent(toolModeSurfaceMatch[1]);
+      const body = await readJsonBody(req);
+      const { saveToolModeOverride } = await import("./lib/runtime/tool-mode-registry.mjs");
+      return sendJson(res, await saveToolModeOverride(WORKSPACE_ROOT, surface, body));
+    }
+
+    // --- Tool Discovery Routes ---
+    if (req.method === "GET" && url.pathname === "/api/tools/available") {
+      const { TOOL_REGISTRY } = await import("./lib/runtime/tool-discovery.mjs");
+      return sendJson(res, { availableTools: TOOL_REGISTRY });
+    }
+    if (req.method === "POST" && url.pathname === "/api/tools/discover") {
+      const body = await readJsonBody(req);
+      const { executeToolDiscovery } = await import("./lib/runtime/tool-discovery.mjs");
+      return sendJson(res, await executeToolDiscovery(WORKSPACE_ROOT, body.surface || "chat", body));
+    }
+
+    // --- Conversation Search & Read Routes ---
+    if (req.method === "POST" && url.pathname === "/api/conversations/search") {
+      const body = await readJsonBody(req);
+      const { executeConversationSearch } = await import("./lib/runtime/conversation-tools.mjs");
+      return sendJson(res, await executeConversationSearch(WORKSPACE_ROOT, body));
+    }
+    if (req.method === "POST" && url.pathname === "/api/conversations/read") {
+      const body = await readJsonBody(req);
+      const { executeConversationRead } = await import("./lib/runtime/conversation-tools.mjs");
+      return sendJson(res, await executeConversationRead(WORKSPACE_ROOT, body));
+    }
+    const convMsgMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/messages$/);
+    if (req.method === "GET" && convMsgMatch) {
+      const sessionId = decodeURIComponent(convMsgMatch[1]);
+      const engine = createAgentEngine();
+      try {
+        return sendJson(res, normalizeSessionMessagesResponse(await engine.getSessionMessages(sessionId)));
+      } finally {
+        engine.close();
+      }
+    }
+
+    // --- Conversation Folders Routes ---
+    if (req.method === "GET" && url.pathname === "/api/conversation-folders") {
+      const { listFolders } = await import("./lib/runtime/conversation-folders.mjs");
+      return sendJson(res, await listFolders(WORKSPACE_ROOT));
+    }
+    if (req.method === "POST" && url.pathname === "/api/conversation-folders") {
+      const body = await readJsonBody(req);
+      const { createFolder } = await import("./lib/runtime/conversation-folders.mjs");
+      return sendJson(res, await createFolder(WORKSPACE_ROOT, body), 201);
+    }
+    const folderMatch = url.pathname.match(/^\/api\/conversation-folders\/([^/]+)$/);
+    if (folderMatch) {
+      const folderId = decodeURIComponent(folderMatch[1]);
+      if (req.method === "PATCH") {
+        const body = await readJsonBody(req);
+        const { updateFolder } = await import("./lib/runtime/conversation-folders.mjs");
+        return sendJson(res, await updateFolder(WORKSPACE_ROOT, folderId, body));
+      }
+      if (req.method === "DELETE") {
+        const { deleteFolder } = await import("./lib/runtime/conversation-folders.mjs");
+        return sendJson(res, await deleteFolder(WORKSPACE_ROOT, folderId));
+      }
+    }
+
+    // --- Session Folder Move & Manual Archive/Unarchive ---
+    const sessionMoveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/move-to-folder$/);
+    if (req.method === "POST" && sessionMoveMatch) {
+      const sessionId = decodeURIComponent(sessionMoveMatch[1]);
+      const body = await readJsonBody(req);
+      const { moveSessionToFolder } = await import("./lib/runtime/conversation-folders.mjs");
+      return sendJson(res, await moveSessionToFolder(WORKSPACE_ROOT, sessionId, body.folderId));
+    }
+    const sessionArchiveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/archive$/);
+    if (req.method === "POST" && sessionArchiveMatch) {
+      const sessionId = decodeURIComponent(sessionArchiveMatch[1]);
+      const { archiveSession } = await import("./lib/runtime/session-archive.mjs");
+      return sendJson(res, await archiveSession(WORKSPACE_ROOT, sessionId));
+    }
+    const sessionUnarchiveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/unarchive$/);
+    if (req.method === "POST" && sessionUnarchiveMatch) {
+      const sessionId = decodeURIComponent(sessionUnarchiveMatch[1]);
+      const { unarchiveSession } = await import("./lib/runtime/session-archive.mjs");
+      return sendJson(res, await unarchiveSession(WORKSPACE_ROOT, sessionId));
+    }
+    if (req.method === "GET" && url.pathname === "/api/conversation-archive") {
+      const { listArchivedSessions } = await import("./lib/runtime/session-archive.mjs");
+      return sendJson(res, await listArchivedSessions(WORKSPACE_ROOT));
+    }
+
+    // --- Long-Term Memory Search & CRUD ---
+    if (req.method === "GET" && url.pathname === "/api/memory/search") {
+      const query = url.searchParams.get("query") || "";
+      const currentFolderId = url.searchParams.get("currentFolderId") || "";
+      const currentProjectId = url.searchParams.get("currentProjectId") || "";
+      const maxResults = parseInt(url.searchParams.get("maxResults") || "10", 10);
+      const { searchMemory } = await import("./lib/runtime/memory-retrieval.mjs");
+      return sendJson(res, await searchMemory(WORKSPACE_ROOT, query, { currentFolderId, currentProjectId, maxResults }));
+    }
+    if (req.method === "POST" && url.pathname === "/api/memory") {
+      const body = await readJsonBody(req);
+      const memories = await getUserMemories();
+      const newMemory = {
+        id: body.id || `memory-${randomUUID()}`,
+        content: body.content || "",
+        createdAt: new Date().toISOString(),
+        pinned: Boolean(body.pinned),
+        sourceSessionIds: body.sourceSessionIds || []
+      };
+      memories.push(newMemory);
+      await saveUserMemories(memories);
+      return sendJson(res, newMemory, 201);
+    }
+    const memoryMatch = url.pathname.match(/^\/api\/memory\/([^/]+)$/);
+    if (memoryMatch) {
+      const memoryId = decodeURIComponent(memoryMatch[1]);
+      if (req.method === "PATCH") {
+        const body = await readJsonBody(req);
+        const memories = await getUserMemories();
+        const idx = memories.findIndex(m => m.id === memoryId);
+        if (idx === -1) {
+          return sendJson(res, { ok: false, error: "Memory not found." }, 404);
+        }
+        memories[idx] = {
+          ...memories[idx],
+          ...body,
+          updatedAt: new Date().toISOString()
+        };
+        await saveUserMemories(memories);
+        return sendJson(res, memories[idx]);
+      }
+      if (req.method === "DELETE") {
+        const memories = await getUserMemories();
+        const filtered = memories.filter(m => m.id !== memoryId);
+        await saveUserMemories(filtered);
+        return sendJson(res, { ok: true });
+      }
+    }
+
     // --- Workspace-owned session routes (no Hermes required) ---
     const wsSessionsPath = "/api/workspace/sessions";
     if (url.pathname === wsSessionsPath) {
@@ -1428,8 +1572,21 @@ function contentTypeForPath(filePath) {
   return "application/octet-stream";
 }
 
-function trimTrailingSlash(value) {
-  return String(value || "").replace(/\/+$/, "");
+async function getUserMemories() {
+  const filePath = path.join(WORKSPACE_ROOT, ".ai-workspace", "memory", "user", "memories.jsonl");
+  try {
+    const data = await fs.readFile(filePath, "utf8");
+    return data.split("\n").filter(Boolean).map(JSON.parse);
+  } catch {
+    return [];
+  }
+}
+
+async function saveUserMemories(list) {
+  const dir = path.join(WORKSPACE_ROOT, ".ai-workspace", "memory", "user");
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, "memories.jsonl");
+  await fs.writeFile(filePath, list.map(m => JSON.stringify(m)).join("\n") + "\n", "utf8");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -7,7 +7,7 @@ export class SessionRuntime {
     this.stateStore = stateStore;
   }
 
-  async listSessions(limit = 200) {
+  async listSessions(limit = 200, options = {}) {
     let workspaceSessions = [];
     if (this.stateStore) {
       try {
@@ -21,6 +21,18 @@ export class SessionRuntime {
     for (const s of workspaceSessions) {
       if (s.id && !seen.has(s.id)) {
         seen.add(s.id);
+        
+        // Archive/Sidebar filtering
+        if (!options.includeArchived && s.visibleInSidebar === false) {
+          continue;
+        }
+        if (options.folderId && s.folderId !== options.folderId) {
+          continue;
+        }
+        if (options.projectId && s.projectId !== options.projectId) {
+          continue;
+        }
+
         merged.push({
           ...s,
           source: "workspace",
@@ -143,7 +155,29 @@ export class SessionRuntime {
           if (message.content) {
             session.preview = message.content.slice(0, 60);
           }
+
+          // Generate or update simple summary
+          if (!session.summary || !session.summary.content) {
+            const userMsg = session.messages.find(m => m.role === "user")?.content || "";
+            if (userMsg) {
+              session.summary = {
+                content: `Conversation starting with: ${userMsg.slice(0, 80)}`,
+                coveredMessageIds: session.messages.map((_, idx) => String(idx + 1)),
+                updatedAt: new Date().toISOString()
+              };
+            }
+          } else {
+            session.summary.coveredMessageIds = session.messages.map((_, idx) => String(idx + 1));
+            session.summary.updatedAt = new Date().toISOString();
+          }
+
           await this.stateStore.writeSession(session);
+
+          // Update Search Index
+          try {
+            const { indexSession } = await import("./runtime/conversation-index.mjs");
+            await indexSession(this.stateStore.workspaceRoot, session);
+          } catch {}
         }
       } catch {}
     }

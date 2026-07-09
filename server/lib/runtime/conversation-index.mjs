@@ -1,0 +1,300 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
+export async function ensureConversationIndex(workspaceRoot) {
+  const dir = path.join(workspaceRoot, ".ai-workspace", "conversation-index");
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function indexSession(workspaceRoot, session) {
+  const dir = await ensureConversationIndex(workspaceRoot);
+  
+  // 1. Index Session Meta
+  const metaPath = path.join(dir, "sessions.jsonl");
+  let sessions = [];
+  try {
+    const data = await fs.readFile(metaPath, "utf8");
+    sessions = data.split("\n").filter(Boolean).map(JSON.parse);
+  } catch {}
+  
+  // Remove existing
+  sessions = sessions.filter(s => s.id !== session.id);
+  // Add new
+  sessions.push({
+    id: session.id,
+    title: session.title,
+    kind: session.kind || "general",
+    surface: session.surface || "chat",
+    folderId: session.folderId || null,
+    projectId: session.projectId || null,
+    createdAt: session.createdAt || new Date().toISOString(),
+    updatedAt: session.updatedAt || new Date().toISOString(),
+    lastOpenedAt: session.lastOpenedAt || new Date().toISOString(),
+    archivedAt: session.archivedAt || null,
+    visibleInSidebar: session.visibleInSidebar !== false,
+    searchable: session.searchable !== false,
+    pinned: Boolean(session.pinned)
+  });
+  
+  await fs.writeFile(metaPath, sessions.map(s => JSON.stringify(s)).join("\n") + "\n", "utf8");
+
+  // 2. Index Summary
+  if (session.summary && session.summary.content) {
+    const summaryPath = path.join(dir, "summaries.jsonl");
+    let summaries = [];
+    try {
+      const data = await fs.readFile(summaryPath, "utf8");
+      summaries = data.split("\n").filter(Boolean).map(JSON.parse);
+    } catch {}
+    
+    summaries = summaries.filter(s => s.sessionId !== session.id);
+    summaries.push({
+      sessionId: session.id,
+      summary: session.summary.content,
+      updatedAt: session.summary.updatedAt || new Date().toISOString()
+    });
+    
+    await fs.writeFile(summaryPath, summaries.map(s => JSON.stringify(s)).join("\n") + "\n", "utf8");
+  }
+
+  // 3. Index Messages
+  if (Array.isArray(session.messages)) {
+    const msgPath = path.join(dir, "messages.jsonl");
+    let messages = [];
+    try {
+      const data = await fs.readFile(msgPath, "utf8");
+      messages = data.split("\n").filter(Boolean).map(JSON.parse);
+    } catch {}
+    
+    messages = messages.filter(m => m.sessionId !== session.id);
+    session.messages.forEach((msg, idx) => {
+      messages.push({
+        sessionId: session.id,
+        messageId: msg.id || String(idx + 1),
+        role: msg.role,
+        content: msg.content || "",
+        createdAt: msg.createdAt || new Date().toISOString()
+      });
+    });
+    
+    await fs.writeFile(msgPath, messages.map(m => JSON.stringify(m)).join("\n") + "\n", "utf8");
+  }
+}
+
+export async function searchConversationIndex(workspaceRoot, query, options = {}) {
+  const dir = await ensureConversationIndex(workspaceRoot);
+  const q = String(query || "").toLowerCase();
+  
+  // Read indexing files
+  let sessions = [];
+  try {
+    const data = await fs.readFile(path.join(dir, "sessions.jsonl"), "utf8");
+    sessions = data.split("\n").filter(Boolean).map(JSON.parse);
+  } catch {}
+
+  let summaries = [];
+  try {
+    const data = await fs.readFile(path.join(dir, "summaries.jsonl"), "utf8");
+    summaries = data.split("\n").filter(Boolean).map(JSON.parse);
+  } catch {}
+
+  let messages = [];
+  try {
+    const data = await fs.readFile(path.join(dir, "messages.jsonl"), "utf8");
+    messages = data.split("\n").filter(Boolean).map(JSON.parse);
+  } catch {}
+
+  const results = [];
+  
+  // Time filtering helper
+  const parseTime = (val) => new Date(val).getTime();
+  let fromTime = options.timeRange?.from ? parseTime(options.timeRange.from) : null;
+  let toTime = options.timeRange?.to ? parseTime(options.timeRange.to) : null;
+
+  // Presets handling
+  if (typeof options.timeRange === "string") {
+    const now = new Date();
+    if (options.timeRange === "last_week") {
+      fromTime = now.getTime() - 7 * 24 * 3600 * 1000;
+    } else if (options.timeRange === "last_month") {
+      fromTime = now.getTime() - 30 * 24 * 3600 * 1000;
+    }
+  }
+
+  // Filter sessions map
+  const sessionsMap = new Map(sessions.map(s => [s.id, s]));
+
+  // Search in Summaries
+  for (const s of summaries) {
+    const sessionObj = sessionsMap.get(s.sessionId);
+    if (!sessionObj) continue;
+    if (sessionObj.searchable === false) continue;
+    
+    // Apply filters
+    const sessionTime = parseTime(sessionObj.createdAt);
+    if (fromTime && sessionTime < fromTime) continue;
+    if (toTime && sessionTime > toTime) continue;
+    if (options.folderId && sessionObj.folderId !== options.folderId) continue;
+    if (options.projectId && sessionObj.projectId !== options.projectId) continue;
+    
+    const content = s.summary.toLowerCase();
+    if (!q || content.includes(q)) {
+      const score = calculateScore(s.summary, q, sessionObj, options);
+      results.push({
+        type: "session_summary",
+        sessionId: s.sessionId,
+        folderId: sessionObj.folderId,
+        projectId: sessionObj.projectId,
+        createdAt: sessionObj.createdAt,
+        score,
+        summary: s.summary
+      });
+    }
+  }
+
+  // Search in Messages
+  for (const m of messages) {
+    const sessionObj = sessionsMap.get(m.sessionId);
+    if (!sessionObj) continue;
+    if (sessionObj.searchable === false) continue;
+
+    // Apply filters
+    const sessionTime = parseTime(sessionObj.createdAt);
+    if (fromTime && sessionTime < fromTime) continue;
+    if (toTime && sessionTime > toTime) continue;
+    if (options.folderId && sessionObj.folderId !== options.folderId) continue;
+    if (options.projectId && sessionObj.projectId !== options.projectId) continue;
+
+    const content = m.content.toLowerCase();
+    if (!q || content.includes(q)) {
+      const score = calculateScore(m.content, q, sessionObj, options);
+      results.push({
+        type: "session_message",
+        sessionId: m.sessionId,
+        folderId: sessionObj.folderId,
+        projectId: sessionObj.projectId,
+        createdAt: sessionObj.createdAt,
+        score,
+        snippet: m.content,
+        sourceMessageIds: [m.messageId]
+      });
+    }
+  }
+
+  // Sort by score desc, then date desc
+  return results
+    .sort((a, b) => b.score - a.score || parseTime(b.createdAt) - parseTime(a.createdAt))
+    .slice(0, options.maxResults || 10);
+}
+
+function calculateScore(text, query, session, options = {}) {
+  // 1. Semantic/Keyword Similarity (45%)
+  let similarity = 0;
+  const words = query.split(/\s+/).filter(Boolean);
+  if (words.length > 0) {
+    let matchCount = 0;
+    const lowerText = text.toLowerCase();
+    words.forEach(w => {
+      if (lowerText.includes(w)) matchCount++;
+    });
+    similarity = matchCount / words.length;
+  } else {
+    similarity = 1.0; // If query is empty, treat all as match
+  }
+
+  // 2. Keyword Match (20%)
+  const keywordMatch = text.toLowerCase().includes(query.toLowerCase()) ? 1.0 : 0.0;
+
+  // 3. Recency Weight (15%)
+  const ageInMs = Date.now() - new Date(session.createdAt).getTime();
+  const ageInDays = ageInMs / (24 * 3600 * 1000);
+  let recencyWeight = 0.2;
+  if (ageInDays <= 1) recencyWeight = 1.0;
+  else if (ageInDays <= 7) recencyWeight = 0.8;
+  else if (ageInDays <= 30) recencyWeight = 0.5;
+
+  // 4. Folder/Project Boost (15%)
+  let folderOrProjectBoost = 0.3;
+  if (options.currentFolderId && session.folderId === options.currentFolderId) {
+    folderOrProjectBoost = 1.0;
+  }
+  if (options.currentProjectId && session.projectId === options.currentProjectId) {
+    folderOrProjectBoost = 1.0;
+  }
+
+  // 5. User Pinned Boost (5%)
+  const userPinnedBoost = session.pinned ? 1.0 : 0.0;
+
+  const finalScore =
+    similarity * 0.45 +
+    keywordMatch * 0.20 +
+    recencyWeight * 0.15 +
+    folderOrProjectBoost * 0.15 +
+    userPinnedBoost * 0.05;
+
+  return Number(finalScore.toFixed(3));
+}
+
+export async function readConversationMessages(workspaceRoot, sessionId, messageIds = [], options = {}) {
+  const sessionPath = path.join(workspaceRoot, ".ai-workspace", "sessions", `${sessionId}.json`);
+  let session = null;
+  try {
+    const data = await fs.readFile(sessionPath, "utf8");
+    session = JSON.parse(data);
+  } catch {
+    return { messages: [] };
+  }
+
+  if (!session || !Array.isArray(session.messages)) {
+    return { messages: [] };
+  }
+
+  const requestedIds = new Set(messageIds.map(String));
+  const results = [];
+  const msgs = session.messages;
+
+  msgs.forEach((m, idx) => {
+    const msgId = String(idx + 1); // Normalizing message indices to match conversation_search results
+    if (requestedIds.size === 0 || requestedIds.has(msgId)) {
+      if (options.includeSurroundingMessages) {
+        const window = options.surroundingWindow || 4;
+        const start = Math.max(0, idx - window);
+        const end = Math.min(msgs.length - 1, idx + window);
+        for (let i = start; i <= end; i++) {
+          results.push({
+            id: String(i + 1),
+            role: msgs[i].role,
+            content: msgs[i].content,
+            createdAt: msgs[i].createdAt,
+            isTarget: i === idx
+          });
+        }
+      } else {
+        results.push({
+          id: msgId,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+          isTarget: true
+        });
+      }
+    }
+  });
+
+  // Remove duplicates from window overlaps
+  const seenIds = new Set();
+  const uniqueResults = [];
+  results.forEach(m => {
+    if (!seenIds.has(m.id)) {
+      seenIds.add(m.id);
+      uniqueResults.push(m);
+    }
+  });
+
+  return {
+    sessionId,
+    title: session.title,
+    messages: uniqueResults
+  };
+}

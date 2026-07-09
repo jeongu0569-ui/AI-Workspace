@@ -1,0 +1,27 @@
+process.env.NODE_ENV = "test";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { executeToolDiscovery } from "./tool-discovery.mjs";
+
+test("Tool Discovery: execute matching capabilities", async () => {
+  const res = await executeToolDiscovery("/tmp", "chat", {
+    reason: "testing notes search",
+    desiredCapability: "search notes"
+  });
+  
+  assert.ok(res.availableToolGroups.length > 0);
+  const notesGroup = res.availableToolGroups.find(g => g.group === "notes_search");
+  assert.ok(notesGroup);
+  assert.ok(notesGroup.tools.some(t => t.name === "docsearch_search"));
+  assert.ok(res.recommendation.enableForThisTurn.includes("docsearch_search"));
+});
+
+test("Tool Discovery: match case insensitive and return empty for unmatched", async () => {
+  const res = await executeToolDiscovery("/tmp", "chat", {
+    reason: "nothing",
+    desiredCapability: "unmatched-nonexistent-capability"
+  });
+  
+  assert.equal(res.availableToolGroups.length, 0);
+  assert.equal(res.recommendation.enableForThisTurn.length, 0);
+});
