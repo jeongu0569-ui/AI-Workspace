@@ -148,6 +148,11 @@ provider/model from `.ai-workspace/config`, streams chat completions into
 AI Workspace live events, and lets the session runtime persist only the visible
 user/assistant messages.
 
+Assistant replies are persisted from the same streaming events that power the
+live UI. The engine buffers `message.delta` events by session/task and writes a
+single assistant message to `.ai-workspace/sessions` on `turn.complete`, with a
+non-streaming result fallback for adapters that only return final text.
+
 The adapter also exposes a first read-only tool registry:
 
 - `workspace_search`: search workspace text files.

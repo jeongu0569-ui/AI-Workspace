@@ -64,6 +64,36 @@ test("workspace agent engine records live tool events under workspace state", as
   assert.match(toolEvents, /search_files/);
 });
 
+test("workspace agent engine persists streamed assistant replies into sessions", async () => {
+  const root = await fixtureWorkspace();
+  const adapter = new StreamingAgentAdapter();
+  const engine = new WorkspaceAgentEngine({ workspaceRoot: root }, adapter);
+
+  const session = await engine.createSession({
+    provider: "custom",
+    model: "demo-model"
+  });
+
+  const first = await engine.submitPrompt({
+    sessionId: session.sessionId,
+    message: "안녕"
+  });
+  assert.equal(first.reply, "안녕하세요");
+
+  const stored = await engine.getSessionMessages(session.sessionId);
+  assert.deepEqual(stored.messages.map((message) => message.role), ["user", "assistant"]);
+  assert.equal(stored.messages[0].content, "안녕");
+  assert.equal(stored.messages[1].content, "안녕하세요");
+
+  await engine.submitPrompt({
+    sessionId: session.sessionId,
+    message: "이전 답변 기억해?"
+  });
+
+  assert.deepEqual(adapter.lastPrompt.history.map((message) => message.role), ["user", "assistant"]);
+  assert.deepEqual(adapter.lastPrompt.history.map((message) => message.content), ["안녕", "안녕하세요"]);
+});
+
 test("workspace agent state creates the unified state directory shape", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-"));
   await new WorkspaceAgentStateStore(root).ensure();
@@ -164,6 +194,67 @@ class FakeAgentAdapter extends EventEmitter {
       runtimeSessionId: "runtime-1",
       choice: params.approved === false ? "deny" : "once"
     };
+  }
+
+  async setAccessMode() {}
+
+  async setReasoning() {}
+
+  close() {}
+}
+
+class StreamingAgentAdapter extends EventEmitter {
+  constructor() {
+    super();
+    this.name = "streaming-agent";
+    this.lastPrompt = null;
+    this.sessionId = "streamed-1";
+  }
+
+  async connect() {}
+
+  async createSession() {
+    return {
+      sessionId: this.sessionId,
+      runtimeSessionId: this.sessionId,
+      source: "fake"
+    };
+  }
+
+  async resumeSession() {
+    return this.sessionId;
+  }
+
+  async submitPrompt(params) {
+    this.lastPrompt = params;
+    this.emit("event", {
+      type: "message.delta",
+      sessionId: params.sessionId,
+      taskId: params.taskId,
+      text: "안녕"
+    });
+    this.emit("event", {
+      type: "message.delta",
+      sessionId: params.sessionId,
+      taskId: params.taskId,
+      text: "하세요"
+    });
+    this.emit("event", {
+      type: "turn.complete",
+      sessionId: params.sessionId,
+      taskId: params.taskId,
+      text: "안녕하세요"
+    });
+    return {
+      ok: true,
+      sessionId: params.sessionId,
+      runtimeSessionId: params.sessionId,
+      reply: "안녕하세요"
+    };
+  }
+
+  async respondToApproval() {
+    return { ok: true };
   }
 
   async setAccessMode() {}

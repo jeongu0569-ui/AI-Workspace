@@ -119,7 +119,13 @@ export class SessionRuntime {
           session.messages.push({
             role: message.role,
             content: message.content,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            ...definedFields({
+              taskId: message.taskId,
+              source: message.source,
+              toolName: message.toolName,
+              finishReason: message.finishReason
+            })
           });
           session.updatedAt = new Date().toISOString();
           if (message.content) {
@@ -130,4 +136,10 @@ export class SessionRuntime {
       } catch {}
     }
   }
+}
+
+function definedFields(value) {
+  return Object.fromEntries(
+    Object.entries(value || {}).filter(([, item]) => item !== undefined && item !== null && item !== "")
+  );
 }

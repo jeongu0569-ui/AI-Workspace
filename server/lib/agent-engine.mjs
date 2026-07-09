@@ -39,6 +39,8 @@ export class WorkspaceAgentEngine extends EventEmitter {
       stateStore: this.state,
       llmRuntime: this.llmRuntime
     });
+    this.assistantTurnBuffers = new Map();
+    this.persistedAssistantTurns = new Set();
     this.eventWrites = new Set();
 
     if (this.runtimeAdapter) {
@@ -48,6 +50,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
           adapter: this.adapterName(),
           ...event
         };
+        this.trackTranscriptEvent(enriched);
         this.trackEventWrite(this.state.recordAgentEvent(enriched));
         this.emit("event", enriched);
       });
@@ -146,6 +149,14 @@ export class WorkspaceAgentEngine extends EventEmitter {
     try {
       const priorSession = params.sessionId ? await this.state.readSession(params.sessionId) : null;
       const history = Array.isArray(priorSession?.messages) ? priorSession.messages : [];
+      if (params.sessionId) {
+        await this.sessionRuntime.appendSessionMessage(params.sessionId, {
+          role: "user",
+          content: params.prompt || params.message || "",
+          taskId: task.id,
+          source: "user"
+        });
+      }
       const result = await this.chatRuntime.submitPrompt({
         ...params,
         context,
@@ -160,18 +171,15 @@ export class WorkspaceAgentEngine extends EventEmitter {
         result
       });
 
-      if (params.sessionId) {
+      if (params.sessionId && result.reply && !this.hasPersistedAssistantTurn(params.sessionId, task.id)) {
         await this.sessionRuntime.appendSessionMessage(params.sessionId, {
-          role: "user",
-          content: params.prompt || params.message || ""
+          role: "assistant",
+          content: result.reply,
+          taskId: task.id,
+          source: "result"
         });
-        if (result.reply) {
-          await this.sessionRuntime.appendSessionMessage(params.sessionId, {
-            role: "assistant",
-            content: result.reply
-          });
-        }
       }
+      await this.flush();
 
       return {
         ...result,
@@ -393,6 +401,44 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
   close() {
     this.chatRuntime.close();
+  }
+
+  trackTranscriptEvent(event) {
+    const sessionId = event.sessionId;
+    if (!sessionId) return;
+    const taskId = event.taskId || "";
+    const key = assistantTurnKey(sessionId, taskId);
+    const type = String(event.type || "");
+    const text = event.text || event.payload?.text || "";
+
+    if (isAssistantDeltaEvent(type)) {
+      const current = this.assistantTurnBuffers.get(key) || {
+        sessionId,
+        taskId,
+        content: ""
+      };
+      current.content += text;
+      this.assistantTurnBuffers.set(key, current);
+      return;
+    }
+
+    if (isAssistantCompleteEvent(type)) {
+      const current = this.assistantTurnBuffers.get(key);
+      const content = current?.content || text || "";
+      this.assistantTurnBuffers.delete(key);
+      if (!content || this.persistedAssistantTurns.has(key)) return;
+      this.persistedAssistantTurns.add(key);
+      this.trackEventWrite(this.sessionRuntime.appendSessionMessage(sessionId, {
+        role: "assistant",
+        content,
+        taskId,
+        source: "stream"
+      }));
+    }
+  }
+
+  hasPersistedAssistantTurn(sessionId, taskId) {
+    return this.persistedAssistantTurns.has(assistantTurnKey(sessionId, taskId || ""));
   }
 
   async resolveContext(params) {
@@ -701,6 +747,22 @@ export class WorkspaceAgentStateStore {
     );
   }
 
+}
+
+function assistantTurnKey(sessionId, taskId = "") {
+  return `${sessionId}::${taskId || ""}`;
+}
+
+function isAssistantDeltaEvent(type) {
+  return type === "message.delta" || type === "assistant.delta" || type === "assistant.message.delta";
+}
+
+function isAssistantCompleteEvent(type) {
+  return type === "message.done"
+    || type === "response.done"
+    || type === "turn.complete"
+    || type === "turn.completed"
+    || type === "message.completed";
 }
 
 function definedFields(value) {

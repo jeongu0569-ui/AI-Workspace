@@ -55,6 +55,9 @@ The first migration step is already underway:
   external runtime server.
 - A first read-only workspace tool registry lets capable models call search,
   file-read, and folder-list tools through AI Workspace-owned code.
+- Assistant replies are now persisted to `.ai-workspace/sessions` from live
+  streaming events, so session history and visible streamed output share the
+  same runtime path.
 
 ## Next Step
 
