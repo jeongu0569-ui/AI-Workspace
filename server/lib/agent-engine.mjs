@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { HermesLiveClient } from "./hermes-compat.mjs";
+import { createHermesCoreRuntime } from "./hermes-core-runtime.mjs";
 import { buildWorkspaceContext } from "./context-router.mjs";
 import { CodeAgentRuntime } from "./code-agent-runtime.mjs";
 import { ChatRuntime } from "./chat-runtime.mjs";
@@ -11,10 +11,8 @@ import { SessionRuntime } from "./session-runtime.mjs";
 import { LLMRuntime } from "./llm-runtime.mjs";
 
 export function createWorkspaceAgentEngine(config) {
-  const compat = config.hermes?.hermesServerUrl 
-    ? new HermesLiveClient(config.hermes) 
-    : null;
-  return new WorkspaceAgentEngine(config, compat);
+  const hermesRuntime = createHermesCoreRuntime(config.hermes || {});
+  return new WorkspaceAgentEngine(config, hermesRuntime);
 }
 
 export async function ensureAgentWorkspaceState(workspaceRoot) {
@@ -22,17 +20,17 @@ export async function ensureAgentWorkspaceState(workspaceRoot) {
 }
 
 export class WorkspaceAgentEngine extends EventEmitter {
-  constructor(config, compat) {
+  constructor(config, hermesRuntime) {
     super();
     this.config = config;
-    this.compat = compat;
+    this.hermesRuntime = hermesRuntime;
     
     this.state = new WorkspaceAgentStateStore(config.workspaceRoot);
     this.chatRuntime = new ChatRuntime({
-      hermesCompat: compat || null
+      hermesCompat: hermesRuntime || null
     });
-    this.modelRuntime = new ModelRuntime({ hermesCompat: compat });
-    this.sessionRuntime = new SessionRuntime({ hermesCompat: compat, stateStore: this.state });
+    this.modelRuntime = new ModelRuntime({ hermesCompat: hermesRuntime });
+    this.sessionRuntime = new SessionRuntime({ hermesCompat: hermesRuntime, stateStore: this.state });
     this.llmRuntime = new LLMRuntime({ chatRuntime: this.chatRuntime });
     this.codeRuntime = new CodeAgentRuntime({
       workspaceRoot: config.workspaceRoot,
@@ -41,17 +39,28 @@ export class WorkspaceAgentEngine extends EventEmitter {
     });
     this.eventWrites = new Set();
 
-    if (this.compat) {
-      this.compat.on("event", (event) => {
+    if (this.hermesRuntime) {
+      this.hermesRuntime.on("event", (event) => {
         const enriched = {
           engine: "workspace-agent",
-          adapter: this.compat.name || "hermes-live",
+          adapter: this.adapterName(),
           ...event
         };
         this.trackEventWrite(this.state.recordAgentEvent(enriched));
         this.emit("event", enriched);
       });
-      this.compat.on("close", () => this.emit("close"));
+      this.hermesRuntime.on("close", () => this.emit("close"));
+      this.hermesRuntime.on("error", (error) => {
+        const enriched = {
+          engine: "workspace-agent",
+          adapter: this.adapterName(),
+          type: "runtime.error",
+          error: error?.message || "Hermes runtime error.",
+          text: error?.message || "Hermes runtime error."
+        };
+        this.trackEventWrite(this.state.recordAgentEvent(enriched));
+        this.emit("event", enriched);
+      });
     }
   }
 
@@ -60,7 +69,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     await this.chatRuntime.connect();
     await this.state.recordSessionEvent({
       type: "engine.connect",
-      adapter: this.compat?.name || "hermes-live"
+      adapter: this.adapterName()
     });
   }
 
@@ -81,7 +90,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
     await this.state.recordSessionEvent({
       type: "session.create",
-      adapter: this.compat?.name || "hermes-live",
+      adapter: this.adapterName(),
       sessionId: result.sessionId,
       runtimeSessionId: result.runtimeSessionId,
       provider: params.provider,
@@ -92,7 +101,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     return {
       ...result,
       engine: "workspace-agent",
-      adapter: this.compat?.name || "hermes-live"
+      adapter: this.adapterName()
     };
   }
 
@@ -101,7 +110,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     const runtimeSessionId = await this.chatRuntime.resumeSession(sessionId);
     await this.state.recordSessionEvent({
       type: "session.resume",
-      adapter: this.compat?.name || "hermes-live",
+      adapter: this.adapterName(),
       sessionId,
       runtimeSessionId
     });
@@ -113,7 +122,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     const context = await this.resolveContext(params);
     const task = await this.state.startTask({
       type: params.taskType || "chat",
-      adapter: this.compat?.name || "hermes-live",
+      adapter: this.adapterName(),
       sessionId: params.sessionId,
       message: params.message,
       contextRequest: params.contextRequest,
@@ -150,7 +159,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
         ...result,
         taskId: task.id,
         engine: "workspace-agent",
-        adapter: this.compat?.name || "hermes-live"
+        adapter: this.adapterName()
       };
     } catch (error) {
       await this.state.finishTask(task.id, {
@@ -166,7 +175,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     const result = await this.chatRuntime.respondToApproval(params);
     await this.state.recordSessionEvent({
       type: "approval.respond",
-      adapter: this.compat?.name || "hermes-live",
+      adapter: this.adapterName(),
       sessionId: params.sessionId,
       approved: params.approved !== false,
       choice: result.choice
@@ -174,7 +183,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     return {
       ...result,
       engine: "workspace-agent",
-      adapter: this.compat?.name || "hermes-live"
+      adapter: this.adapterName()
     };
   }
 
@@ -183,7 +192,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     await this.chatRuntime.setAccessMode(sessionId, accessMode);
     await this.state.recordSessionEvent({
       type: "config.accessMode",
-      adapter: this.compat?.name || "hermes-live",
+      adapter: this.adapterName(),
       sessionId,
       accessMode
     });
@@ -194,7 +203,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
     await this.chatRuntime.setReasoning(sessionId, reasoningEffort);
     await this.state.recordSessionEvent({
       type: "config.reasoning",
-      adapter: this.compat?.name || "hermes-live",
+      adapter: this.adapterName(),
       sessionId,
       reasoningEffort
     });
@@ -358,6 +367,10 @@ export class WorkspaceAgentEngine extends EventEmitter {
 
   async flush() {
     await Promise.allSettled([...this.eventWrites]);
+  }
+
+  adapterName() {
+    return this.hermesRuntime?.name || "hermes-core";
   }
 
   close() {

@@ -30,7 +30,7 @@ export class SessionRuntime {
           model: s.model || "unknown",
           preview: s.preview || "",
           updatedAt: s.updatedAt || new Date().toISOString(),
-          source: "hermes-compat",
+          source: "hermes-core",
           runtime: "hermes-live",
           isActive: s.isActive || false
         }));

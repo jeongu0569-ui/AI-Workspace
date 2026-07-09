@@ -42,7 +42,7 @@ Status: in progress.
 - Dashboard username/password login. Done in server bridge.
 - `/api/auth/ws-ticket` support. Done in server bridge.
 - Workspace Server `/api/live` WebSocket. Done as a dependency-free MVP.
-- Workspace Agent Engine boundary. Done: Refactored out HermesAgentAdapter. Routed chat, model, and session activities through dedicated runtimes (ChatRuntime, ModelRuntime, SessionRuntime) backed by compatibility layer (hermes-compat.mjs).
+- Workspace Agent Engine boundary. Done: Refactored out HermesAgentAdapter. Routed chat, model, session, and provider catalog orientation through dedicated runtimes backed by `HermesCoreRuntime`.
 - Workspace-owned agent state. Done at the minimal event/task level under
   `.ai-workspace/sessions`, `.ai-workspace/tasks`, and
   `.ai-workspace/tool-logs`.

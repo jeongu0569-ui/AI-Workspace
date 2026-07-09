@@ -22,7 +22,7 @@ status. It also reports the active workspace agent engine capabilities:
   "agent": {
     "engine": "workspace-agent",
     "statePath": ".ai-workspace",
-    "adapters": ["hermes-live"],
+    "adapters": ["hermes-core"],
     "runtimes": ["code-agent"],
     "taskEndpoint": "/api/agent/tasks",
     "approvalEndpoint": "/api/agent/approvals",
@@ -829,7 +829,8 @@ Internally this WebSocket is now routed through:
 
 ```text
 WorkspaceAgentEngine
-  -> HermesAgentAdapter
+  -> ChatRuntime / ModelRuntime / SessionRuntime
+  -> HermesCoreRuntime
   -> HermesLiveClient
 ```
 
@@ -926,7 +927,7 @@ Server responses use:
 ```json
 { "kind": "ready", "service": "ai-workspace-live" }
 { "kind": "result", "id": "3", "result": { "ok": true, "taskId": "task-..." } }
-{ "kind": "hermes.event", "engine": "workspace-agent", "adapter": "hermes-live", "type": "message.delta", "text": "..." }
+{ "kind": "hermes.event", "engine": "workspace-agent", "adapter": "hermes-core", "type": "message.delta", "text": "..." }
 { "kind": "error", "id": "3", "error": "..." }
 ```
 

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readHermesProviderCatalog } from "../server/lib/hermes-core-runtime.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -866,117 +867,4 @@ This command reads Hermes' provider registry for orientation only.
 
 async function runAuth(args) {
   await runHermes("auth", args);
-}
-
-async function readHermesProviderCatalog() {
-  const python = await findHermesPython();
-  if (python) {
-    const code = `
-import json
-from hermes_cli.provider_catalog import provider_catalog
-rows = []
-for item in provider_catalog():
-    rows.append({
-        "slug": getattr(item, "slug", "") or getattr(item, "name", ""),
-        "label": getattr(item, "label", "") or getattr(item, "display_name", ""),
-        "authType": getattr(item, "auth_type", ""),
-        "transport": getattr(item, "transport", ""),
-    })
-print(json.dumps(rows, ensure_ascii=False))
-`;
-    try {
-      const output = await runProcessCapture(python, ["-c", code], {
-        cwd: process.cwd(),
-        env: process.env
-      });
-      const parsed = JSON.parse(output || "[]");
-      if (Array.isArray(parsed)) return parsed.filter((item) => item.slug);
-    } catch {
-      // Fall through to the filesystem scan below.
-    }
-  }
-
-  const root = await findHermesAgentRoot();
-  if (!root) return [];
-  const providersDir = path.join(root, "plugins", "model-providers");
-  let entries = [];
-  try {
-    entries = await fs.readdir(providersDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const rows = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const yamlPath = path.join(providersDir, entry.name, "plugin.yaml");
-    let yaml = "";
-    try {
-      yaml = await fs.readFile(yamlPath, "utf8");
-    } catch {
-      // Missing plugin metadata is not fatal for orientation output.
-    }
-    rows.push({
-      slug: entry.name,
-      label: yaml.match(/^description:\s*(.+)$/m)?.[1]?.trim() || entry.name,
-      authType: "",
-      transport: ""
-    });
-  }
-  return rows.sort((a, b) => a.slug.localeCompare(b.slug));
-}
-
-async function findHermesPython() {
-  if (process.env.HERMES_PYTHON) return process.env.HERMES_PYTHON;
-  const root = await findHermesAgentRoot();
-  if (!root) return "";
-  const candidate = path.join(root, "venv", "bin", "python");
-  try {
-    await fs.access(candidate);
-    return candidate;
-  } catch {
-    return "";
-  }
-}
-
-async function findHermesAgentRoot() {
-  if (process.env.HERMES_AGENT_ROOT) return expandHome(process.env.HERMES_AGENT_ROOT);
-  const defaultRoot = path.join(os.homedir(), ".hermes", "hermes-agent");
-  try {
-    await fs.access(path.join(defaultRoot, "hermes_cli"));
-    return defaultRoot;
-  } catch {
-    return "";
-  }
-}
-
-async function runProcessCapture(command, args, options) {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (signal) {
-        reject(new Error(`${command} exited with signal ${signal}`));
-        return;
-      }
-      if (code) {
-        reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
-        return;
-      }
-      resolve(stdout.trim());
-    });
-  });
 }

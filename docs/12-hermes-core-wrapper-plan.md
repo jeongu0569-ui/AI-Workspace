@@ -14,12 +14,25 @@ Client
   -> aiw serve
   -> WorkspaceAgentEngine
   -> ChatRuntime / ModelRuntime / SessionRuntime
+  -> HermesCoreRuntime
   -> hermes-compat
   -> Hermes /api/ws and REST helper endpoints
 ```
 
 This is still a bridge to `hermes serve`, but it is intentionally a Hermes
 wrapper, not a provider reimplementation.
+
+`HermesCoreRuntime` now provides the formal boundary:
+
+- live session calls are delegated to `HermesLiveClient`
+- live events are relayed through the workspace engine
+- provider catalog orientation is read from Hermes'
+  `hermes_cli.provider_catalog` when the local Hermes Python install is present
+- plugin metadata under `plugins/model-providers/*/plugin.yaml` is used only as
+  a fallback when the Python import path is unavailable
+
+The CLI uses the same runtime helper for `aiw provider list`, so server and CLI
+do not maintain separate Hermes catalog readers.
 
 ## Hermes Source Map
 
@@ -111,8 +124,8 @@ That path duplicated Hermes and would create long-term maintenance drift.
 ## Next Steps
 
 1. Keep the current WebSocket bridge stable.
-2. Extract a formal `HermesCoreRuntime` boundary if deeper integration is
-   needed.
+2. Move the remaining direct Hermes REST proxy helpers in `server/index.mjs`
+   behind `HermesCoreRuntime`.
 3. Prefer importing/calling Hermes Python modules only behind that boundary.
 4. Add provider-specific features, including Google Antigravity, in Hermes'
    provider/plugin structure rather than AI Workspace.

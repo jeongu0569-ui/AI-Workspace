@@ -12,7 +12,7 @@ export class ModelRuntime {
       try {
         const result = await this.compat.fetchHermesJson("/api/model/options");
         hermesStatus = "enabled";
-        source = "hermes-compat";
+        source = "hermes-core";
         if (Array.isArray(result?.models)) {
           compatModels = result.models;
         } else if (Array.isArray(result)) {
@@ -34,7 +34,7 @@ export class ModelRuntime {
           id,
           name: m.name || id,
           provider: m.provider || "hermes",
-          source: m.source || "hermes-compat",
+          source: m.source || "hermes-core",
           isActive: m.isActive || false
         });
       }

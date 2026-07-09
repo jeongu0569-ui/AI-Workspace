@@ -384,7 +384,7 @@ async function workspaceInfo() {
     agent: {
       engine: "workspace-agent",
       statePath: ".ai-workspace",
-      adapters: ["hermes-live"],
+      adapters: ["hermes-core"],
       runtimes: ["code-agent"],
       taskEndpoint: "/api/agent/tasks",
       approvalEndpoint: "/api/agent/approvals",

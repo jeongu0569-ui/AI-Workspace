@@ -66,13 +66,23 @@ client WS /api/live
   -> ChatRuntime
   -> ChatBackend (Interface)
   -> HermesCompatChatBackend (Implementation)
+  -> HermesCoreRuntime
   -> HermesLiveClient (compat)
   -> Hermes /api/ws
 ```
 
-The server-side adapter layer was completely refactored. `HermesAgentAdapter` has been removed. Live connection, model lookup, and session history management are now handled by isolated runtime modules (`ChatRuntime`, `ModelRuntime`, and `SessionRuntime`) backed by the compatibility layer `hermes-compat.mjs`.
+The server-side adapter layer was completely refactored. `HermesAgentAdapter`
+has been removed. Live connection, model lookup, provider catalog orientation,
+and session history management now go through isolated runtime modules
+(`ChatRuntime`, `ModelRuntime`, and `SessionRuntime`) backed by
+`HermesCoreRuntime`.
 
-To isolate the legacy system, `ChatRuntime` defines a clean `ChatBackend` interface. Live requests are routed through `HermesCompatChatBackend`, ensuring that the core engine is decoupled from the specific communication protocol. If `HERMES_SERVER_URL` is omitted, the runtimes fall back to a local offline mode to keep core workspace operations active. Outgoing events still use
+To isolate the legacy system, `ChatRuntime` defines a clean `ChatBackend`
+interface. Live requests are routed through `HermesCompatChatBackend`, ensuring
+that the core engine is decoupled from the specific communication protocol. If
+`HERMES_SERVER_URL` is omitted or unreachable, chat/model/session features are
+reported as unavailable while workspace file APIs and code task state remain
+active. Outgoing events still use
 `kind: "hermes.event"` for Apple client compatibility, and carry
 engine/adapter identity as well.
 
@@ -156,12 +166,12 @@ aiw serve
 
 ### Wrapper Roadmap
 
-- **Stage 1 (current)**: Keep `hermes-compat.mjs` as the WebSocket/REST wrapper
-  around `hermes serve`. `ChatRuntime`, `ModelRuntime`, and `SessionRuntime`
-  call Hermes through this boundary.
-- **Stage 2**: Add a formal `HermesCoreRuntime` module if deeper integration is
-  needed. It should import/call Hermes Python modules behind one boundary
-  instead of copying provider/auth/model logic.
+- **Stage 1 (done)**: Keep `hermes-compat.mjs` as the low-level WebSocket/REST
+  transport around `hermes serve`.
+- **Stage 2 (current)**: Route engine, chat, model, session, and provider
+  catalog orientation through `HermesCoreRuntime`. It imports/calls Hermes
+  Python modules behind one boundary instead of copying provider/auth/model
+  logic.
 - **Stage 3**: Move provider-specific additions, including Google Antigravity,
   into Hermes' provider/plugin structure. AI Workspace should only expose the
   selected provider/model through Hermes APIs.

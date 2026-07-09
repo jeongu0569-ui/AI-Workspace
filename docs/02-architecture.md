@@ -111,11 +111,15 @@ This is the most important early invariant.
 
 ## Hermes Core Wrapper Layer
 
-`server/lib/hermes-compat.mjs` is the current Hermes wrapper boundary. It
-connects to Hermes `/api/ws`, uses dashboard auth when configured, forwards
-thinking/tool/approval/message events, and exposes session/model helpers.
+`server/lib/hermes-core-runtime.mjs` is the formal Hermes boundary. It owns the
+Workspace Server's view of Hermes and delegates live chat/session work to the
+lower-level `HermesLiveClient` compatibility transport in
+`server/lib/hermes-compat.mjs`.
 
-- `HermesCompatChatBackend` wraps `HermesLiveClient` with the `ChatBackend`
+- `HermesCoreRuntime` relays Hermes live events, exposes session/model helper
+  methods, and is the only place that imports or calls Hermes Python modules for
+  read-only orientation data such as the provider catalog.
+- `HermesCompatChatBackend` wraps `HermesCoreRuntime` with the `ChatBackend`
   interface.
 - `ChatRuntime` uses this Hermes backend only. There is no direct
   OpenAI-compatible fallback inside AI Workspace.
@@ -124,9 +128,9 @@ thinking/tool/approval/message events, and exposes session/model helpers.
 - `SessionRuntime` keeps workspace-friendly normalized session views but does
   not replace Hermes session ownership.
 
-Future work can replace the WebSocket compatibility boundary with a tighter
-in-process Hermes core integration, but it should still reuse Hermes'
-`hermes_cli` provider/auth/model implementation rather than cloning it.
+Future work can tighten the implementation behind `HermesCoreRuntime`, but it
+should still reuse Hermes' `hermes_cli` provider/auth/model implementation
+rather than cloning it.
 
 ## Chat / Provider / Auth Ownership
 

@@ -258,7 +258,7 @@ WS /api/live
 on the Workspace Server. The server is responsible for Hermes dashboard login,
 WebSocket ticket creation, Hermes live session routing, and approval forwarding.
 Those calls now pass through the server-side `WorkspaceAgentEngine`, whose first
-adapter is `HermesAgentAdapter`.
+adapter is `HermesCoreRuntime`.
 
 Chat can be used in two places:
 
