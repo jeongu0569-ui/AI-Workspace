@@ -280,6 +280,7 @@ Response:
     }
   ]
 }
+```
 
 The Apple client uses this endpoint before `session.resume` so selecting an
 existing session shows its previous user/assistant messages immediately.
@@ -318,6 +319,18 @@ The Workspace Server then connects to Hermes:
 POST /api/auth/ws-ticket
 WS   /api/ws?ticket=...
 ```
+
+Internally this WebSocket is now routed through:
+
+```text
+WorkspaceAgentEngine
+  -> HermesAgentAdapter
+  -> HermesLiveClient
+```
+
+The client protocol remains stable while the server gains an engine boundary.
+That boundary is where future local/Codex-style code agent runtimes can be
+added without changing the Apple app's live WebSocket API.
 
 Client-friendly messages should stay close to Hermes event names:
 
@@ -385,7 +398,10 @@ Server responses use:
 
 ```json
 { "kind": "ready", "service": "ai-workspace-live" }
-{ "kind": "result", "id": "3", "result": { "ok": true } }
-{ "kind": "hermes.event", "type": "message.delta", "text": "..." }
+{ "kind": "result", "id": "3", "result": { "ok": true, "taskId": "task-..." } }
+{ "kind": "hermes.event", "engine": "workspace-agent", "adapter": "hermes-live", "type": "message.delta", "text": "..." }
 { "kind": "error", "id": "3", "error": "..." }
 ```
+
+The event kind is still named `hermes.event` for client compatibility. New
+server work should treat `engine` and `adapter` as the more durable boundary.

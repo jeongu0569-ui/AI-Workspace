@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a server-centered AI Workspace around Hermes.
+Build a server-centered AI Workspace around a Workspace Agent Engine.
 
 This is not an Obsidian plugin and not a standalone chat app. The product should
 combine three familiar surfaces:
@@ -13,9 +13,11 @@ ChatGPT-like chat
 + Codex-like coding agent workspace
 ```
 
-Hermes is the central AI engine. The app should use Hermes sessions, models,
-tool execution, approvals, and MCP/docsearch instead of inventing a separate AI
-runtime.
+The Workspace Server owns the workspace state, context routing, task history,
+and long-running work records. Hermes is the first live model/tool/session
+adapter because it already provides sessions, model providers, tool execution,
+approvals, and MCP/docsearch. The architecture should still leave room for a
+future local/Codex-style code runtime without rewriting the client.
 
 ## Why Not Obsidian Plugin
 
@@ -31,8 +33,9 @@ but it conflicts with this product's final shape:
 - iPhone cannot reliably treat NAS/shared folders as a local Obsidian Vault.
 - Code agent features need a Codex-like UI, not a cramped note plugin panel.
 
-The new app should make Hermes and the Workspace Server the center. Clients
-should fetch only the data they need.
+The new app should make the Workspace Server and Workspace Agent Engine the
+center. Hermes is the first backend adapter, not the only possible runtime.
+Clients should fetch only the data they need.
 
 ## User-Facing Model
 
@@ -72,11 +75,28 @@ HermesWorkspace/
 ├── Code/
 ├── Documents/
 ├── Attachments/
-└── .hermes-workspace/
+├── .hermes-workspace/
+└── .ai-workspace/
 ```
 
 The `.hermes-workspace` folder is for metadata, index state, thumbnails, and
-server-managed cache.
+server-managed cache that already existed in the early MVP.
+
+The `.ai-workspace` folder is the newer agent-engine state root:
+
+```text
+.ai-workspace/
+├── sessions/
+├── tasks/
+├── memory/
+├── decisions/
+├── tool-logs/
+├── diffs/
+└── index/
+```
+
+This is where Hermes-style chat sessions and future Codex-style coding tasks can
+share one workspace-owned state layer.
 
 ## First MVP Boundary
 
@@ -86,10 +106,10 @@ The first MVP should prove the architecture:
 - Notes/Code file tree
 - Markdown/text file open and save
 - Basic PDF/raw file delivery
-- Hermes sessions/models proxy
+- Hermes sessions/models proxy through the first Hermes adapter
+- Workspace Agent Engine boundary with workspace-owned task/session/tool logs
 - Clear API contract for future live streaming
 - Documentation for context routing and docsearch
 
 Do not start with tags, handwritten PDF annotations, full Git UI, or complex
 multi-user auth. Those come after the base architecture works.
-

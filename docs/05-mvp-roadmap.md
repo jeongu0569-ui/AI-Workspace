@@ -33,6 +33,12 @@ Status: in progress.
 - Dashboard username/password login. Done in server bridge.
 - `/api/auth/ws-ticket` support. Done in server bridge.
 - Workspace Server `/api/live` WebSocket. Done as a dependency-free MVP.
+- Workspace Agent Engine boundary. Done as the first 1.5-architecture step:
+  `/api/live` now routes through `WorkspaceAgentEngine -> HermesAgentAdapter`
+  instead of calling `HermesLiveClient` directly from `server/index.mjs`.
+- Workspace-owned agent state. Done at the minimal event/task level under
+  `.ai-workspace/sessions`, `.ai-workspace/tasks`, and
+  `.ai-workspace/tool-logs`.
 - Bridge Hermes events. Done at raw event level:
   - message
   - thinking/reasoning
@@ -48,6 +54,8 @@ Remaining:
   available.
 - Decide whether production should keep raw Hermes event names or normalize them
   further.
+- Add a second adapter/runtime for Codex-style coding tasks behind the same
+  `WorkspaceAgentEngine` interface.
 
 ## Phase 3: Apple Client MVP
 
@@ -142,7 +150,15 @@ Status: planned.
 
 - Project tree under `Code/`.
 - File viewer/editor.
-- Hermes coding session creation.
+- Workspace Agent Engine coding-task creation.
 - Diff viewer.
 - Approval UI.
 - Git operation visibility.
+- Codex-style work loop:
+  - inspect files
+  - plan
+  - patch
+  - shell/test
+  - collect diff
+  - request approval when needed
+  - write task/decision/tool logs under `.ai-workspace`

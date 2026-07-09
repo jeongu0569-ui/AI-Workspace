@@ -58,6 +58,22 @@ Hermes events back to the app as `hermes.event` messages.
 The bridge keeps the client app from needing to know Hermes dashboard cookies or
 WebSocket tickets.
 
+Internally, `/api/live` now routes through the Workspace Agent Engine:
+
+```text
+client WS /api/live
+  -> WorkspaceAgentEngine
+  -> HermesAgentAdapter
+  -> HermesLiveClient
+  -> Hermes /api/ws
+```
+
+The current behavior is still Hermes-backed, but `server/index.mjs` no longer
+depends on `HermesLiveClient` directly. This is the first boundary needed for a
+future Codex-style code runtime. Outgoing events still use
+`kind: "hermes.event"` for Apple client compatibility, and now carry
+engine/adapter identity as well.
+
 `config.accessMode` maps the client composer modes to Hermes session config:
 
 ```text
@@ -77,6 +93,26 @@ Deep -> high
 This was verified against Hermes live WebSocket on 2026-07-08 with
 `session.create`, `config.accessMode`, and `config.reasoning` returning
 `{ ok: true }` through the Workspace bridge.
+
+## Workspace-Owned Agent State
+
+The Workspace Agent Engine writes its own minimal state under:
+
+```text
+.ai-workspace/
+├── sessions/events.jsonl
+├── tasks/events.jsonl
+├── tasks/task-<timestamp>-<uuid>.json
+└── tool-logs/
+    ├── live-events.jsonl
+    └── tool-events.jsonl
+```
+
+This does not replace Hermes conversation history. Hermes still owns saved chat
+messages while Hermes is the active adapter. The new state layer records the
+Workspace Server's own view of work: submitted prompts, context requests,
+session/config actions, and live tool events. Future code tasks can attach
+patches, diffs, test output, approvals, and decisions to the same task id.
 
 ## Why Workspace Server Should Bridge Hermes
 

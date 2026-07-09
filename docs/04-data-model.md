@@ -99,5 +99,68 @@ code
 ```
 
 The app should not duplicate Hermes messages. Hermes remains the source of truth
-for conversation history.
+for conversation history while Hermes is the active adapter.
 
+## Workspace Agent State
+
+The newer agent-engine state root is:
+
+```text
+.ai-workspace/
+├── sessions/
+├── tasks/
+├── memory/
+├── decisions/
+├── tool-logs/
+├── diffs/
+└── index/
+```
+
+This folder belongs to the Workspace Server, not to Hermes. It is designed so
+Hermes-style chat and Codex-style code work can share one workspace-owned state
+layer.
+
+Current implemented files:
+
+```text
+.ai-workspace/sessions/events.jsonl
+.ai-workspace/tasks/events.jsonl
+.ai-workspace/tasks/task-<timestamp>-<uuid>.json
+.ai-workspace/tool-logs/live-events.jsonl
+.ai-workspace/tool-logs/tool-events.jsonl
+```
+
+Task records currently store:
+
+```text
+id
+type
+status
+created_at / updated_at
+adapter
+session_id
+message
+context_request
+provider / model
+access_mode
+reasoning_effort
+result or error
+```
+
+This is intentionally small. It does not yet replace Hermes conversation
+history. It records the Workspace Server's own view of the work so future code
+agent loops can attach diffs, test results, shell output, approvals, and
+decision logs to the same task id.
+
+Future code-task records should add:
+
+```text
+workspace_scope
+plan
+changed_files
+diff_refs
+test_commands
+test_results
+approval_refs
+decision_refs
+```

@@ -11,24 +11,26 @@ Workspace Server
         ├── Filesystem workspace root
         ├── Metadata DB
         ├── Search/index state
+        ├── Workspace Agent Engine
         ├── Hermes API proxy
-        ├── Hermes live event bridge
         ├── Workspace context router
         └── Search API
         │
         ▼
-Hermes Server
-        ├── Sessions
-        ├── Models
-        ├── Tools
-        ├── Approvals
-        └── MCP/docsearch
+Agent Adapters
+        ├── Hermes adapter
+        │   ├── Sessions
+        │   ├── Models
+        │   ├── Tools
+        │   ├── Approvals
+        │   └── MCP/docsearch
+        └── Future local/Codex-style code runtime
 ```
 
 The client should not talk directly to random filesystem paths. It talks to the
 Workspace Server using workspace-relative paths.
 
-## Why App → Workspace Server → Hermes
+## Why App → Workspace Server → Agent Engine
 
 The Obsidian plugin connected directly to Hermes because the Vault already lived
 inside Obsidian. The new app should put the Workspace Server in the middle.
@@ -41,6 +43,8 @@ Benefits:
 - One place to control mobile caching.
 - One place to translate `@folder`, `@pdf`, and `@workspace` into RAG/search
   scope metadata.
+- One place to own task logs, decisions, diffs, and memory even if the live
+  model/tool backend changes later.
 
 ## Filesystem As Source Of Truth
 
@@ -50,6 +54,7 @@ Files remain visible as normal folders and files:
 HermesWorkspace/Notes/Work/meeting.md
 HermesWorkspace/Documents/os-book.pdf
 HermesWorkspace/Code/my-app/package.json
+HermesWorkspace/.ai-workspace/tasks/task-....json
 ```
 
 The metadata DB should not replace files. It augments them:
@@ -114,6 +119,22 @@ message.complete
 The first live bridge keeps Hermes dashboard cookies and WebSocket tickets on
 the server side.
 
+In the current server, `/api/live` no longer talks to `HermesLiveClient`
+directly. It talks to a `WorkspaceAgentEngine`, which currently uses the
+`HermesAgentAdapter` implementation. The client-facing event envelope still
+uses `kind: "hermes.event"` for compatibility, but each event also passes
+through the workspace-owned agent state layer first.
+
+This is the first step toward the intended 1.5 architecture:
+
+```text
+Client
+  -> Workspace Server
+  -> WorkspaceAgentEngine
+     -> HermesAgentAdapter today
+     -> Codex-style CodeRuntime later
+```
+
 ## Notes Context Router
 
 Small context can be sent inline:
@@ -175,3 +196,9 @@ Full: Hermes yolo/full mode may bypass dangerous-command prompts.
 
 The client should show diffs and approvals before users trust automated code
 changes.
+
+The future code agent loop should live behind the same `WorkspaceAgentEngine`
+interface instead of being bolted directly to the client. A coding task should
+be recorded under `.ai-workspace/tasks`, tool activity under
+`.ai-workspace/tool-logs`, and produced patches/diffs under
+`.ai-workspace/diffs`.

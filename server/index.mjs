@@ -12,11 +12,14 @@ import {
   rootPathFromKey
 } from "./lib/path-utils.mjs";
 import {
-  HermesLiveClient,
   acceptWebSocket,
   createFrameDecoder,
   encodeWebSocketFrame
 } from "./lib/hermes-live.mjs";
+import {
+  createWorkspaceAgentEngine,
+  ensureAgentWorkspaceState
+} from "./lib/agent-engine.mjs";
 import { buildWorkspaceContext } from "./lib/context-router.mjs";
 import { renderCodeDocument, renderMarkdownDocument } from "./lib/render-service.mjs";
 import { searchStatus, searchWorkspace } from "./lib/search-service.mjs";
@@ -60,11 +63,14 @@ function handleUpgrade(req, socket) {
 }
 
 function startLiveBridge(socket) {
-  const hermes = new HermesLiveClient({
-    hermesServerUrl: HERMES_SERVER_URL,
-    dashboardUsername: HERMES_DASHBOARD_USERNAME,
-    dashboardPassword: HERMES_DASHBOARD_PASSWORD,
-    dashboardProvider: HERMES_DASHBOARD_PROVIDER
+  const engine = createWorkspaceAgentEngine({
+    workspaceRoot: WORKSPACE_ROOT,
+    hermes: {
+      hermesServerUrl: HERMES_SERVER_URL,
+      dashboardUsername: HERMES_DASHBOARD_USERNAME,
+      dashboardPassword: HERMES_DASHBOARD_PASSWORD,
+      dashboardProvider: HERMES_DASHBOARD_PROVIDER
+    }
   });
   let closed = false;
   const send = (value) => {
@@ -74,13 +80,13 @@ function startLiveBridge(socket) {
   const close = () => {
     if (closed) return;
     closed = true;
-    hermes.close();
+    engine.close();
     try {
       socket.end();
     } catch {}
   };
-  hermes.on("event", (event) => send({ kind: "hermes.event", ...event }));
-  hermes.on("close", () => send({ kind: "hermes.close" }));
+  engine.on("event", (event) => send({ kind: "hermes.event", ...event }));
+  engine.on("close", () => send({ kind: "hermes.close" }));
   socket.on("error", close);
   socket.on("close", close);
   const decode = createFrameDecoder(async (text) => {
@@ -92,7 +98,7 @@ function startLiveBridge(socket) {
       return;
     }
     try {
-      const result = await handleLiveCommand(hermes, message);
+      const result = await handleLiveCommand(engine, message);
       send({ kind: "result", id: message.id ?? null, result });
     } catch (error) {
       send({ kind: "error", id: message.id ?? null, error: error?.message || "Live command failed." });
@@ -102,38 +108,32 @@ function startLiveBridge(socket) {
   send({ kind: "ready", service: "ai-workspace-live" });
 }
 
-async function handleLiveCommand(hermes, message) {
+async function handleLiveCommand(engine, message) {
   const command = String(message.command || message.type || "");
   const params = message.params || {};
   if (command === "connect") {
-    await hermes.connect();
+    await engine.connect();
     return { ok: true };
   }
   if (command === "session.create") {
-    return await hermes.createSession(params);
+    return await engine.createSession(params);
   }
   if (command === "session.resume") {
-    const runtimeSessionId = await hermes.resumeSession(String(params.sessionId || ""));
+    const runtimeSessionId = await engine.resumeSession(String(params.sessionId || ""));
     return { ok: true, runtimeSessionId };
   }
   if (command === "prompt.submit") {
-    if (params.contextRequest) {
-      params.context = {
-        ...(params.context || {}),
-        workspaceContext: await buildWorkspaceContext(WORKSPACE_ROOT, params.contextRequest)
-      };
-    }
-    return await hermes.submitPrompt(params);
+    return await engine.submitPrompt(params);
   }
   if (command === "approval.respond") {
-    return await hermes.respondToApproval(params);
+    return await engine.respondToApproval(params);
   }
   if (command === "config.accessMode") {
-    await hermes.setAccessMode(String(params.sessionId || ""), params.accessMode);
+    await engine.setAccessMode(String(params.sessionId || ""), params.accessMode);
     return { ok: true };
   }
   if (command === "config.reasoning") {
-    await hermes.setReasoning(String(params.sessionId || ""), params.reasoningEffort);
+    await engine.setReasoning(String(params.sessionId || ""), params.reasoningEffort);
     return { ok: true };
   }
   throw Object.assign(new Error(`Unknown live command: ${command}`), { status: 400 });
@@ -142,6 +142,7 @@ async function handleLiveCommand(hermes, message) {
 async function ensureWorkspace() {
   await fs.mkdir(WORKSPACE_ROOT, { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, ".hermes-workspace"), { recursive: true });
+  await ensureAgentWorkspaceState(WORKSPACE_ROOT);
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.notes), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.code), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.documents), { recursive: true });
