@@ -84,6 +84,7 @@ export class CodeAgentRuntime {
           diffRef
         },
         plan,
+        taskMemory: buildInspectTaskMemory({ inspection, search, plan }),
         decisionRef: decision.path
       });
       await this.state.recordToolLog({
@@ -104,7 +105,8 @@ export class CodeAgentRuntime {
         inspection,
         search,
         git: updated.git,
-        plan
+        plan,
+        taskMemory: updated.taskMemory
       };
     } catch (error) {
       await this.state.finishTask(task.id, {
@@ -170,9 +172,11 @@ export class CodeAgentRuntime {
     const checks = [...(Array.isArray(task.checks) ? task.checks : []), checkRun];
     const git = await this.inspectGit(scope.absolutePath);
     const diffRef = await this.state.writeDiff(task.id, git.diff || "");
+    const taskMemory = updateTaskMemoryForChecks(task.taskMemory, checkRun, allPassed, task.plan);
     const updated = await this.state.finishTask(task.id, {
       status: allPassed ? "checked" : "check_failed",
       checks,
+      taskMemory,
       git: {
         ...(task.git || {}),
         isRepository: git.isRepository,
@@ -203,7 +207,8 @@ export class CodeAgentRuntime {
       status: updated.status,
       scopePath: scope.relativePath,
       checkRun,
-      git: updated.git
+      git: updated.git,
+      taskMemory: updated.taskMemory
     };
   }
 
@@ -240,10 +245,12 @@ export class CodeAgentRuntime {
       }))
     };
     const proposals = [...(Array.isArray(task.patchProposals) ? task.patchProposals : []), proposal];
+    const taskMemory = updateTaskMemoryForProposal(task.taskMemory, proposal);
     const updated = await this.state.finishTask(task.id, {
       status: "patch_proposed",
       patchProposals: proposals,
-      proposedChanges: proposal.changes.map(({ content, ...metadata }) => metadata)
+      proposedChanges: proposal.changes.map(({ content, ...metadata }) => metadata),
+      taskMemory
     });
     await this.state.recordToolLog({
       type: "code.patch.propose",
@@ -285,6 +292,7 @@ export class CodeAgentRuntime {
         diffRef,
         changes: proposal.changes.map(({ content, ...metadata }) => metadata)
       },
+      taskMemory: updated.taskMemory,
       approvalRequired: true,
       approvalRequest
     };
@@ -341,10 +349,12 @@ export class CodeAgentRuntime {
       : item);
     const git = await this.inspectGit(scope.absolutePath);
     const diffRef = await this.state.writeDiff(task.id, git.diff || "", `after-${proposal.id}`);
+    const taskMemory = updateTaskMemoryForAppliedPatch(task.taskMemory, filesChanged, proposal);
     const updated = await this.state.finishTask(task.id, {
       status: "patched",
       patchProposals: patchedProposals,
       filesChanged: [...new Set([...(task.filesChanged || []), ...filesChanged])],
+      taskMemory,
       git: {
         ...(task.git || {}),
         isRepository: git.isRepository,
@@ -379,7 +389,8 @@ export class CodeAgentRuntime {
       scopePath: scope.relativePath,
       proposalId: proposal.id,
       filesChanged,
-      git: updated.git
+      git: updated.git,
+      taskMemory: updated.taskMemory
     };
   }
 
@@ -656,6 +667,133 @@ function suggestedCheckCommands(packageInfo, markers) {
   if (markers.includes("Package.swift")) commands.push("swift test");
   if (markers.includes("Makefile")) commands.push("make test");
   return [...new Set(commands)].slice(0, 8);
+}
+
+function buildInspectTaskMemory({ inspection, search, plan }) {
+  const readableFiles = (inspection.files || [])
+    .filter((file) => file.readable)
+    .map((file) => file.path);
+  const searchFiles = (search.results || []).map((item) => item.path);
+  return normalizeTaskMemory({
+    readFiles: uniqueStrings([...searchFiles, ...readableFiles.slice(0, 40)]),
+    proposedFiles: [],
+    changedFiles: [],
+    commands: [],
+    checkResults: [],
+    failureLogs: [],
+    nextSteps: extractNextSteps(plan),
+    notes: [
+      `Inspected ${inspection.fileCount || 0} file(s).`,
+      search.resultCount ? `Found ${search.resultCount} relevant search result(s).` : "No direct search hits found."
+    ]
+  });
+}
+
+function updateTaskMemoryForProposal(memory, proposal) {
+  return normalizeTaskMemory({
+    ...memory,
+    proposedFiles: uniqueStrings([
+      ...(memory?.proposedFiles || []),
+      ...(proposal.changes || []).map((change) => change.path)
+    ]),
+    nextSteps: [
+      `Review proposal ${proposal.id}.`,
+      "Approve the patch before applying it.",
+      "Run checks after applying the patch."
+    ],
+    notes: appendBounded(memory?.notes, `Proposed patch ${proposal.id}: ${proposal.summary}`)
+  });
+}
+
+function updateTaskMemoryForAppliedPatch(memory, filesChanged, proposal) {
+  return normalizeTaskMemory({
+    ...memory,
+    changedFiles: uniqueStrings([...(memory?.changedFiles || []), ...filesChanged]),
+    nextSteps: [
+      "Run the suggested check commands.",
+      "Review git diff before finalizing the code task."
+    ],
+    notes: appendBounded(memory?.notes, `Applied patch ${proposal.id} to ${filesChanged.length} file(s).`)
+  });
+}
+
+function updateTaskMemoryForChecks(memory, checkRun, allPassed, plan) {
+  const commandRecords = checkRun.results.map((result) => ({
+    command: result.command,
+    ok: result.ok,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs
+  }));
+  const failures = checkRun.results
+    .filter((result) => !result.ok)
+    .map((result) => ({
+      command: result.command,
+      exitCode: result.exitCode,
+      stderr: truncateMemoryLog(result.stderr),
+      stdout: truncateMemoryLog(result.stdout)
+    }));
+  return normalizeTaskMemory({
+    ...memory,
+    commands: uniqueStrings([
+      ...(memory?.commands || []),
+      ...checkRun.commands
+    ]),
+    checkResults: appendBounded(memory?.checkResults, {
+      id: checkRun.id,
+      allPassed,
+      finishedAt: checkRun.finishedAt,
+      results: commandRecords
+    }),
+    failureLogs: appendBounded(memory?.failureLogs, ...failures),
+    nextSteps: allPassed
+      ? ["Review git diff and mark the task ready for user confirmation."]
+      : [
+          "Inspect failing command output.",
+          "Revise the patch or plan.",
+          ...extractNextSteps(plan).slice(0, 2)
+        ],
+    notes: appendBounded(memory?.notes, allPassed
+      ? `Checks passed: ${checkRun.commands.join("; ")}`
+      : `Checks failed: ${checkRun.commands.join("; ")}`)
+  });
+}
+
+function normalizeTaskMemory(memory = {}) {
+  return {
+    readFiles: uniqueStrings(memory.readFiles || []).slice(0, 80),
+    proposedFiles: uniqueStrings(memory.proposedFiles || []).slice(0, 80),
+    changedFiles: uniqueStrings(memory.changedFiles || []).slice(0, 80),
+    commands: uniqueStrings(memory.commands || []).slice(0, 40),
+    checkResults: Array.isArray(memory.checkResults) ? memory.checkResults.slice(-20) : [],
+    failureLogs: Array.isArray(memory.failureLogs) ? memory.failureLogs.slice(-20) : [],
+    nextSteps: uniqueStrings(memory.nextSteps || []).slice(0, 10),
+    notes: Array.isArray(memory.notes) ? memory.notes.map((item) => String(item)).filter(Boolean).slice(-40) : []
+  };
+}
+
+function extractNextSteps(plan) {
+  return (plan?.steps || [])
+    .filter((step) => step.status !== "done")
+    .map((step) => step.detail || step.title)
+    .filter(Boolean);
+}
+
+function appendBounded(existing, ...items) {
+  return [
+    ...(Array.isArray(existing) ? existing : []),
+    ...items.filter((item) => item !== undefined && item !== null && item !== "")
+  ].slice(-40);
+}
+
+function uniqueStrings(values) {
+  return [...new Set((values || []).map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+function truncateMemoryLog(value) {
+  const text = String(value || "");
+  const max = 4000;
+  if (text.length <= max) return text;
+  return text.slice(0, max) + `\n[truncated ${text.length - max} chars]`;
 }
 
 function resolveCheckCommands(task, params) {

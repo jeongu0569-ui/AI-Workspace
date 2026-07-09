@@ -297,6 +297,13 @@ Response:
   "plan": {
     "summary": "Code task prepared for Code/my-app. ...",
     "steps": []
+  },
+  "taskMemory": {
+    "readFiles": ["Code/my-app/src/index.js"],
+    "proposedFiles": [],
+    "changedFiles": [],
+    "commands": [],
+    "nextSteps": ["Use patch proposal APIs to create a diff first..."]
   }
 }
 ```
@@ -502,7 +509,8 @@ Response:
 
 The task is updated to `checked` when all commands pass and `check_failed` when
 any command fails. The runtime also refreshes the task's git status/diff
-artifact after running checks.
+artifact after running checks. The task's `taskMemory` also records executed
+commands, compact check results, failure logs when present, and next steps.
 
 ## Hermes Proxy
 

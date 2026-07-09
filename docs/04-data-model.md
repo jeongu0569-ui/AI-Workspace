@@ -155,6 +155,7 @@ checks
 patch_proposals
 proposed_changes
 files_changed
+task_memory
 ```
 
 This is intentionally small. It does not yet replace Hermes conversation
@@ -177,7 +178,29 @@ git.diff_stat
 git.diff_ref
 plan.steps
 decision_ref
+task_memory
 ```
+
+`task_memory` is the compact, loop-friendly summary of the task. The detailed
+records stay in `inspection`, `search`, `patch_proposals`, `checks`, and the
+JSONL logs, while `task_memory` gives the next agent step a stable place to
+look.
+
+```text
+task_memory
+- read_files[]
+- proposed_files[]
+- changed_files[]
+- commands[]
+- check_results[]
+- failure_logs[]
+- next_steps[]
+- notes[]
+```
+
+The Code Runtime updates this memory after inspect, patch proposal, patch
+apply, and check execution. It is intentionally bounded so task records do not
+grow without limit.
 
 When code checks are executed, the task also stores:
 

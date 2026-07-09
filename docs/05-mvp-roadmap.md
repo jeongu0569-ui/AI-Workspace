@@ -174,6 +174,9 @@ Status: in progress.
   commands unless the request includes `approved: true`.
 - Check output persistence. Done: command stdout/stderr, exit codes, duration,
   and refreshed git diff refs are appended to the task record.
+- Task memory accumulation. Done at the server level: code tasks now maintain a
+  bounded `taskMemory` summary with read files, proposed files, changed files,
+  executed commands, check summaries, failure logs, next steps, and notes.
 
 Remaining:
 

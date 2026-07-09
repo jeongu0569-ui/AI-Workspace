@@ -28,6 +28,7 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.ok(result.search.resultCount >= 1);
   assert.equal(result.plan.steps[0].status, "done");
   assert.equal(result.plan.steps[2].status, "ready");
+  assert.ok(result.taskMemory.readFiles.includes("Code/demo-app/src/index.js"));
 
   const task = JSON.parse(await fs.readFile(
     path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
@@ -37,6 +38,8 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.equal(task.status, "inspected");
   assert.equal(task.scopePath, "Code/demo-app");
   assert.equal(task.git.diffRef, `.ai-workspace/diffs/${result.taskId}.diff`);
+  assert.ok(task.taskMemory.readFiles.includes("Code/demo-app/src/index.js"));
+  assert.ok(task.taskMemory.nextSteps.some((step) => step.includes("patch proposal")));
 
   const toolLog = await fs.readFile(path.join(root, ".ai-workspace", "tool-logs", "tool-events.jsonl"), "utf8");
   assert.match(toolLog, /code.inspect.start/);
@@ -61,6 +64,13 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.equal(patch.approvalRequired, true);
   assert.equal(patch.proposal.changes[0].path, "Code/demo-app/src/index.js");
   assert.match(patch.proposal.diffRef, /\.diff$/);
+  assert.ok(patch.taskMemory.proposedFiles.includes("Code/demo-app/src/index.js"));
+  const proposedTask = JSON.parse(await fs.readFile(
+    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    "utf8"
+  ));
+  assert.ok(proposedTask.taskMemory.proposedFiles.includes("Code/demo-app/src/index.js"));
+  assert.ok(proposedTask.taskMemory.nextSteps.some((step) => step.includes("Approve")));
   assert.equal(
     await fs.readFile(path.join(root, "Code", "demo-app", "src", "index.js"), "utf8"),
     "export function greeting() {\n  return 'hello';\n}\n"
@@ -77,6 +87,13 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   });
   assert.equal(applied.status, "patched");
   assert.deepEqual(applied.filesChanged, ["Code/demo-app/src/index.js"]);
+  assert.ok(applied.taskMemory.changedFiles.includes("Code/demo-app/src/index.js"));
+  const patchedTask = JSON.parse(await fs.readFile(
+    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    "utf8"
+  ));
+  assert.ok(patchedTask.taskMemory.changedFiles.includes("Code/demo-app/src/index.js"));
+  assert.ok(patchedTask.taskMemory.nextSteps.some((step) => step.includes("check")));
   assert.equal(
     await fs.readFile(path.join(root, "Code", "demo-app", "src", "index.js"), "utf8"),
     "export function greeting() {\n  return 'hello workspace';\n}\n"
@@ -87,6 +104,7 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.equal(check.status, "checked");
   assert.equal(check.checkRun.allPassed, true);
   assert.equal(check.checkRun.results[0].exitCode, 0);
+  assert.ok(check.taskMemory.commands.includes("npm run test"));
 
   const checkedTask = JSON.parse(await fs.readFile(
     path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
@@ -96,6 +114,9 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.equal(checkedTask.patchProposals[0].status, "applied");
   assert.equal(checkedTask.checks.length, 1);
   assert.match(checkedTask.checks[0].results[0].stdout, /test ok/);
+  assert.ok(checkedTask.taskMemory.commands.includes("npm run test"));
+  assert.equal(checkedTask.taskMemory.checkResults.at(-1).allPassed, true);
+  assert.ok(checkedTask.taskMemory.nextSteps.some((step) => step.includes("Review git diff")));
 });
 
 test("code agent runtime rejects non-Code scopes", async () => {
