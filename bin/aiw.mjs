@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 import readline from "node:readline";
 import {
   listCredentialStatus,
@@ -28,7 +29,18 @@ main(process.argv.slice(2)).catch((error) => {
 
 async function main(argv) {
   const [command, ...args] = argv;
-  if (!command || command === "help" || command === "--help" || command === "-h") {
+  if (!command) {
+    if (process.stdin.isTTY) {
+      const root = workspaceRoot({});
+      await runChatInteractive(root);
+      return;
+    } else {
+      printHelp();
+      return;
+    }
+  }
+
+  if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
     return;
   }
@@ -52,6 +64,13 @@ async function main(argv) {
     case "auth":
       await runAuth(args);
       return;
+    case "sessions":
+    case "session":
+      await runSessions(args);
+      return;
+    case "config":
+      await runConfig(args);
+      return;
     case "approvals":
     case "approval":
       await runApprovals(args);
@@ -71,11 +90,14 @@ function printHelp() {
   console.log(`AI Workspace CLI
 
 Usage:
+  aiw                                                   (Interactive TUI Chat)
   aiw serve [--host 0.0.0.0] [--port 8787] [--root PATH]
   aiw status [--url URL] [--json]
-  aiw model [list|set-default|show] [...]
-  aiw provider [list|help]
-  aiw auth [list|set|remove] [...]
+  aiw model [list|set-default|show] [...]                (Interactive model picker if no subcommand)
+  aiw provider [list] [...]                             (Interactive provider manager if no subcommand)
+  aiw auth [list|set|remove] [...]                      (Interactive auth manager if no subcommand)
+  aiw sessions                                          (Interactive session browser)
+  aiw config [edit]                                     (User configuration manager)
   aiw approvals [list|show|approve|reject] [...]
   aiw tasks [list|show] [...]
   aiw code <list|create|show|patch|apply|reject|check> [...]
@@ -975,17 +997,25 @@ async function interactiveSelect(title, items, defaultIndex = 0) {
 
 async function runProvider(args) {
   const options = parseOptions(args, { boolean: ["help", "json"] });
-  const [subcommand = "list"] = options._;
+  const root = workspaceRoot(options);
 
-  if (options.help || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+  if (options.help) {
     console.log(`Usage:
-  aiw provider list [--json]
-
-Lists the AI Workspace provider registry. Provider execution and credentials are
-owned by AI Workspace runtime config, not by an external CLI wrapper.
+  aiw provider [list] [--json]
 `);
     return;
   }
+
+  // If no subcommand is specified, open interactive mode
+  if (options._.length === 0) {
+    if (!process.stdin.isTTY) {
+      throw new Error("Interactive provider manager requires a TTY terminal.");
+    }
+    await runProviderInteractive(root);
+    return;
+  }
+
+  const [subcommand] = options._;
 
   if (subcommand === "list") {
     const providers = listProviderRegistry();
@@ -1016,20 +1046,26 @@ owned by AI Workspace runtime config, not by an external CLI wrapper.
 
 async function runAuth(args) {
   const options = parseOptions(args, { boolean: ["help", "json"] });
-  const [subcommand = "list", ...rest] = options._;
   const root = workspaceRoot(options);
 
-  if (options.help || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+  if (options.help) {
     console.log(`Usage:
   aiw auth [list] [--root PATH] [--json]
   aiw auth set <provider> <key> <value> [--root PATH] [--json]
   aiw auth remove <provider> [key] [--root PATH] [--json]
-
-Credential values are stored under .ai-workspace/config/credentials.json.
-Environment variables such as AIW_OPENAI_API_KEY are also detected.
 `);
     return;
   }
+
+  if (options._.length === 0) {
+    if (!process.stdin.isTTY) {
+      throw new Error("Interactive auth manager requires a TTY terminal.");
+    }
+    await runAuthInteractive(root);
+    return;
+  }
+
+  const [subcommand, ...rest] = options._;
 
   if (subcommand === "set") {
     const [provider, key, ...valueParts] = rest;
@@ -1075,4 +1111,347 @@ Environment variables such as AIW_OPENAI_API_KEY are also detected.
     ["stored", "STORED KEYS", 24],
     ["env", "ENV", 32]
   ]);
+}
+
+async function runSessions(args) {
+  const options = parseOptions(args, { boolean: ["help", "json"] });
+  const root = workspaceRoot(options);
+
+  if (options.help) {
+    console.log(`Usage:
+  aiw sessions [--root PATH]
+`);
+    return;
+  }
+
+  if (!process.stdin.isTTY) {
+    throw new Error("Sessions browser requires a TTY terminal.");
+  }
+  await runSessionsInteractive(root);
+}
+
+async function runConfig(args) {
+  const options = parseOptions(args, { boolean: ["help", "json"] });
+  const [subcommand] = options._;
+  const root = workspaceRoot(options);
+  const configPath = path.join(root, ".ai-workspace", "config", "config.yaml");
+
+  if (options.help || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+    console.log(`Usage:
+  aiw config [--root PATH]
+  aiw config edit [--root PATH]
+`);
+    return;
+  }
+
+  if (subcommand === "edit") {
+    const editor = process.env.EDITOR || "vi";
+    try {
+      await fs.access(configPath);
+    } catch {
+      await ensureRuntimeConfig(root);
+    }
+    await runProcess(editor, [configPath], {
+      cwd: root,
+      stdio: "inherit",
+      resolveOnForwardedSignal: true
+    });
+    return;
+  }
+
+  try {
+    const content = await fs.readFile(configPath, "utf8");
+    console.log(`\x1b[36m=== Current Workspace Configuration ===\x1b[0m`);
+    console.log(content);
+  } catch (error) {
+    console.log("No configuration file found. Run 'aiw model' to configure.");
+  }
+}
+
+async function runChatInteractive(root) {
+  const config = await readRuntimeConfig(root);
+  if (!config.defaultModel?.provider || !config.defaultModel?.model) {
+    console.log("No default model is configured.");
+    console.log("Please run 'aiw model' to configure a default model first.");
+    return;
+  }
+
+  const { createWorkspaceAgentEngine } = await import("../server/lib/agent-engine.mjs");
+  const engine = createWorkspaceAgentEngine({ workspaceRoot: root });
+
+  console.log(`\x1b[36mConnecting to AI Workspace runtime...\x1b[0m`);
+  try {
+    await engine.connect();
+  } catch (error) {
+    console.error(`Failed to connect to runtime: ${error.message}`);
+    engine.close();
+    return;
+  }
+
+  console.log(`\x1b[32mChat session started with ${config.defaultModel.provider}/${config.defaultModel.model}.\x1b[0m`);
+  console.log(`Type your message and press Enter. Type 'exit' or 'quit' to end the session.\n`);
+
+  const sessionResult = await engine.createSession({
+    provider: config.defaultModel.provider,
+    model: config.defaultModel.model,
+    title: `CLI Chat ${new Date().toLocaleDateString()}`
+  });
+  const sessionId = sessionResult.sessionId;
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: "\x1b[36mYou: \x1b[0m"
+  });
+
+  rl.prompt();
+
+  const onEvent = (event) => {
+    if (event.sessionId === sessionId && event.type === "message.delta" && event.text) {
+      process.stdout.write(event.text);
+    }
+  };
+  engine.on("event", onEvent);
+
+  for await (const line of rl) {
+    const input = line.trim();
+    if (!input) {
+      rl.prompt();
+      continue;
+    }
+    if (input.toLowerCase() === "exit" || input.toLowerCase() === "quit") {
+      break;
+    }
+
+    process.stdout.write("\x1b[33mAgent:\x1b[0m ");
+    try {
+      await engine.submitPrompt({
+        sessionId,
+        message: input,
+        provider: config.defaultModel.provider,
+        model: config.defaultModel.model,
+        wait: true
+      });
+    } catch (error) {
+      console.error(`\n\x1b[31mError: ${error.message}\x1b[0m`);
+    }
+    process.stdout.write("\n\n");
+    rl.prompt();
+  }
+
+  rl.close();
+  engine.off("event", onEvent);
+  engine.close();
+  console.log("\nChat session closed.");
+}
+
+async function runAuthInteractive(root) {
+  const options = [
+    "View credentials (auth list)",
+    "Set a credential (auth set)",
+    "Remove a credential (auth remove)",
+    "Exit"
+  ];
+  for (;;) {
+    const choice = await interactiveSelect("Authentication Manager", options);
+    if (choice === 0) {
+      await runAuth(["list", "--root", root]);
+      console.log("\nPress Enter to continue...");
+      await waitForEnter();
+    } else if (choice === 1) {
+      const providers = listProviderRegistry();
+      const providerItems = providers.map((p) => `${p.name} (${p.id})`);
+      const providerIndex = await interactiveSelect("Select a provider to authenticate:", providerItems);
+      const selected = providers[providerIndex];
+
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+
+      if (selected.id === "custom") {
+        rl.close();
+        const customKeys = ["AIW_CUSTOM_BASE_URL", "AIW_CUSTOM_API_KEY"];
+        const keyIndex = await interactiveSelect("Select credential key to set:", customKeys);
+        const key = customKeys[keyIndex];
+
+        const valRl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const val = await new Promise((resolve) => {
+          valRl.question(`Enter value for ${key}: `, (ans) => {
+            valRl.close();
+            resolve(ans.trim());
+          });
+        });
+        if (val) {
+          await setCredentialValue(root, "custom", key, val);
+          console.log(`Stored credential: custom/${key}\n`);
+        }
+      } else {
+        const key = selected.env?.[0] || "API_KEY";
+        const val = await new Promise((resolve) => {
+          rl.question(`Enter API Key / Token for ${selected.name} (${key}): `, (ans) => {
+            rl.close();
+            resolve(ans.trim());
+          });
+        });
+        if (val) {
+          await setCredentialValue(root, selected.id, key, val);
+          console.log(`Stored credential: ${selected.id}/${key}\n`);
+        }
+      }
+    } else if (choice === 2) {
+      const providers = listProviderRegistry();
+      const providerItems = providers.map((p) => `${p.name} (${p.id})`);
+      const providerIndex = await interactiveSelect("Select a provider to remove credentials:", providerItems);
+      const selected = providers[providerIndex];
+
+      await removeCredentialValue(root, selected.id);
+      console.log(`Removed credentials for ${selected.id}\n`);
+    } else {
+      break;
+    }
+  }
+}
+
+async function runProviderInteractive(root) {
+  const options = [
+    "List providers (provider list)",
+    "Configure a custom provider",
+    "Remove custom provider",
+    "Exit"
+  ];
+  for (;;) {
+    const choice = await interactiveSelect("Provider Manager", options);
+    if (choice === 0) {
+      await runProvider(["list"]);
+      console.log("\nPress Enter to continue...");
+      await waitForEnter();
+    } else if (choice === 1) {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      const name = await new Promise((resolve) => {
+        rl.question("Enter custom provider name (default: custom): ", (ans) => resolve(ans.trim() || "custom"));
+      });
+      const baseUrl = await new Promise((resolve) => {
+        rl.question("Enter custom provider base URL: ", (ans) => resolve(ans.trim()));
+      });
+      const apiKey = await new Promise((resolve) => {
+        rl.question("Enter custom provider API Key (optional): ", (ans) => resolve(ans.trim()));
+      });
+      rl.close();
+
+      if (!baseUrl) {
+        console.log("Base URL is required. Aborted.\n");
+        continue;
+      }
+
+      await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", baseUrl);
+      if (apiKey) {
+        await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", apiKey);
+      }
+      console.log(`Configured custom provider: ${name}\n`);
+    } else if (choice === 2) {
+      await removeCredentialValue(root, "custom");
+      console.log("Removed custom provider configuration.\n");
+    } else {
+      break;
+    }
+  }
+}
+
+async function runSessionsInteractive(root) {
+  const dirPath = path.join(root, ".ai-workspace", "sessions");
+  for (;;) {
+    let files = [];
+    try {
+      files = await fs.readdir(dirPath);
+    } catch {}
+
+    const sessionFiles = files.filter((f) => f.endsWith(".json"));
+    const sessions = [];
+    for (const file of sessionFiles) {
+      try {
+        const data = JSON.parse(await fs.readFile(path.join(dirPath, file), "utf8"));
+        sessions.push(data);
+      } catch {}
+    }
+
+    sessions.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+
+    const options = [
+      "Create a new chat session",
+      ...sessions.map((s) => `${s.title} (${s.model || "unknown"}) - ${new Date(s.updatedAt).toLocaleString()}`),
+      "Exit"
+    ];
+
+    const choice = await interactiveSelect("Session Browser", options);
+    if (choice === 0) {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const title = await new Promise((resolve) => {
+        rl.question("Enter session title (optional): ", (ans) => {
+          rl.close();
+          resolve(ans.trim());
+        });
+      });
+      const config = await readRuntimeConfig(root);
+      const sessionId = `session-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID()}`;
+      const sessionObj = {
+        id: sessionId,
+        title: title || `Session ${new Date().toLocaleDateString()}`,
+        model: config.defaultModel?.model || "unknown",
+        preview: "",
+        updatedAt: new Date().toISOString(),
+        source: "workspace",
+        runtime: "chat-runtime",
+        isActive: true,
+        messages: []
+      };
+      await fs.mkdir(dirPath, { recursive: true });
+      await fs.writeFile(path.join(dirPath, `${sessionId}.json`), JSON.stringify(sessionObj, null, 2) + "\n", "utf8");
+      console.log(`Created new session: ${sessionObj.title}\n`);
+    } else if (choice === options.length - 1) {
+      break;
+    } else {
+      const selectedSession = sessions[choice - 1];
+      const sessionOptions = [
+        "View messages",
+        "Delete session",
+        "Back to sessions list"
+      ];
+      const action = await interactiveSelect(selectedSession.title, sessionOptions);
+      if (action === 0) {
+        console.log(`\n=== Messages for: ${selectedSession.title} ===`);
+        const messages = selectedSession.messages || [];
+        if (messages.length === 0) {
+          console.log("(No messages in this session yet)");
+        } else {
+          for (const msg of messages) {
+            const roleLabel = msg.role === "user" ? "\x1b[36mYou\x1b[0m" : "\x1b[33mAgent\x1b[0m";
+            console.log(`[${roleLabel}]: ${msg.content}`);
+          }
+        }
+        console.log("\nPress Enter to continue...");
+        await waitForEnter();
+      } else if (action === 1) {
+        try {
+          await fs.unlink(path.join(dirPath, `${selectedSession.id}.json`));
+          console.log("Session deleted.\n");
+        } catch (err) {
+          console.log(`Failed to delete session: ${err.message}\n`);
+        }
+      }
+    }
+  }
+}
+
+function waitForEnter() {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.on("line", () => {
+      rl.close();
+      resolve();
+    });
+  });
 }
