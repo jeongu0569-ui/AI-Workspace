@@ -16,9 +16,7 @@ Apple Client / Web clients / CLI
       -> Render/search/context services
 ```
 
-AI Workspace owns the server and runtime state. External runtime behavior from
-the original prototype is treated as migration reference, not as the product
-boundary.
+AI Workspace owns the server and runtime state. The Hermes core runtime (config, auth, model, provider, sessions, tools, approvals, live socket) is natively absorbed into AI Workspace. It is not an adapter or bridge structure connecting to an external Hermes server.
 
 ## Runtime Modules
 
@@ -71,8 +69,8 @@ Runtime state lives under:
 ```text
 .ai-workspace/
 ├── config/
-│   ├── runtime.json
-│   └── credentials.json
+│   ├── config.yaml
+│   └── auth.json
 ├── sessions/
 ├── tasks/
 ├── memory/
@@ -140,25 +138,16 @@ credential, streaming, tool, approval, MCP, and sandbox ideas. Those ideas
 should be ported into AI Workspace-owned modules instead of being kept behind an
 external server dependency.
 
-## Current Runtime Backend
+## Current Native Runtime Backend
 
-The first owned runtime backend is an OpenAI-compatible adapter under
-`server/lib/runtime/openai-compatible-adapter.mjs`. It resolves the selected
-provider/model from `.ai-workspace/config`, streams chat completions into
-AI Workspace live events, and lets the session runtime persist only the visible
-user/assistant messages.
+The runtime backend is an OpenAI-compatible native engine under `server/lib/runtime/openai-compatible-runtime.mjs`. It resolves the selected provider/model from `.ai-workspace/config/config.yaml`, streams chat completions into AI Workspace live events, and lets the session runtime persist only the visible user/assistant messages.
 
-Assistant replies are persisted from the same streaming events that power the
-live UI. The engine buffers `message.delta` events by session/task and writes a
-single assistant message to `.ai-workspace/sessions` on `turn.complete`, with a
-non-streaming result fallback for adapters that only return final text.
+Assistant replies are persisted from the same streaming events that power the live UI. The engine buffers `message.delta` events by session/task and writes a single assistant message to `.ai-workspace/sessions` on `turn.complete`, with a non-streaming result fallback for models that only return final text.
 
-The adapter also exposes a first read-only tool registry:
+The native runtime also exposes a first read-only tool registry:
 
 - `workspace_search`: search workspace text files.
 - `workspace_read_file`: read a workspace-relative text, markdown, or code file.
 - `workspace_list_tree`: list files and folders under a workspace path.
 
-Tool calls are executed by AI Workspace itself, emitted as `tool.start`,
-`tool.complete`, or `tool.error` live events, then passed back to the model as
-tool results before the final assistant message is streamed.
+Tool calls are executed by AI Workspace itself, emitted as `tool.start`, `tool.complete`, or `tool.error` live events, then passed back to the model as tool results before the final assistant message is streamed.
