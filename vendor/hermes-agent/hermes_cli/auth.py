@@ -7132,6 +7132,15 @@ def _codex_device_code_login() -> Dict[str, Any]:
     print(f"     \033[94m{issuer}/codex/device\033[0m\n")
     print("  2. Enter this code:")
     print(f"     \033[94m{user_code}\033[0m\n")
+    if not _is_remote_session() and _can_open_graphical_browser():
+        try:
+            opened = webbrowser.open(f"{issuer}/codex/device")
+        except Exception:
+            opened = False
+        if opened:
+            print("  (Opened browser for verification)")
+        else:
+            print("  Could not open browser automatically -- use the URL above.")
     print("Waiting for sign-in... (press Ctrl+C to cancel)")
 
     # Step 3: Poll for authorization code

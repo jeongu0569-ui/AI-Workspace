@@ -645,79 +645,96 @@ struct WorkspaceSettingsView: View {
 
 private struct RuntimeModelSettingsView: View {
     @EnvironmentObject private var store: WorkspaceStore
-    @State private var providerId = ""
+    @State private var selectedProviderId = ""
     @State private var model = ""
     @State private var apiKey = ""
     @State private var baseUrl = ""
     @State private var isSaving = false
 
     private var provider: RuntimeProviderOption? {
-        store.runtimeProviders.first { $0.id == providerId }
+        store.runtimeProviders.first { $0.id == selectedProviderId }
     }
 
     private var models: [String] {
-        let discovered = store.runtimeProviderModels[providerId] ?? []
+        let discovered = store.runtimeProviderModels[selectedProviderId] ?? []
         return discovered.isEmpty ? (provider?.models ?? []) : discovered
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Model & Provider")
-                    .font(.headline)
-                Spacer()
-                if provider?.configured == true {
-                    Label("Configured", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
+            Text("Providers")
+                .font(.headline)
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 14) {
+                providerList
+                providerDetail
+            }
+            #else
+            HStack(alignment: .top, spacing: 16) {
+                providerList
+                    .frame(width: 280)
+                providerDetail
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            #endif
+            if !store.runtimeModelSetupMessage.isEmpty {
+                Text(store.runtimeModelSetupMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task {
+            await store.refreshRuntimeProviders()
+            if selectedProviderId.isEmpty {
+                let current = store.runtimeProviders.first(where: { $0.isDefault == true }) ?? store.runtimeProviders.first
+                if let current {
+                    selectProvider(current)
                 }
             }
+        }
+    }
 
-            Picker("Provider", selection: $providerId) {
-                Text("Select provider").tag("")
-                ForEach(store.runtimeProviders) { option in
-                    Text(option.name).tag(option.id)
-                }
-            }
-            .onChange(of: providerId) { _, newValue in
-                model = ""
-                apiKey = ""
-                baseUrl = store.runtimeProviders.first { $0.id == newValue }?.defaultBaseUrl ?? ""
-                guard !newValue.isEmpty else { return }
-                Task { await store.discoverRuntimeModels(providerId: newValue) }
-            }
+    private var providerList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            providerSection("Accounts", providers: providers(in: "Accounts"))
+            providerSection("API Keys", providers: providers(in: "API Keys"))
+            providerSection("Local", providers: providers(in: "Local"))
+        }
+    }
 
+    private var providerDetail: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if let provider {
-                if provider.isLocalOllama {
-                    TextField("Ollama server URL", text: $baseUrl)
-                        .textFieldStyle(.roundedBorder)
-                    Text("This address is resolved by the Workspace Server, not by the iPhone.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if provider.needsAPIKey {
-                    SecureField(provider.configured == true ? "New API key (leave blank to keep current)" : "API key", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                    if provider.baseUrlEnv != nil {
-                        TextField("Base URL (optional)", text: $baseUrl)
-                            .textFieldStyle(.roundedBorder)
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(provider.name)
+                            .font(.headline)
+                        Text(provider.setupHint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                } else if provider.isOAuth {
-                    Label("OAuth setup currently opens from `aiw model` on the server.", systemImage: "person.badge.key")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if provider.configured == true {
+                        Label("Connected", systemImage: "checkmark")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
                 }
 
-                HStack {
+                providerCredentialFields(provider)
+
+                HStack(spacing: 10) {
                     Picker("Model", selection: $model) {
                         Text("Select model").tag("")
                         ForEach(models, id: \.self) { item in
                             Text(item).tag(item)
                         }
                     }
+                    .labelsHidden()
                     .frame(maxWidth: .infinity)
 
                     Button {
-                        Task { await store.discoverRuntimeModels(providerId: providerId) }
+                        Task { await refreshSelectedProviderModels(saveValuesFirst: true) }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -725,44 +742,136 @@ private struct RuntimeModelSettingsView: View {
                     .help("Refresh models")
                 }
 
-                Button {
-                    isSaving = true
-                    Task {
-                        _ = await store.saveRuntimeModelConfiguration(
-                            providerId: providerId,
-                            model: model,
-                            apiKey: apiKey,
-                            baseUrl: baseUrl
-                        )
-                        apiKey = ""
-                        isSaving = false
+                HStack {
+                    Button {
+                        isSaving = true
+                        Task {
+                            _ = await store.saveRuntimeModelConfiguration(
+                                providerId: selectedProviderId,
+                                model: model,
+                                apiKey: apiKey,
+                                baseUrl: baseUrl
+                            )
+                            apiKey = ""
+                            isSaving = false
+                        }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Label("Set Default", systemImage: "checkmark")
+                        }
                     }
-                } label: {
-                    if isSaving {
-                        ProgressView()
-                    } else {
-                        Label("Use as default model", systemImage: "checkmark")
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isEmpty || isSaving)
+
+                    if provider.isOAuth {
+                        Text("Run `aiw model` on the server to sign in.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.isEmpty || isSaving || provider.isOAuth)
-            }
-
-            if !store.runtimeModelSetupMessage.isEmpty {
-                Text(store.runtimeModelSetupMessage)
+            } else {
+                Text("Select a provider.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .padding(14)
         .background(.quaternary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-        .task {
-            await store.refreshRuntimeProviders()
-            if providerId.isEmpty, let current = store.runtimeProviders.first(where: { $0.isDefault == true }) {
-                providerId = current.id
-                baseUrl = current.defaultBaseUrl ?? ""
-                await store.discoverRuntimeModels(providerId: current.id)
+    }
+
+    private func providers(in section: String) -> [RuntimeProviderOption] {
+        store.runtimeProviders.filter { $0.sectionTitle == section }
+    }
+
+    private func providerSection(_ title: String, providers: [RuntimeProviderOption]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(providers) { option in
+                Button {
+                    selectProvider(option)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: iconName(for: option))
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(option.name)
+                                .font(.callout)
+                                .lineLimit(1)
+                            Text(option.id)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        if option.isDefault == true {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else if option.configured == true {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 9)
+                    .background(
+                        selectedProviderId == option.id ? Color.accentColor.opacity(0.14) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
+    }
+
+    @ViewBuilder
+    private func providerCredentialFields(_ provider: RuntimeProviderOption) -> some View {
+        if provider.isLocalOllama {
+            TextField("http://127.0.0.1:11434/v1", text: $baseUrl)
+                .textFieldStyle(.roundedBorder)
+            Text("The Workspace Server resolves this URL. iPhone does not connect to Ollama directly.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if provider.needsAPIKey {
+            SecureField(provider.configured == true ? "New API key (leave blank to keep current)" : "API key", text: $apiKey)
+                .textFieldStyle(.roundedBorder)
+            if provider.baseUrlEnv != nil {
+                TextField(provider.defaultBaseUrl ?? "Base URL", text: $baseUrl)
+                    .textFieldStyle(.roundedBorder)
+            }
+        } else if provider.isOAuth {
+            Label("Account OAuth is stored on the server runtime.", systemImage: "person.badge.key")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func selectProvider(_ option: RuntimeProviderOption) {
+        selectedProviderId = option.id
+        model = ""
+        apiKey = ""
+        baseUrl = option.defaultBaseUrl ?? ""
+        Task { await refreshSelectedProviderModels(saveValuesFirst: false) }
+    }
+
+    private func refreshSelectedProviderModels(saveValuesFirst: Bool) async {
+        guard !selectedProviderId.isEmpty else { return }
+        if saveValuesFirst {
+            _ = await store.saveRuntimeProviderValues(providerId: selectedProviderId, apiKey: apiKey, baseUrl: baseUrl)
+        }
+        await store.discoverRuntimeModels(providerId: selectedProviderId)
+        let nextModels = store.runtimeProviderModels[selectedProviderId] ?? provider?.models ?? []
+        if model.isEmpty, let first = nextModels.first {
+            model = first
+        }
+    }
+
+    private func iconName(for provider: RuntimeProviderOption) -> String {
+        if provider.isLocalProvider { return "desktopcomputer" }
+        if provider.isOAuth { return "person.crop.circle.badge.checkmark" }
+        return "key"
     }
 }

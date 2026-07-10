@@ -372,6 +372,7 @@ struct RuntimeProviderOption: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let authType: String
+    let tab: String?
     let env: [String]?
     let baseUrlEnv: String?
     let defaultBaseUrl: String?
@@ -382,6 +383,18 @@ struct RuntimeProviderOption: Codable, Identifiable, Hashable {
     var needsAPIKey: Bool { authType == "api_key" }
     var isOAuth: Bool { authType.hasPrefix("oauth") }
     var isLocalOllama: Bool { id == "ollama-local" }
+    var isLocalProvider: Bool { tab == "local" || authType == "none" || isLocalOllama }
+    var sectionTitle: String {
+        if isLocalProvider { return "Local" }
+        if isOAuth || authType == "external_process" { return "Accounts" }
+        return "API Keys"
+    }
+    var setupHint: String {
+        if isLocalOllama { return "Uses the Workspace Server's local Ollama endpoint." }
+        if isOAuth { return "Account sign-in is managed by the AI Workspace server runtime." }
+        if needsAPIKey { return "Stores an API key in the server runtime config." }
+        return "No API key is required."
+    }
 }
 
 struct RuntimeProviderModelsResponse: Codable {

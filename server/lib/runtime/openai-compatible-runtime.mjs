@@ -3,7 +3,9 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   BUILTIN_PROVIDERS,
   listRuntimeModels,
+  patchProviderCredentialEntry,
   readCredentials,
+  readProviderCredentialEntry,
   readRuntimeConfig
 } from "./config-store.mjs";
 import {
@@ -21,6 +23,10 @@ const OPENAI_COMPATIBLE_DEFAULTS = {
   "ollama-local": "http://127.0.0.1:11434/v1",
   custom: ""
 };
+
+const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
+const CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 
 export class OpenAICompatibleRuntime extends EventEmitter {
   constructor({ workspaceRoot, env = process.env, fetchImpl = globalThis.fetch } = {}) {
@@ -328,6 +334,10 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       return true;
     });
 
+    if (selection.apiMode === "codex_responses" || selection.provider.id === "openai-codex") {
+      return await this.requestCodexResponses(selection, messages, params, filteredTools);
+    }
+
     const response = await this.fetch(`${selection.baseUrl}/chat/completions`, {
       method: "POST",
       headers,
@@ -376,6 +386,105 @@ export class OpenAICompatibleRuntime extends EventEmitter {
         if (chunk.toolCallDelta) mergeToolCallDelta(toolCalls, chunk.toolCallDelta);
       }
     }
+    return {
+      text,
+      toolCalls: normalizeToolCalls(toolCalls)
+    };
+  }
+
+  async requestCodexResponses(selection, messages, params, filteredTools = []) {
+    let text = "";
+    const toolCalls = [];
+    const { instructions, input } = chatMessagesToResponsesInput(messages);
+    const responseTools = responsesTools(filteredTools);
+    const headers = {
+      "content-type": "application/json",
+      accept: "text/event-stream, application/json",
+      ...selection.extraHeaders
+    };
+    if (selection.apiKey) headers.authorization = `Bearer ${selection.apiKey}`;
+    if (params.sessionId) {
+      headers.session_id = String(params.sessionId);
+      headers["x-client-request-id"] = String(params.sessionId);
+    }
+
+    const body = {
+      model: selection.model,
+      instructions,
+      input,
+      store: false,
+      stream: true,
+      ...responsesReasoningOptions(params.reasoningEffort)
+    };
+    if (responseTools.length) {
+      body.tools = responseTools;
+      body.tool_choice = "auto";
+      body.parallel_tool_calls = true;
+    }
+
+    const response = await this.fetch(`${selection.baseUrl}/responses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const bodyText = await response.text().catch(() => "");
+      throw Object.assign(
+        new Error(`Model request failed: ${response.status} ${bodyText.slice(0, 500)}`),
+        { status: response.status }
+      );
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const json = await response.json();
+      text = extractResponsesText(json);
+      if (text) {
+        this.emit("event", {
+          type: "message.delta",
+          sessionId: params.sessionId,
+          taskId: params.taskId,
+          text
+        });
+      }
+      toolCalls.push(...extractResponsesToolCalls(json));
+    } else {
+      for await (const chunk of parseResponsesStream(response)) {
+        if (chunk.reasoning) {
+          this.emit("event", {
+            type: "reasoning.delta",
+            sessionId: params.sessionId,
+            taskId: params.taskId,
+            text: chunk.reasoning
+          });
+        }
+        if (chunk.text) {
+          text += chunk.text;
+          this.emit("event", {
+            type: "message.delta",
+            sessionId: params.sessionId,
+            taskId: params.taskId,
+            text: chunk.text
+          });
+        }
+        if (chunk.toolCall) toolCalls.push(chunk.toolCall);
+        if (chunk.completed && !text) {
+          const completedText = extractResponsesText(chunk.completed);
+          if (completedText) {
+            text += completedText;
+            this.emit("event", {
+              type: "message.delta",
+              sessionId: params.sessionId,
+              taskId: params.taskId,
+              text: completedText
+            });
+          }
+          toolCalls.push(...extractResponsesToolCalls(chunk.completed));
+        }
+      }
+    }
+
     return {
       text,
       toolCalls: normalizeToolCalls(toolCalls)
@@ -996,7 +1105,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       throw Object.assign(new Error(`Unknown provider: ${providerId}`), { status: 400 });
     }
 
-    const baseUrl = await this.resolveBaseUrl(provider);
+    const baseUrl = await this.resolveBaseUrl(provider, config);
     if (!baseUrl) {
       throw Object.assign(
         new Error(`Provider '${providerId}' needs a base URL. Store ${provider.baseUrlEnv || "baseUrl"} with aiw auth set or set the matching environment variable.`),
@@ -1004,7 +1113,9 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       );
     }
 
-    const apiKey = await this.resolveApiKey(provider);
+    const apiKey = provider.id === "openai-codex"
+      ? await this.resolveCodexApiKey()
+      : await this.resolveApiKey(provider);
     if (provider.authType === "api_key" && !apiKey && !["lmstudio", "custom"].includes(provider.id)) {
       throw Object.assign(
         new Error(`Provider '${providerId}' needs an API key. Run aiw auth set ${providerId} <KEY_NAME> <VALUE>.`),
@@ -1017,22 +1128,25 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       model,
       baseUrl: trimTrailingSlash(baseUrl),
       apiKey,
+      apiMode: params.apiMode || config.defaultModel?.apiMode || (provider.id === "openai-codex" ? "codex_responses" : "chat_completions"),
       extraHeaders: provider.id === "openrouter" ? {
         "HTTP-Referer": "http://localhost",
         "X-Title": "AI Workspace"
-      } : {}
+      } : provider.id === "openai-codex" ? codexBackendHeaders(apiKey) : {}
     };
   }
 
-  async resolveBaseUrl(provider) {
+  async resolveBaseUrl(provider, config = null) {
     const credentials = await readCredentials(this.workspaceRoot);
     const values = credentials.providers?.[provider.id]?.values || {};
     const baseKey = provider.baseUrlEnv || "";
-    return values.baseUrl
+    return (config?.defaultModel?.provider === provider.id ? config.defaultModel?.baseUrl : "")
+      || values.baseUrl
       || values.BASE_URL
       || (baseKey ? values[baseKey] : "")
       || (baseKey ? this.env[baseKey] : "")
       || provider.defaultBaseUrl
+      || (provider.id === "openai-codex" ? CODEX_BASE_URL : "")
       || OPENAI_COMPATIBLE_DEFAULTS[provider.id]
       || "";
   }
@@ -1045,6 +1159,60 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       if (this.env[key]) return this.env[key];
     }
     return values.apiKey || values.API_KEY || values.token || values.TOKEN || "";
+  }
+
+  async resolveCodexApiKey() {
+    const entry = await readProviderCredentialEntry(this.workspaceRoot, "openai-codex");
+    let accessToken = String(entry?.access_token || "").trim();
+    const refreshToken = String(entry?.refresh_token || "").trim();
+    if (!accessToken) {
+      throw Object.assign(
+        new Error("OpenAI Codex is not authenticated. Run `aiw model` and sign in to OpenAI Codex."),
+        { status: 503, setupRequired: true }
+      );
+    }
+    if (refreshToken && jwtExpiresSoon(accessToken, 120)) {
+      const refreshed = await this.refreshCodexToken(accessToken, refreshToken);
+      accessToken = refreshed.accessToken;
+      await patchProviderCredentialEntry(this.workspaceRoot, "openai-codex", {
+        access_token: refreshed.accessToken,
+        refresh_token: refreshed.refreshToken || refreshToken,
+        last_refresh: new Date().toISOString()
+      });
+    }
+    return accessToken;
+  }
+
+  async refreshCodexToken(accessToken, refreshToken) {
+    const response = await this.fetch(CODEX_OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
+        "user-agent": "aiw-cli/0.0.0"
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: CODEX_OAUTH_CLIENT_ID
+      })
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw Object.assign(
+        new Error(`OpenAI Codex token refresh failed: ${response.status} ${text.slice(0, 300)}`),
+        { status: 401, setupRequired: true }
+      );
+    }
+    const payload = await response.json();
+    const nextAccess = String(payload.access_token || "").trim();
+    if (!nextAccess) {
+      throw Object.assign(new Error("OpenAI Codex token refresh returned no access token."), { status: 401, setupRequired: true });
+    }
+    return {
+      accessToken: nextAccess,
+      refreshToken: String(payload.refresh_token || refreshToken || "").trim()
+    };
   }
 }
 
@@ -1153,6 +1321,17 @@ function reasoningOptions(value) {
   return { reasoning_effort: effort };
 }
 
+function responsesReasoningOptions(value) {
+  const effort = String(value || "").toLowerCase();
+  const normalized = effort === "fast" || effort === "low" ? "low"
+    : effort === "deep" || effort === "high" ? "high"
+      : "medium";
+  return {
+    reasoning: { effort: normalized, summary: "auto" },
+    include: ["reasoning.encrypted_content"]
+  };
+}
+
 async function* parseOpenAIStream(response) {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1187,11 +1366,96 @@ async function* parseOpenAIStream(response) {
   }
 }
 
+async function* parseResponsesStream(response) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const rawChunk of response.body) {
+    buffer += decoder.decode(rawChunk, { stream: true });
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      for (const line of frame.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        let json;
+        try {
+          json = JSON.parse(data);
+        } catch {
+          continue;
+        }
+        const eventType = String(json.type || "");
+        if (eventType === "error") {
+          const error = json.error || {};
+          throw new Error(error.message || JSON.stringify(error));
+        }
+        if (eventType.includes("output_text.delta")) {
+          yield { text: String(json.delta || ""), raw: json };
+          continue;
+        }
+        if (eventType.includes("reasoning") && eventType.includes("delta")) {
+          yield { reasoning: String(json.delta || ""), raw: json };
+          continue;
+        }
+        if (eventType === "response.output_item.done") {
+          const call = responseOutputItemToToolCall(json.item);
+          if (call) yield { toolCall: call, raw: json };
+          continue;
+        }
+        if (eventType === "response.completed") {
+          yield { completed: json.response || json, raw: json };
+          continue;
+        }
+        if (eventType === "response.failed") {
+          const error = json.response?.error || json.error || {};
+          throw new Error(error.message || JSON.stringify(error));
+        }
+      }
+    }
+  }
+}
+
 function extractNonStreamingText(json) {
   return json.choices?.[0]?.message?.content
     || json.choices?.[0]?.delta?.content
     || json.output_text
     || "";
+}
+
+function extractResponsesText(json) {
+  if (!json || typeof json !== "object") return "";
+  if (typeof json.output_text === "string") return json.output_text;
+  const output = Array.isArray(json.output) ? json.output : [];
+  const chunks = [];
+  for (const item of output) {
+    if (item?.type !== "message") continue;
+    for (const part of item.content || []) {
+      if ((part.type === "output_text" || part.type === "text") && typeof part.text === "string") {
+        chunks.push(part.text);
+      }
+    }
+  }
+  return chunks.join("");
+}
+
+function extractResponsesToolCalls(json) {
+  const output = Array.isArray(json?.output) ? json.output : [];
+  return output.map(responseOutputItemToToolCall).filter(Boolean);
+}
+
+function responseOutputItemToToolCall(item) {
+  if (!item || typeof item !== "object") return null;
+  if (item.type !== "function_call" && item.type !== "custom_tool_call") return null;
+  const name = String(item.name || "").trim();
+  if (!name) return null;
+  const args = item.arguments ?? item.input ?? "{}";
+  return {
+    id: String(item.call_id || item.id || ""),
+    name,
+    arguments: typeof args === "string" ? args : JSON.stringify(args)
+  };
 }
 
 function extractNonStreamingToolCalls(json) {
@@ -1201,6 +1465,71 @@ function extractNonStreamingToolCalls(json) {
     name: call.function?.name || "",
     arguments: call.function?.arguments || "{}"
   })).filter((call) => call.name);
+}
+
+function chatMessagesToResponsesInput(messages) {
+  let instructions = "";
+  const input = [];
+  for (const msg of messages || []) {
+    if (!msg || typeof msg !== "object") continue;
+    if (msg.role === "system") {
+      instructions = instructions ? `${instructions}\n\n${msg.content || ""}` : String(msg.content || "");
+      continue;
+    }
+    if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+      if (msg.content) {
+        input.push({
+          role: "assistant",
+          content: [{ type: "output_text", text: String(msg.content) }]
+        });
+      }
+      for (const call of msg.tool_calls) {
+        const fn = call.function || {};
+        input.push({
+          type: "function_call",
+          call_id: String(call.id || ""),
+          name: String(fn.name || ""),
+          arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {})
+        });
+      }
+      continue;
+    }
+    if (msg.role === "tool") {
+      input.push({
+        type: "function_call_output",
+        call_id: String(msg.tool_call_id || ""),
+        output: String(msg.content || "")
+      });
+      continue;
+    }
+    if (msg.role === "user" || msg.role === "assistant") {
+      input.push({
+        role: msg.role,
+        content: [{
+          type: msg.role === "assistant" ? "output_text" : "input_text",
+          text: String(msg.content || "")
+        }]
+      });
+    }
+  }
+  return { instructions, input };
+}
+
+function responsesTools(tools = []) {
+  return (tools || [])
+    .map((tool) => {
+      const fn = tool?.function || {};
+      const name = String(fn.name || "").trim();
+      if (!name) return null;
+      return {
+        type: "function",
+        name,
+        description: typeof fn.description === "string" ? fn.description : "",
+        strict: false,
+        parameters: fn.parameters || { type: "object", properties: {} }
+      };
+    })
+    .filter(Boolean);
 }
 
 function mergeToolCallDelta(toolCalls, deltas) {
@@ -1327,6 +1656,37 @@ function normalizeWorkspaceSearchResults(result = {}) {
     page: item.page,
     chunkId: item.chunkId || `${index + 1}`
   }));
+}
+
+function jwtExpiresSoon(token, skewSeconds = 120) {
+  const claims = decodeJwtPayload(token);
+  const exp = Number(claims?.exp || 0);
+  if (!Number.isFinite(exp) || exp <= 0) return false;
+  return exp <= Math.floor(Date.now() / 1000) + skewSeconds;
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length < 2) return null;
+    const padded = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
+    return JSON.parse(Buffer.from(padded, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function codexBackendHeaders(accessToken) {
+  const headers = {
+    "user-agent": "codex_cli_rs/0.0.0 (AI Workspace)",
+    originator: "codex_cli_rs"
+  };
+  const claims = decodeJwtPayload(accessToken);
+  const accountId = claims?.["https://api.openai.com/auth"]?.chatgpt_account_id;
+  if (typeof accountId === "string" && accountId.trim()) {
+    headers["ChatGPT-Account-ID"] = accountId.trim();
+  }
+  return headers;
 }
 
 function trimTrailingSlash(value) {

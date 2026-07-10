@@ -234,10 +234,17 @@ AI Workspace가 직접 제공하는 명령입니다.
 설정은 기본적으로 `<Workspace>/.ai-workspace/config/` 아래에 저장됩니다.
 
 Mac/iPhone/iPad 앱의 `Settings > Model & Provider`에서도 같은 서버 설정을
-관리할 수 있습니다. API key provider, endpoint, Ollama Local 모델 조회와 기본
-모델 선택은 GUI에서 바로 처리됩니다. OAuth provider의 브라우저/device-code
-로그인은 현재 서버 터미널의 `aiw model`을 사용하며, 후속 단계에서 OAuth 상태
-API를 추가할 예정입니다.
+관리할 수 있습니다. 화면은 provider를 `Accounts`, `API Keys`, `Local`로 나누고,
+provider를 선택하면 해당 provider의 모델 목록을 서버에서 다시 불러옵니다. API key
+provider, endpoint, Ollama Local 모델 조회와 기본 모델 선택은 GUI에서 처리됩니다.
+OAuth provider의 브라우저/device-code 로그인은 현재 서버 터미널의 `aiw model`을
+사용하며, 후속 단계에서 OAuth 시작/상태/callback API를 추가할 예정입니다.
+
+OpenAI Codex는 일반 OpenAI-compatible `/chat/completions`가 아니라 ChatGPT Codex
+backend의 `/responses` transport를 사용합니다. AI Workspace 런타임은 저장된
+`openai-codex` OAuth token을 읽고 필요한 경우 refresh한 뒤 Codex Responses 요청
+형식으로 전송합니다. 이 경로가 잘못되면 HTML 403이 발생하므로, provider catalog만
+복사하는 것으로는 충분하지 않습니다.
 
 ## 서버 실행
 

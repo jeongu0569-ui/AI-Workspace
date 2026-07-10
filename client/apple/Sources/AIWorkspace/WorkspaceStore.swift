@@ -179,6 +179,28 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
+    func saveRuntimeProviderValues(providerId: String, apiKey: String = "", baseUrl: String = "") async -> Bool {
+        guard let api else { return false }
+        do {
+            var values: [String: String] = [:]
+            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                values["apiKey"] = apiKey
+            }
+            if !baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                values["baseUrl"] = baseUrl
+            }
+            if !values.isEmpty {
+                try await api.updateRuntimeProviderAuth(providerId: providerId, values: values)
+                runtimeModelSetupMessage = "Provider settings saved."
+                await refreshRuntimeProviders()
+            }
+            return true
+        } catch {
+            runtimeModelSetupMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func saveRuntimeModelConfiguration(providerId: String, model: String, apiKey: String, baseUrl: String) async -> Bool {
         guard let api else { return false }
         do {

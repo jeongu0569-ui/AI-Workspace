@@ -60,6 +60,52 @@ test("OpenAI-compatible runtime streams chat completions from AI Workspace confi
   assert.deepEqual(events.map((event) => event.type), ["turn.start", "message.delta", "message.delta", "turn.complete"]);
 });
 
+test("OpenAI-compatible runtime uses Codex Responses transport for OpenAI Codex", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-codex-"));
+  await writeRuntimeConfig(root, {
+    defaultModel: {
+      provider: "openai-codex",
+      model: "gpt-5.4-mini",
+      baseUrl: "https://chatgpt.com/backend-api/codex"
+    }
+  });
+  await setCredentialValue(root, "openai-codex", "access_token", fakeJwt({
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    "https://api.openai.com/auth": { chatgpt_account_id: "acct_test" }
+  }));
+
+  let request = null;
+  const runtime = new OpenAICompatibleRuntime({
+    workspaceRoot: root,
+    fetchImpl: async (url, options) => {
+      request = { url, options, body: JSON.parse(options.body) };
+      return {
+        ok: true,
+        headers: { get: () => "text/event-stream" },
+        body: streamChunks([
+          'data: {"type":"response.output_text.delta","delta":"안녕"}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"하세요"}\n\n',
+          'data: {"type":"response.completed","response":{"output":[]}}\n\n'
+        ])
+      };
+    }
+  });
+
+  const result = await runtime.submitPrompt({ sessionId: "session-codex", message: "안녕" });
+
+  assert.equal(result.reply, "안녕하세요");
+  assert.equal(result.provider, "openai-codex");
+  assert.equal(request.url, "https://chatgpt.com/backend-api/codex/responses");
+  assert.equal(request.options.headers.authorization.startsWith("Bearer "), true);
+  assert.equal(request.options.headers.originator, "codex_cli_rs");
+  assert.equal(request.options.headers["ChatGPT-Account-ID"], "acct_test");
+  assert.equal(request.body.model, "gpt-5.4-mini");
+  assert.equal(request.body.stream, true);
+  assert.equal(request.body.store, false);
+  assert.ok(Array.isArray(request.body.input));
+  assert.equal(request.body.input.at(-1).content[0].type, "input_text");
+});
+
 test("OpenAI-compatible runtime reports setup when no model is selected", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-missing-"));
   const runtime = new OpenAICompatibleRuntime({ workspaceRoot: root });
@@ -1020,3 +1066,8 @@ rl.on("line", (line) => {
   client.stop();
   assert.equal(client.status, "stopped");
 });
+
+function fakeJwt(payload) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.signature`;
+}

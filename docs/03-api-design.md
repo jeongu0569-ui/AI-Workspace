@@ -108,6 +108,27 @@ DELETE /api/providers/custom/:id
 `POST /api/auth/:provider` accepts friendly keys like `apiKey`, `token`, and
 `baseUrl`; the server maps them to the provider registry storage keys.
 
+Provider rows include client layout metadata such as `tab` so native clients can
+render Hermes-style sections without hardcoding the provider universe:
+
+```json
+{
+  "id": "ollama-local",
+  "name": "Ollama Local",
+  "authType": "none",
+  "tab": "local",
+  "configured": true,
+  "isDefault": false
+}
+```
+
+Provider-specific model discovery uses `GET /api/providers/:id/models`. For
+OpenAI-compatible API-key providers this may return registry defaults until the
+provider exposes a safe model-list endpoint. For `ollama-local`, the Workspace
+Server calls the server machine's Ollama daemon and returns the installed local
+models. For `openai-codex`, execution uses the Codex Responses transport rather
+than `/chat/completions`.
+
 ### `PUT /api/file?path=Notes/Work/a.md`
 
 Writes a text file.

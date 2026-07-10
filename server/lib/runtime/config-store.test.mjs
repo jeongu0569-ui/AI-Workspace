@@ -6,9 +6,11 @@ import test from "node:test";
 
 import {
   ensureRuntimeConfig,
+  listCredentialStatus,
   readCredentials,
   readRuntimeConfig,
   runtimeConfigDir,
+  setCredentialValue,
   setDefaultModel
 } from "./config-store.mjs";
 
@@ -38,4 +40,13 @@ custom_providers:
   assert.match(updated, /base_url: http:\/\/127\.0\.0\.1:11434\/v1/);
   assert.match(updated, /api_mode: chat_completions/);
   assert.match(updated, /model: gemma4:e2b-mlx/);
+});
+
+test("OAuth providers count token-only credentials as configured", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-oauth-status-"));
+  await ensureRuntimeConfig(root);
+  await setCredentialValue(root, "openai-codex", "access_token", "token-value");
+  const status = await listCredentialStatus(root, {});
+  const codex = status.find((item) => item.provider === "openai-codex");
+  assert.equal(codex.configured, true);
 });

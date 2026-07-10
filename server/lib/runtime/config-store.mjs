@@ -307,6 +307,45 @@ export async function readCredentials(workspaceRoot) {
   return credentials;
 }
 
+export async function readProviderCredentialEntry(workspaceRoot, providerId) {
+  await ensureRuntimeConfig(workspaceRoot);
+  const authPath = path.join(runtimeConfigDir(workspaceRoot), "auth.json");
+  let authObj = { version: 1, credential_pool: {} };
+  try {
+    authObj = JSON.parse(await fs.readFile(authPath, "utf8"));
+  } catch {}
+  const entries = authObj.credential_pool?.[providerId];
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  return { ...entries[0] };
+}
+
+export async function patchProviderCredentialEntry(workspaceRoot, providerId, patch) {
+  await ensureRuntimeConfig(workspaceRoot);
+  const authPath = path.join(runtimeConfigDir(workspaceRoot), "auth.json");
+  let authObj = { version: 1, credential_pool: {} };
+  try {
+    authObj = JSON.parse(await fs.readFile(authPath, "utf8"));
+  } catch {}
+  if (!authObj.credential_pool) authObj.credential_pool = {};
+  if (!Array.isArray(authObj.credential_pool[providerId])) {
+    authObj.credential_pool[providerId] = [];
+  }
+  let entry = authObj.credential_pool[providerId][0];
+  if (!entry) {
+    entry = {
+      id: crypto.randomBytes(3).toString("hex"),
+      label: `${providerId}-credential-1`,
+      auth_type: "api_key",
+      priority: 0,
+      source: "manual"
+    };
+    authObj.credential_pool[providerId].push(entry);
+  }
+  Object.assign(entry, patch);
+  await fs.writeFile(authPath, JSON.stringify(authObj, null, 2) + "\n", "utf8");
+  return { ...entry };
+}
+
 export async function writeCredentials(workspaceRoot, value) {
   // Kept for backward compatibility interface, but we write via auth.json and config.yaml in setCredentialValue
   await ensureRuntimeConfig(workspaceRoot);
@@ -316,8 +355,12 @@ export async function listCredentialStatus(workspaceRoot, env = process.env) {
   const credentials = await readCredentials(workspaceRoot);
   return BUILTIN_PROVIDERS.map((provider) => {
     const stored = credentials.providers?.[provider.id] || {};
-    const storedKeys = Object.keys(stored.values || {}).filter(
+    const rawStoredKeys = Object.keys(stored.values || {});
+    const storedKeys = rawStoredKeys.filter(
       (k) => k !== "apiKey" && k !== "API_KEY" && k !== "token" && k !== "TOKEN" && k !== "baseUrl" && k !== "BASE_URL"
+    );
+    const hasSecretOnlyStoredCredential = rawStoredKeys.some((key) =>
+      ["apiKey", "API_KEY", "token", "TOKEN"].includes(key)
     );
     const envKeys = (provider.env || []).filter((key) => Boolean(env[key]));
     if (provider.baseUrlEnv && env[provider.baseUrlEnv]) {
@@ -325,7 +368,10 @@ export async function listCredentialStatus(workspaceRoot, env = process.env) {
     }
     
     // Check if configured
-    let configured = storedKeys.length > 0 || envKeys.length > 0 || provider.authType === "none";
+    let configured = storedKeys.length > 0
+      || envKeys.length > 0
+      || provider.authType === "none"
+      || (provider.authType.startsWith("oauth") && hasSecretOnlyStoredCredential);
     if (provider.id === "custom") {
       // Custom provider needs base_url configuration to be "configured"
       const hasBaseUrl = stored.values?.baseUrl || stored.values?.AIW_CUSTOM_BASE_URL || env.AIW_CUSTOM_BASE_URL;

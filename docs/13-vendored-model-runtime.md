@@ -55,6 +55,51 @@ aiw model set-default openai-api gpt-5.4-mini
 TUI가 `provider`, `model.base_url`, `api_mode` 형식으로 저장한 endpoint를
 AI Workspace 런타임이 직접 읽는다. 이전 custom endpoint 설정도 호환한다.
 
+## Provider transport 원칙
+
+Provider 목록과 인증 UI만 가져오면 충분하지 않다. Hermes Agent의 실제 실행 로직은
+provider별 transport에 분리되어 있고, 대표적으로 다음 파일들이 관여한다.
+
+- `hermes_cli/runtime_provider.py`: provider, credential, base URL, `api_mode` 해석
+- `agent/transports/codex.py`: Responses API transport
+- `agent/codex_responses_adapter.py`: chat message와 tool schema를 Responses 형식으로 변환
+- `agent/anthropic_adapter.py`: Anthropic Messages protocol
+- `agent/bedrock_adapter.py`: AWS Bedrock Converse protocol
+
+따라서 AI Workspace 런타임은 provider catalog만 복사하지 않고, provider별 wire
+protocol까지 단계적으로 이식한다. 현재 구현 상태는 다음과 같다.
+
+- OpenAI-compatible `/chat/completions`: 기존 JS runtime에서 처리
+- Ollama Local: OpenAI-compatible `/v1/chat/completions` endpoint로 처리
+- OpenAI Codex: Codex OAuth token, refresh, ChatGPT Codex `/responses` transport 처리
+- Anthropic native, Bedrock Converse, Copilot ACP 등: 상세 transport 이식 예정
+
+즉 `openai-codex` 같은 provider는 단순히 API key를 붙여 `/chat/completions`에
+보내면 안 된다. Codex backend는 `https://chatgpt.com/backend-api/codex/responses`
+를 사용하고, `originator`, Codex CLI 스타일 `User-Agent`, `ChatGPT-Account-ID`
+헤더와 Responses request shape가 필요하다.
+
+## OpenAI Codex
+
+`aiw model`에서 OpenAI Codex OAuth를 완료하면 credential은 Workspace의
+`.ai-workspace/config/auth.json`에 저장된다. AI Workspace runtime은 이 값을 직접
+읽어 다음 절차를 수행한다.
+
+1. `credential_pool.openai-codex[0]`에서 access token과 refresh token을 읽는다.
+2. access token JWT의 만료 시간이 가까우면 OpenAI OAuth token endpoint에서 refresh한다.
+3. 갱신된 token은 다시 `auth.json`에 저장한다.
+4. `/chat/completions`가 아니라 `/responses`로 streaming request를 보낸다.
+5. `response.output_text.delta`, reasoning, function call item을 AI Workspace event로 변환한다.
+
+이 수정 전에는 OpenAI Codex를 OpenAI-compatible chat-completions처럼 호출해서
+HTML 403 응답이 발생했다. 현재 테스트에서는 Codex backend 호출까지 정상 도달하며,
+계정 사용량이 소진된 경우에는 403이 아니라 Codex backend의 `usage_limit_reached`
+429가 반환된다.
+
+로컬 graphical session에서 `aiw model`의 Codex device-code 로그인은 인증 URL을
+자동으로 브라우저에 열도록 벤더링된 `hermes_cli/auth.py`를 패치했다. 원격 SSH나
+headless 환경에서는 기존처럼 URL과 code를 출력한다.
+
 ## Ollama
 
 Ollama 0.31.2에서 `ollama launch hermes --config`를 격리 HOME으로 실행해 확인한
@@ -94,9 +139,10 @@ aiw ollama --model gemma4:e2b-mlx --serve
 - `POST /api/model/default`
 
 API key와 endpoint는 서버에만 저장되고 앱은 기존 secret 값을 다시 내려받지 않는다.
-Ollama Local 모델 조회도 Workspace Server가 수행하므로 iPhone은 Ollama에 직접
-연결하지 않는다. OAuth provider는 별도 OAuth 상태/callback API가 추가될 때까지
-서버의 `aiw model`에서 인증한다.
+Provider 화면은 `Accounts`, `API Keys`, `Local` 섹션으로 나뉘며 provider를
+선택할 때마다 서버의 모델 목록을 다시 조회한다. Ollama Local 모델 조회도 Workspace
+Server가 수행하므로 iPhone은 Ollama에 직접 연결하지 않는다. OAuth provider는 별도
+OAuth 시작/상태/callback API가 추가될 때까지 서버의 `aiw model`에서 인증한다.
 
 ## 검증 항목
 
@@ -104,6 +150,9 @@ Ollama Local 모델 조회도 Workspace Server가 수행하므로 iPhone은 Olla
 - 임시 Workspace에서 `ollama-local` endpoint와 모델 저장
 - `aiw model show/list`에서 저장 결과 확인
 - 로컬 `gemma4:e2b-mlx`로 AI Workspace 자체 런타임 스트리밍 응답 확인
+- OpenAI Codex가 `/responses` transport를 사용하고 HTML 403이 재발하지 않는 테스트
+- OpenAI Codex token-only credential이 configured provider로 표시되는 테스트
+- 실제 OpenAI Codex prompt가 backend까지 도달하는 수동 테스트
 - Hermes-compatible custom config 회귀 테스트
 - 모델 TUI가 Workspace별 설정 경로를 사용하는 테스트
 - macOS/iOS 설정 GUI 빌드 및 provider 관리 API 실호출
