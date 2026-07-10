@@ -3,9 +3,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 export async function ensureFoldersDir(workspaceRoot) {
-  const dir = path.join(workspaceRoot, ".ai-workspace", "conversation-folders");
+  const dir = path.join(workspaceRoot, ".codmes", "conversation-folders");
   await fs.mkdir(dir, { recursive: true });
-  await fs.mkdir(path.join(workspaceRoot, ".ai-workspace", "memory", "folders"), { recursive: true });
+  await fs.mkdir(path.join(workspaceRoot, ".codmes", "memory", "folders"), { recursive: true });
   return dir;
 }
 
@@ -31,7 +31,7 @@ export async function createFolder(workspaceRoot, { name, icon, color }) {
     createdAt: new Date().toISOString()
   };
   folders.push(newFolder);
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "conversation-folders", "folders.json");
+  const filePath = path.join(workspaceRoot, ".codmes", "conversation-folders", "folders.json");
   await fs.writeFile(filePath, JSON.stringify(folders, null, 2), "utf8");
   return newFolder;
 }
@@ -47,7 +47,7 @@ export async function updateFolder(workspaceRoot, folderId, patch) {
     ...patch,
     updatedAt: new Date().toISOString()
   };
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "conversation-folders", "folders.json");
+  const filePath = path.join(workspaceRoot, ".codmes", "conversation-folders", "folders.json");
   await fs.writeFile(filePath, JSON.stringify(folders, null, 2), "utf8");
   return folders[idx];
 }
@@ -55,7 +55,7 @@ export async function updateFolder(workspaceRoot, folderId, patch) {
 export async function deleteFolder(workspaceRoot, folderId) {
   const folders = await listFolders(workspaceRoot);
   const filtered = folders.filter(f => f.id !== folderId);
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "conversation-folders", "folders.json");
+  const filePath = path.join(workspaceRoot, ".codmes", "conversation-folders", "folders.json");
   await fs.writeFile(filePath, JSON.stringify(filtered, null, 2), "utf8");
 
   const unassignedSessions = await unassignFolderSessions(workspaceRoot, folderId);
@@ -63,7 +63,7 @@ export async function deleteFolder(workspaceRoot, folderId) {
 }
 
 export async function getFolderMemory(workspaceRoot, folderId) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "folders", `folder-${folderId}.json`);
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "folders", `folder-${folderId}.json`);
   try {
     const data = await fs.readFile(filePath, "utf8");
     return JSON.parse(data);
@@ -73,7 +73,7 @@ export async function getFolderMemory(workspaceRoot, folderId) {
 }
 
 export async function updateFolderMemory(workspaceRoot, folderId, memoryEntries) {
-  const dir = path.join(workspaceRoot, ".ai-workspace", "memory", "folders");
+  const dir = path.join(workspaceRoot, ".codmes", "memory", "folders");
   await fs.mkdir(dir, { recursive: true });
   const filePath = path.join(dir, `folder-${folderId}.json`);
   await fs.writeFile(filePath, JSON.stringify(memoryEntries, null, 2), "utf8");
@@ -81,7 +81,7 @@ export async function updateFolderMemory(workspaceRoot, folderId, memoryEntries)
 }
 
 export async function moveSessionToFolder(workspaceRoot, sessionId, folderId) {
-  const sessionPath = path.join(workspaceRoot, ".ai-workspace", "sessions", `${sessionId}.json`);
+  const sessionPath = path.join(workspaceRoot, ".codmes", "sessions", `${sessionId}.json`);
   let session = null;
   try {
     const data = await fs.readFile(sessionPath, "utf8");
@@ -104,7 +104,7 @@ export async function moveSessionToFolder(workspaceRoot, sessionId, folderId) {
 }
 
 async function unassignFolderSessions(workspaceRoot, folderId) {
-  const sessionsDir = path.join(workspaceRoot, ".ai-workspace", "sessions");
+  const sessionsDir = path.join(workspaceRoot, ".codmes", "sessions");
   let files = [];
   try {
     files = await fs.readdir(sessionsDir);

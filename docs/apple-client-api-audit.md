@@ -3,10 +3,10 @@
 Target file:
 
 ```text
-client/apple/Sources/AIWorkspace/WorkspaceAPI.swift
+client/apple/Sources/Codmes/WorkspaceAPI.swift
 ```
 
-The Apple client should talk only to AI Workspace Server. It should not know
+The Apple client should talk only to Codmes Server. It should not know
 about external runtime dashboards, cookies, local filesystem paths, or provider
 credentials.
 
@@ -119,7 +119,7 @@ approval/apply/check primitives.
 
 | Swift method | Server endpoint | Status | Notes |
 |---|---|---:|---|
-| `hermesModelOptions()` | `GET /api/models` | implemented | Name is legacy; it now targets AI Workspace runtime. |
+| `hermesModelOptions()` | `GET /api/models` | implemented | Name is legacy; it now targets Codmes runtime. |
 | `hermesSessions()` | `GET /api/sessions` | implemented | Name is legacy; should be renamed later. |
 | `hermesSessionMessages(sessionId:)` | `GET /api/sessions/:id/messages` | implemented | History loading. |
 | `deleteHermesSession(sessionId:)` | `DELETE /api/sessions/:id` | implemented | History management. |

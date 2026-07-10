@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "17EC45DFCB1349F793E8B926"
-               BuildableName = "AI Workspace.app"
-               BlueprintName = "AIWorkspace"
-               ReferencedContainer = "container:AIWorkspace.xcodeproj">
+               BlueprintIdentifier = "32297155EC3C4ED885C414E7"
+               BuildableName = "Codmes iOS.app"
+               BlueprintName = "Codmes iOS"
+               ReferencedContainer = "container:Codmes.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -43,10 +43,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "17EC45DFCB1349F793E8B926"
-            BuildableName = "AI Workspace.app"
-            BlueprintName = "AIWorkspace"
-            ReferencedContainer = "container:AIWorkspace.xcodeproj">
+            BlueprintIdentifier = "32297155EC3C4ED885C414E7"
+            BuildableName = "Codmes iOS.app"
+            BlueprintName = "Codmes iOS"
+            ReferencedContainer = "container:Codmes.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -60,10 +60,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "17EC45DFCB1349F793E8B926"
-            BuildableName = "AI Workspace.app"
-            BlueprintName = "AIWorkspace"
-            ReferencedContainer = "container:AIWorkspace.xcodeproj">
+            BlueprintIdentifier = "32297155EC3C4ED885C414E7"
+            BuildableName = "Codmes iOS.app"
+            BlueprintName = "Codmes iOS"
+            ReferencedContainer = "container:Codmes.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

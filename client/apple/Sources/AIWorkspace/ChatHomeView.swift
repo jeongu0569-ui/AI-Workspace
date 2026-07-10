@@ -17,6 +17,8 @@ struct ChatHomeView: View {
     @State private var draft = ""
     @State private var showingSessionManager = false
     @FocusState private var isDraftFocused: Bool
+    @State private var isAtBottom = true
+    @State private var isScrollingToBottom = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,16 +26,42 @@ struct ChatHomeView: View {
                 chatHeader
             }
             sessionToolbar
-            ScrollView {
-                VStack(spacing: 14) {
-                    ForEach(store.chatLines) { line in
-                        MessageBubble(line: line) { approved in
-                            Task { await store.respondToApproval(lineId: line.id, approved: approved) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 14) {
+                        ForEach(store.chatLines) { line in
+                            MessageBubble(line: line) { approved in
+                                Task { await store.respondToApproval(lineId: line.id, approved: approved) }
+                            }
+                            .id(line.id)
+                        }
+                        
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom-anchor")
+                            .onAppear {
+                                isAtBottom = true
+                            }
+                            .onDisappear {
+                                if !isScrollingToBottom {
+                                    isAtBottom = false
+                                }
+                            }
+                    }
+                    .padding(compact ? 14 : 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onChange(of: store.chatLines) {
+                    if isAtBottom {
+                        isScrollingToBottom = true
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            isScrollingToBottom = false
                         }
                     }
                 }
-                .padding(compact ? 14 : 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollDismissesKeyboard(.interactively)
             .contentShape(Rectangle())
@@ -62,7 +90,7 @@ struct ChatHomeView: View {
                 }
 
                 VStack(spacing: 8) {
-                    TextField("Message AI Workspace...", text: $draft, axis: .vertical)
+                    TextField("Message Codmes...", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(1...(compact ? 3 : 4))
                         .focused($isDraftFocused)
@@ -164,7 +192,7 @@ struct ChatHomeView: View {
     private var chatHeader: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("AI Workspace Chat")
+                Text("Codmes Chat")
                     .font(compact ? .headline.weight(.semibold) : .title2.weight(.semibold))
                 Text(store.workspace?.runtime?.status ?? "No runtime status loaded")
                     .font(.caption)
@@ -362,6 +390,7 @@ struct ChatHomeView: View {
         let message = draft
         draft = ""
         isDraftFocused = false
+        isAtBottom = true
         Task { await store.sendChatMessage(message) }
     }
 }
@@ -834,7 +863,7 @@ struct RenderedMarkdownWebView: NSViewRepresentable {
         }
 
         private func updateHeight(_ webView: WKWebView) {
-            webView.evaluateJavaScript("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)") { [weak self] value, _ in
+            webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] value, _ in
                 guard let self else { return }
                 let next = CGFloat(value as? Double ?? 80)
                 DispatchQueue.main.async {
@@ -884,7 +913,7 @@ struct RenderedMarkdownWebView: UIViewRepresentable {
         }
 
         private func updateHeight(_ webView: WKWebView) {
-            webView.evaluateJavaScript("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)") { [weak self] value, _ in
+            webView.evaluateJavaScript("document.body.scrollHeight") { [weak self] value, _ in
                 guard let self else { return }
                 let next = CGFloat(value as? Double ?? 80)
                 DispatchQueue.main.async {

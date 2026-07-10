@@ -1,13 +1,13 @@
 # RAG Backend Design
 
-AI Workspace treats RAG as a server-owned capability. Clients should not upload large folders or PDFs into a chat prompt. They should send the user's scope and intent, then the server decides whether to inline small context or query an index.
+Codmes treats RAG as a server-owned capability. Clients should not upload large folders or PDFs into a chat prompt. They should send the user's scope and intent, then the server decides whether to inline small context or query an index.
 
 ## Goals
 
 - Keep Notes, Documents, PDFs, and Code searchable from one workspace root.
 - Support a local scan fallback now and semantic vector search later.
 - Let runtime prompts receive compact search/chunk context instead of raw folder dumps.
-- Keep docsearch MCP as an official external backend option while AI Workspace grows native indexing.
+- Keep docsearch MCP as an official external backend option while Codmes grows native indexing.
 
 ## Chunk Schema
 
@@ -59,7 +59,7 @@ These are rendered into the system/context message as compact “Search results 
 First pass implemented:
 
 - PDF metadata appears under `GET /api/file/metadata`.
-- Text-layer extraction utility caches text under `.ai-workspace/index/pdf-text/`.
+- Text-layer extraction utility caches text under `.codmes/index/pdf-text/`.
 - Workspace scan search can search extracted PDF text.
 
 Planned:

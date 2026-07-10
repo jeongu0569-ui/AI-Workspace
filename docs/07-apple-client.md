@@ -9,7 +9,7 @@ client/apple
 It now has a real Xcode project for app development:
 
 ```text
-client/apple/AIWorkspace.xcodeproj
+client/apple/Codmes.xcodeproj
 ```
 
 The previous Swift Package remains in place as a lightweight CLI build check,
@@ -28,11 +28,11 @@ Then run the client:
 
 ```bash
 cd client/apple
-xcodebuild -project AIWorkspace.xcodeproj -scheme AIWorkspace -destination 'platform=macOS' build
+xcodebuild -project Codmes.xcodeproj -scheme Codmes -destination 'platform=macOS' build
 open ~/Library/Developer/Xcode/DerivedData
 ```
 
-For the old package shell smoke test, `swift run AIWorkspace` still works on
+For the old package shell smoke test, `swift run Codmes` still works on
 macOS.
 
 ## Current Views
@@ -88,7 +88,7 @@ Implemented:
   state is visible without a manual restart.
 - grouped, collapsible thinking/tool activity rows, one compact activity group per user turn
 - streaming thinking/reasoning deltas coalesced into smooth activity blocks instead of one row per token
-- active activity shimmer while AI Workspace is still streaming; finished rows show
+- active activity shimmer while Codmes is still streaming; finished rows show
   `Done` and stop animating
 - Markdown rendering for assistant answers with a SwiftUI block renderer ported
   from the earlier Obsidian-style prototype: headings, paragraphs, unordered lists,
@@ -136,10 +136,10 @@ Implemented:
   proposal, approve and immediately run approved checks, and run approved
   checks through the Workspace Server.
 - approval and denial buttons for `approval.request` events
-- normalized AI Workspace session menu titles instead of raw generated session ids
-- zero-message AI Workspace sessions are hidden from the client session list
-- the new chat `+` button clears the local chat view but does not create an AI Workspace session until the first message is sent
-- macOS activation fix for `swift run AIWorkspace`, so the launched window becomes the key app for keyboard input
+- normalized Codmes session menu titles instead of raw generated session ids
+- zero-message Codmes sessions are hidden from the client session list
+- the new chat `+` button clears the local chat view but does not create an Codmes session until the first message is sent
+- macOS activation fix for `swift run Codmes`, so the launched window becomes the key app for keyboard input
 - compact Notes/Code split view sizing for smaller macOS windows
 - default macOS sidebar toggle only; the custom duplicate sidebar button was removed
 - Xcode project with separate macOS and iOS app targets
@@ -192,7 +192,7 @@ Implemented:
 Not yet implemented:
 
 - Repository-level Apple developer team signing is intentionally not fixed to a
-  specific account. Configure the `AIWorkspace iOS` target's Team in Xcode before
+  specific account. Configure the `Codmes iOS` target's Team in Xcode before
   installing on a physical iPhone/iPad.
 - iPhone/iPad runtime UX pass after trusting the local developer profile on the
   device
@@ -267,7 +267,7 @@ same task/diff/approval model instead of inventing a separate client-side flow.
 
 ## Live Chat Flow
 
-The SwiftUI client connects only to AI Workspace Server. It opens:
+The SwiftUI client connects only to Codmes Server. It opens:
 
 ```text
 WS /api/live
@@ -346,7 +346,7 @@ The `+` button starts a local blank chat state only. Session creation is
 deferred until the user sends the first message, which avoids empty orphan
 sessions in history.
 
-The session menu refreshes AI Workspace session metadata immediately before opening, and the
+The session menu refreshes Codmes session metadata immediately before opening, and the
 History sheet also refreshes on presentation. This mirrors the Obsidian plugin
 behavior: history is synchronized at the moment the user is about to choose or
 manage a session instead of requiring a separate reload button.
@@ -362,7 +362,7 @@ User messages are right-aligned and assistant messages remain left-aligned, so
 chat turns are visually easier to scan.
 
 Assistant answers are rendered by a small SwiftUI Markdown block renderer. The
-renderer follows the same broad approach as the Obsidian plugin and AI Workspace UI:
+renderer follows the same broad approach as the Obsidian plugin and Codmes UI:
 split the text into blocks first, then render headings, paragraphs, lists,
 tasks, quotes, rules, fenced code blocks, and table rows with dedicated views.
 Inline emphasis/code is still handled through Swift
@@ -453,7 +453,7 @@ adding a second filesystem path layer.
 While an activity block is streaming, its collapsed state shows a three-line
 preview of the latest reasoning/tool text and a subtle shimmer. When streaming
 finishes, the shimmer stops and the collapsed row returns to the summary-only
-state. Saved AI Workspace reasoning/tool activity is also restored as an
+state. Saved Codmes reasoning/tool activity is also restored as an
 activity row when loading session history.
 
 Activity rows are not full chat bubbles. They are compact left-aligned progress
@@ -467,7 +467,7 @@ Obsidian plugin prototype:
   History  Safe/Full  Model  Fast/Med/Deep  Send
 ```
 
-`Safe` uses the AI Workspace approval policy, so mutating code tools and risky
+`Safe` uses the Codmes approval policy, so mutating code tools and risky
 MCP actions pause through the approval inbox. `Full` relaxes client-side
 friction but does not bypass server-side hard safety blocks.
 
@@ -492,10 +492,10 @@ Workspace
 
 The client only sends a compact `contextRequest`. The Workspace Server resolves
 the path, decides inline versus RAG/search metadata, and forwards compact
-context into the AI Workspace runtime. This keeps filesystem and indexing policy centralized on the
+context into the Codmes runtime. This keeps filesystem and indexing policy centralized on the
 server instead of duplicating it in each Apple client.
 
-AI Workspace stores visible user messages separately from compact runtime
+Codmes stores visible user messages separately from compact runtime
 context. The Apple client should render only saved user/assistant messages from
 `/api/sessions/:id/messages`; context, memory, and summaries belong to prompt
 assembly on the server.
@@ -505,20 +505,20 @@ assembly on the server.
 The app-development project is:
 
 ```text
-client/apple/AIWorkspace.xcodeproj
+client/apple/Codmes.xcodeproj
 ```
 
 Targets:
 
 ```text
-AIWorkspace      macOS app target
-AIWorkspace iOS  iPhone/iPad app target
+Codmes      macOS app target
+Codmes iOS  iPhone/iPad app target
 ```
 
 The targets share the files in:
 
 ```text
-client/apple/Sources/AIWorkspace
+client/apple/Sources/Codmes
 ```
 
 Platform-specific differences are handled with `#if os(macOS)` / `#if os(iOS)`.
@@ -555,18 +555,18 @@ to the local Workspace Server.
 Current verified builds:
 
 ```bash
-xcodebuild -project client/apple/AIWorkspace.xcodeproj \
-  -scheme AIWorkspace \
+xcodebuild -project client/apple/Codmes.xcodeproj \
+  -scheme Codmes \
   -configuration Debug \
   -destination 'platform=macOS' build
 
-xcodebuild -project client/apple/AIWorkspace.xcodeproj \
-  -scheme 'AIWorkspace iOS' \
+xcodebuild -project client/apple/Codmes.xcodeproj \
+  -scheme 'Codmes iOS' \
   -configuration Debug \
   -destination 'generic/platform=iOS Simulator' build
 
-xcodebuild -project client/apple/AIWorkspace.xcodeproj \
-  -scheme 'AIWorkspace iOS' \
+xcodebuild -project client/apple/Codmes.xcodeproj \
+  -scheme 'Codmes iOS' \
   -configuration Debug \
   -destination 'platform=iOS,id=<DEVICE_ID>' build
 ```
@@ -575,8 +575,8 @@ For command-line physical-device testing without committing a personal Team ID,
 pass the Team ID at build time:
 
 ```bash
-xcodebuild -project client/apple/AIWorkspace.xcodeproj \
-  -scheme 'AIWorkspace iOS' \
+xcodebuild -project client/apple/Codmes.xcodeproj \
+  -scheme 'Codmes iOS' \
   -configuration Debug \
   -destination 'platform=iOS,id=<DEVICE_ID>' \
   DEVELOPMENT_TEAM=<TEAM_ID> \

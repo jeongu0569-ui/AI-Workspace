@@ -149,7 +149,7 @@ test("System prompt dynamically includes enabled and relevant skills", async () 
 
     // Create two skills
     // 1) Relevant trigger skill
-    const skillA = path.join(root, ".ai-workspace", "skills", "skill-a");
+    const skillA = path.join(root, ".codmes", "skills", "skill-a");
     await fs.mkdir(skillA, { recursive: true });
     await fs.writeFile(
       path.join(skillA, "config.json"),
@@ -159,7 +159,7 @@ test("System prompt dynamically includes enabled and relevant skills", async () 
     await fs.writeFile(path.join(skillA, "skill.md"), "SKILL A PROMPT CONTENT", "utf8");
 
     // 2) Disabled/irrelevant skill
-    const skillB = path.join(root, ".ai-workspace", "skills", "skill-b");
+    const skillB = path.join(root, ".codmes", "skills", "skill-b");
     await fs.mkdir(skillB, { recursive: true });
     await fs.writeFile(
       path.join(skillB, "config.json"),

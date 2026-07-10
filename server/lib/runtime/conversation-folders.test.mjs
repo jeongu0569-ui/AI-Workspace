@@ -16,7 +16,7 @@ import {
 
 test("Conversation Folders: CRUD and memory settings", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conv-folders-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   // 1. Create
   const folder = await createFolder(root, { name: "Music", icon: "music", color: "pink" });

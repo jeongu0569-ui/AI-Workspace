@@ -45,7 +45,7 @@ export async function searchMemory(workspaceRoot, query, context = {}) {
   
   // 1. User memories
   try {
-    const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "user", "memories.jsonl");
+    const filePath = path.join(workspaceRoot, ".codmes", "memory", "user", "memories.jsonl");
     const data = await fs.readFile(filePath, "utf8");
     const lines = data.split("\n").filter(Boolean).map(JSON.parse);
     lines.forEach(m => {
@@ -63,7 +63,7 @@ export async function searchMemory(workspaceRoot, query, context = {}) {
   // 2. Folder memories
   if (context.currentFolderId) {
     try {
-      const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "folders", `folder-${context.currentFolderId}.json`);
+      const filePath = path.join(workspaceRoot, ".codmes", "memory", "folders", `folder-${context.currentFolderId}.json`);
       const data = await fs.readFile(filePath, "utf8");
       const list = JSON.parse(data);
       list.forEach(m => {
@@ -82,7 +82,7 @@ export async function searchMemory(workspaceRoot, query, context = {}) {
   // 3. Project memories
   if (context.currentProjectId) {
     try {
-      const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "projects", `project-${context.currentProjectId}.jsonl`);
+      const filePath = path.join(workspaceRoot, ".codmes", "memory", "projects", `project-${context.currentProjectId}.jsonl`);
       const data = await fs.readFile(filePath, "utf8");
       const lines = data.split("\n").filter(Boolean).map(JSON.parse);
       lines.forEach(m => {
@@ -99,7 +99,7 @@ export async function searchMemory(workspaceRoot, query, context = {}) {
   }
 
   // 4. Session summaries
-  const sessionsDir = path.join(workspaceRoot, ".ai-workspace", "sessions");
+  const sessionsDir = path.join(workspaceRoot, ".codmes", "sessions");
   try {
     const files = await fs.readdir(sessionsDir);
     for (const file of files) {
@@ -179,7 +179,7 @@ export async function updateMemoryFromSession(workspaceRoot, session, options = 
 }
 
 export async function readMemorySettings(workspaceRoot) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "settings.json");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "settings.json");
   try {
     const raw = JSON.parse(await fs.readFile(filePath, "utf8"));
     return {
@@ -200,7 +200,7 @@ export async function writeMemorySettings(workspaceRoot, patch = {}) {
       Object.entries(patch || {}).filter(([, value]) => typeof value === "boolean")
     )
   };
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "settings.json");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "settings.json");
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(next, null, 2) + "\n", "utf8");
   return next;
@@ -208,12 +208,12 @@ export async function writeMemorySettings(workspaceRoot, patch = {}) {
 
 export async function listMemoryCandidates(workspaceRoot) {
   const rows = [];
-  await collectJsonl(rows, path.join(workspaceRoot, ".ai-workspace", "memory", "candidates.jsonl"));
+  await collectJsonl(rows, path.join(workspaceRoot, ".codmes", "memory", "candidates.jsonl"));
   return rows.filter((item) => item.status !== "rejected" && item.status !== "approved");
 }
 
 export async function approveMemoryCandidate(workspaceRoot, candidateId, patch = {}) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "candidates.jsonl");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "candidates.jsonl");
   const rows = await readJsonl(filePath);
   const idx = rows.findIndex((item) => item.id === candidateId);
   if (idx === -1) throw Object.assign(new Error(`Memory candidate not found: ${candidateId}`), { status: 404 });
@@ -229,7 +229,7 @@ export async function approveMemoryCandidate(workspaceRoot, candidateId, patch =
 }
 
 export async function rejectMemoryCandidate(workspaceRoot, candidateId, reason = "rejected") {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "candidates.jsonl");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "candidates.jsonl");
   const rows = await readJsonl(filePath);
   const idx = rows.findIndex((item) => item.id === candidateId);
   if (idx === -1) throw Object.assign(new Error(`Memory candidate not found: ${candidateId}`), { status: 404 });
@@ -247,17 +247,17 @@ export async function recordDeletedMemoryTombstone(workspaceRoot, memory, reason
     reason,
     deletedAt: new Date().toISOString()
   };
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "deleted-memory-hashes.jsonl");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "deleted-memory-hashes.jsonl");
   await upsertJsonl(filePath, tombstone);
   return tombstone;
 }
 
 export async function readMemoryById(workspaceRoot, memoryId) {
   const all = [];
-  await collectJsonl(all, path.join(workspaceRoot, ".ai-workspace", "memory", "user", "memories.jsonl"));
-  await collectJsonl(all, path.join(workspaceRoot, ".ai-workspace", "memory", "sessions", "session-summaries.jsonl"));
-  await collectGlobJsonl(all, path.join(workspaceRoot, ".ai-workspace", "memory", "projects"));
-  await collectFolderMemory(all, path.join(workspaceRoot, ".ai-workspace", "memory", "folders"));
+  await collectJsonl(all, path.join(workspaceRoot, ".codmes", "memory", "user", "memories.jsonl"));
+  await collectJsonl(all, path.join(workspaceRoot, ".codmes", "memory", "sessions", "session-summaries.jsonl"));
+  await collectGlobJsonl(all, path.join(workspaceRoot, ".codmes", "memory", "projects"));
+  await collectFolderMemory(all, path.join(workspaceRoot, ".codmes", "memory", "folders"));
   return all.find((memory) => memory.id === memoryId) || null;
 }
 
@@ -327,17 +327,17 @@ export function extractMemoryCandidates(session, _options = {}) {
 }
 
 export async function saveUserMemory(workspaceRoot, memory) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "user", "memories.jsonl");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "user", "memories.jsonl");
   return await upsertJsonl(filePath, normalizeMemory(memory, "user_memory"));
 }
 
 export async function saveProjectMemory(workspaceRoot, projectId, memory) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "projects", `project-${safeId(projectId)}.jsonl`);
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "projects", `project-${safeId(projectId)}.jsonl`);
   return await upsertJsonl(filePath, normalizeMemory({ ...memory, projectId }, "project_memory"));
 }
 
 export async function saveFolderMemory(workspaceRoot, folderId, memory) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "folders", `folder-${safeId(folderId)}.json`);
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "folders", `folder-${safeId(folderId)}.json`);
   let list = [];
   try {
     list = JSON.parse(await fs.readFile(filePath, "utf8"));
@@ -350,7 +350,7 @@ export async function saveFolderMemory(workspaceRoot, folderId, memory) {
 }
 
 export async function saveSessionSummaryMemory(workspaceRoot, memory) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "sessions", "session-summaries.jsonl");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "sessions", "session-summaries.jsonl");
   return await upsertJsonl(filePath, normalizeMemory(memory, "session_summary_memory"));
 }
 
@@ -523,12 +523,12 @@ async function saveMemoryCandidate(workspaceRoot, memory, reason) {
     reviewReason: reason,
     candidateCreatedAt: new Date().toISOString()
   };
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "memory", "candidates.jsonl");
+  const filePath = path.join(workspaceRoot, ".codmes", "memory", "candidates.jsonl");
   return await upsertJsonl(filePath, candidate);
 }
 
 async function readDeletedMemoryHashes(workspaceRoot) {
-  const rows = await readJsonl(path.join(workspaceRoot, ".ai-workspace", "memory", "deleted-memory-hashes.jsonl"));
+  const rows = await readJsonl(path.join(workspaceRoot, ".codmes", "memory", "deleted-memory-hashes.jsonl"));
   return new Set(rows.map((row) => row.contentHash).filter(Boolean));
 }
 

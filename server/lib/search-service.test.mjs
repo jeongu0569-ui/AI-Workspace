@@ -71,7 +71,7 @@ test("searches extracted PDF text and caches it", async () => {
   assert.equal(result.results[0].path, "Documents/manual.pdf");
   assert.match(result.results[0].snippet, /semantic workspace/i);
 
-  const cacheEntries = await fs.readdir(path.join(root, ".ai-workspace", "index", "pdf-text"));
+  const cacheEntries = await fs.readdir(path.join(root, ".codmes", "index", "pdf-text"));
   assert.equal(cacheEntries.length, 1);
 });
 

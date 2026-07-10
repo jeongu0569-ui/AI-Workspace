@@ -8,7 +8,7 @@ test("createDocumentChunk normalizes document chunk schema", () => {
     path: "Documents/manual.pdf",
     kind: "pdf",
     page: 2,
-    text: "AI Workspace chunk text",
+    text: "Codmes chunk text",
     metadata: { title: "Manual" }
   });
 
@@ -24,4 +24,3 @@ test("VectorIndexProvider skeleton requires concrete implementation", async () =
   const provider = new VectorIndexProvider({ workspaceRoot: "/tmp/workspace" });
   await assert.rejects(() => provider.query({ query: "hello" }), /not implemented/);
 });
-

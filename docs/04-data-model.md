@@ -98,7 +98,7 @@ notes
 code
 ```
 
-AI Workspace stores session rows and message history under `.ai-workspace`.
+Codmes stores session rows and message history under `.codmes`.
 External provider/runtime integrations may add their own runtime ids, but the
 workspace session id is the app's source of truth.
 
@@ -107,7 +107,7 @@ workspace session id is the app's source of truth.
 The newer agent-engine state root is:
 
 ```text
-.ai-workspace/
+.codmes/
 ├── sessions/
 ├── tasks/
 ├── memory/
@@ -118,43 +118,43 @@ The newer agent-engine state root is:
 └── index/
 ```
 
-This folder belongs to AI Workspace Server. Chat, notes, search, approvals, and
+This folder belongs to Codmes Server. Chat, notes, search, approvals, and
 code work share one workspace-owned state layer.
 
 Current implemented files:
 
 ```text
-.ai-workspace/sessions/events.jsonl
-.ai-workspace/sessions/<sessionId>.json
-.ai-workspace/approvals/events.jsonl
-.ai-workspace/approvals/approval-<timestamp>-<uuid>.json
-.ai-workspace/tasks/events.jsonl
-.ai-workspace/tasks/task-<timestamp>-<uuid>.json
-.ai-workspace/tool-logs/live-events.jsonl
-.ai-workspace/tool-logs/tool-events.jsonl
-.ai-workspace/index/files.json
-.ai-workspace/conversation-index/sessions.jsonl
-.ai-workspace/conversation-index/summaries.jsonl
-.ai-workspace/conversation-index/messages.jsonl
-.ai-workspace/conversation-folders/folders.json
-.ai-workspace/tool-modes/user-overrides.json
-.ai-workspace/memory/user/memories.jsonl
-.ai-workspace/memory/projects/project-<id>.jsonl
-.ai-workspace/memory/folders/folder-<id>.json
-.ai-workspace/memory/sessions/session-summaries.jsonl
-.ai-workspace/memory/settings.json
-.ai-workspace/memory/candidates.jsonl
-.ai-workspace/memory/deleted-memory-hashes.jsonl
-.ai-workspace/audit/audit.jsonl
+.codmes/sessions/events.jsonl
+.codmes/sessions/<sessionId>.json
+.codmes/approvals/events.jsonl
+.codmes/approvals/approval-<timestamp>-<uuid>.json
+.codmes/tasks/events.jsonl
+.codmes/tasks/task-<timestamp>-<uuid>.json
+.codmes/tool-logs/live-events.jsonl
+.codmes/tool-logs/tool-events.jsonl
+.codmes/index/files.json
+.codmes/conversation-index/sessions.jsonl
+.codmes/conversation-index/summaries.jsonl
+.codmes/conversation-index/messages.jsonl
+.codmes/conversation-folders/folders.json
+.codmes/tool-modes/user-overrides.json
+.codmes/memory/user/memories.jsonl
+.codmes/memory/projects/project-<id>.jsonl
+.codmes/memory/folders/folder-<id>.json
+.codmes/memory/sessions/session-summaries.jsonl
+.codmes/memory/settings.json
+.codmes/memory/candidates.jsonl
+.codmes/memory/deleted-memory-hashes.jsonl
+.codmes/audit/audit.jsonl
 ```
 
-Model, provider, and auth config is stored under `.ai-workspace/config`.
+Model, provider, and auth config is stored under `.codmes/config`.
 Credential storage is still an MVP file store and should later move to an
 encrypted/keychain-backed store.
 
 ## Workspace-Owned Sessions
 
-Workspace sessions are saved under `.ai-workspace/sessions/<sessionId>.json` so that session history remains active and persistent across chat engines:
+Workspace sessions are saved under `.codmes/sessions/<sessionId>.json` so that session history remains active and persistent across chat engines:
 
 ```json
 {
@@ -173,9 +173,9 @@ Workspace sessions are saved under `.ai-workspace/sessions/<sessionId>.json` so 
   "visibleInSidebar": true,
   "archivedAt": null,
   "summary": {
-    "content": "주제: AI Workspace, RAG\n결정: ...",
-    "topics": ["AI Workspace", "RAG"],
-    "entities": ["AI Workspace"],
+    "content": "주제: Codmes, RAG\n결정: ...",
+    "topics": ["Codmes", "RAG"],
+    "entities": ["Codmes"],
     "decisions": ["..."],
     "preferences": ["..."],
     "sourceMessageIds": ["1", "2"],
@@ -282,7 +282,7 @@ task state; rejecting one records the decision and fails the waiting task.
 Tool mode overrides live under:
 
 ```text
-.ai-workspace/tool-modes/user-overrides.json
+.codmes/tool-modes/user-overrides.json
 ```
 
 Default modes are code-defined and surface-scoped:
@@ -302,21 +302,21 @@ tools stay gated by `requiresApproval`.
 Conversation search index files:
 
 ```text
-.ai-workspace/conversation-index/sessions.jsonl
-.ai-workspace/conversation-index/summaries.jsonl
-.ai-workspace/conversation-index/messages.jsonl
+.codmes/conversation-index/sessions.jsonl
+.codmes/conversation-index/summaries.jsonl
+.codmes/conversation-index/messages.jsonl
 ```
 
-The index is derived from `.ai-workspace/sessions/*.json`. It can be rebuilt
+The index is derived from `.codmes/sessions/*.json`. It can be rebuilt
 from session files and should not become the sole source of conversation data.
 
 Long-term memory files:
 
 ```text
-.ai-workspace/memory/user/memories.jsonl
-.ai-workspace/memory/projects/project-<id>.jsonl
-.ai-workspace/memory/folders/folder-<id>.json
-.ai-workspace/memory/sessions/session-summaries.jsonl
+.codmes/memory/user/memories.jsonl
+.codmes/memory/projects/project-<id>.jsonl
+.codmes/memory/folders/folder-<id>.json
+.codmes/memory/sessions/session-summaries.jsonl
 ```
 
 Memory rows use this common shape:
@@ -331,7 +331,7 @@ Memory rows use this common shape:
   "folderId": "folder-notes",
   "sourceSessionIds": ["session-..."],
   "sourceMessageIds": ["1", "2"],
-  "tags": ["ai-workspace"],
+  "tags": ["Codmes"],
   "createdAt": "2026-07-09T02:00:00Z",
   "updatedAt": "2026-07-09T02:00:00Z",
   "pinned": false
@@ -397,7 +397,7 @@ toolName
 The first implementation writes audit rows from the security policy evaluator
 for denied, approval-required, and risky write/execute action checks.
 
-This records AI Workspace Server's own view of the work so code agent loops can
+This records Codmes Server's own view of the work so code agent loops can
 attach diffs, test results, shell output, approvals, and decision logs to the
 same task id.
 

@@ -9,7 +9,7 @@ http://127.0.0.1:8787
 ## Auth
 
 `GET /api/health` is public. If the server is started with
-`AIW_SERVER_TOKEN`, every other endpoint requires:
+`CODMES_SERVER_TOKEN`, every other endpoint requires:
 
 ```text
 Authorization: Bearer <token>
@@ -36,8 +36,8 @@ workspace agent engine capabilities:
 {
   "agent": {
     "engine": "workspace-agent",
-    "statePath": ".ai-workspace",
-    "adapters": ["ai-workspace-runtime"],
+    "statePath": ".codmes",
+    "adapters": ["Codmes-runtime"],
     "runtimes": ["chat", "models", "sessions", "code-agent"],
     "taskEndpoint": "/api/agent/tasks",
     "approvalEndpoint": "/api/agent/approvals",
@@ -182,9 +182,9 @@ trash semantics before exposing it casually.
 
 ### Runtime Config Boundary
 
-AI Workspace owns model/provider/auth configuration under
-`.ai-workspace/config`. CLI commands such as `aiw model`, `aiw provider list`,
-and `aiw auth` operate on that AI Workspace-owned state.
+Codmes owns model/provider/auth configuration under
+`.codmes/config`. CLI commands such as `codmes model`, `codmes provider list`,
+and `codmes auth` operate on that Codmes-owned state.
 
 ## Context Router
 
@@ -294,7 +294,7 @@ docsearch-mcp / vector index
 
 ### `GET /api/index/status`
 
-Returns the current metadata index summary from `.ai-workspace/index/files.json`.
+Returns the current metadata index summary from `.codmes/index/files.json`.
 
 ### `POST /api/index/rebuild`
 
@@ -344,7 +344,7 @@ Returns runtime, MCP, skills, security, index, and search summary.
 
 ### `GET /api/agent/tasks`
 
-Lists workspace-owned task summaries from `.ai-workspace/tasks`.
+Lists workspace-owned task summaries from `.codmes/tasks`.
 
 ```text
 GET /api/agent/tasks?type=code&limit=50
@@ -369,7 +369,7 @@ Response:
 
 ### `GET /api/agent/tasks/:id`
 
-Returns the full task record from `.ai-workspace/tasks/:id.json`.
+Returns the full task record from `.codmes/tasks/:id.json`.
 
 Task status values used by the general Workspace Agent path are:
 
@@ -414,7 +414,7 @@ pending state.
 
 ### `GET /api/agent/approvals`
 
-Lists workspace-owned approval inbox items from `.ai-workspace/approvals`.
+Lists workspace-owned approval inbox items from `.codmes/approvals`.
 
 ```text
 GET /api/agent/approvals?status=pending&limit=50
@@ -433,7 +433,7 @@ Response:
       "proposalId": "patch-...",
       "scopePath": "Code/my-app",
       "summary": "Proposed 1 change(s): replace Code/my-app/src/index.js",
-      "diffRef": ".ai-workspace/diffs/task-...-patch-....diff"
+      "diffRef": ".codmes/diffs/task-...-patch-....diff"
     }
   ]
 }
@@ -472,7 +472,7 @@ Rejection:
 
 ## Tool Modes, Tool Discovery, Conversation Search, And Memory
 
-AI Workspace now exposes tool configuration as a first-class server contract.
+Codmes now exposes tool configuration as a first-class server contract.
 The model does not receive every possible tool in every surface. The runtime
 loads a surface mode, filters the callable tool list, and can use
 `tool_discovery` to expand safe tools for only the current turn.
@@ -627,7 +627,7 @@ overflow policy.
 
 ### Memory API
 
-Memory is stored under `.ai-workspace/memory` and can be searched or edited:
+Memory is stored under `.codmes/memory` and can be searched or edited:
 
 ```text
 GET    /api/memory/search?query=...&currentFolderId=...&currentProjectId=...&timeRange=...
@@ -688,7 +688,7 @@ Response:
     "isRepository": true,
     "status": "",
     "diffStat": "",
-    "diffRef": ".ai-workspace/diffs/task-....diff"
+    "diffRef": ".codmes/diffs/task-....diff"
   },
   "plan": {
     "summary": "Code task prepared for Code/my-app. ...",
@@ -707,11 +707,11 @@ Response:
 Side effects under the workspace root:
 
 ```text
-.ai-workspace/tasks/task-....json
-.ai-workspace/tasks/events.jsonl
-.ai-workspace/tool-logs/tool-events.jsonl
-.ai-workspace/decisions/events.jsonl
-.ai-workspace/diffs/task-....diff
+.codmes/tasks/task-....json
+.codmes/tasks/events.jsonl
+.codmes/tool-logs/tool-events.jsonl
+.codmes/decisions/events.jsonl
+.codmes/diffs/task-....diff
 ```
 
 The endpoint rejects scopes outside `Code/`.
@@ -773,7 +773,7 @@ Response:
     "id": "patch-...",
     "status": "proposed",
     "summary": "Proposed 1 change(s): replace Code/my-app/src/index.js",
-    "diffRef": ".ai-workspace/diffs/task-...-patch-....diff",
+    "diffRef": ".codmes/diffs/task-...-patch-....diff",
     "changes": [
       {
         "operation": "replace",
@@ -792,10 +792,10 @@ Response:
 }
 ```
 
-.ai-workspace/tasks/task-....json
-.ai-workspace/tool-logs/tool-events.jsonl
-.ai-workspace/decisions/events.jsonl
-.ai-workspace/diffs/task-...-patch-....diff
+.codmes/tasks/task-....json
+.codmes/tool-logs/tool-events.jsonl
+.codmes/decisions/events.jsonl
+.codmes/diffs/task-...-patch-....diff
 
 ### `POST /api/agent/code-task/:id/patches/generate`
 
@@ -856,7 +856,7 @@ Response:
   "git": {
     "isRepository": true,
     "status": " M src/index.js",
-    "diffRef": ".ai-workspace/diffs/task-...-after-patch-....diff"
+    "diffRef": ".codmes/diffs/task-...-after-patch-....diff"
   }
 }
 ```
@@ -922,9 +922,9 @@ Response:
 Side effects are limited to Workspace Agent state:
 
 ```text
-.ai-workspace/tasks/task-....json
-.ai-workspace/tool-logs/tool-events.jsonl
-.ai-workspace/decisions/events.jsonl
+.codmes/tasks/task-....json
+.codmes/tool-logs/tool-events.jsonl
+.codmes/decisions/events.jsonl
 ```
 
 ### `POST /api/agent/code-task/:id/checks`
@@ -1039,12 +1039,12 @@ Response:
 
 ### `GET /api/models`
 
-Returns AI Workspace model options from `.ai-workspace/config` and the built-in
+Returns Codmes model options from `.codmes/config` and the built-in
 provider registry.
 
 ### `GET /api/sessions`
 
-Returns normalized AI Workspace sessions for client menus:
+Returns normalized Codmes sessions for client menus:
 
 ```json
 {
@@ -1096,14 +1096,14 @@ existing session shows its previous user/assistant messages immediately.
 
 ### `DELETE /api/sessions/:id`
 
-Deletes a saved AI Workspace session.
+Deletes a saved Codmes session.
 
 The Apple client disables deletion for the currently active live session and
 shows a confirmation dialog before calling this endpoint.
 
 ### `POST /api/sessions`
 
-Creates a saved AI Workspace session.
+Creates a saved Codmes session.
 
 ## Live API
 
@@ -1214,9 +1214,9 @@ Patch and check commands mirror the REST endpoints:
 Server responses use:
 
 ```json
-{ "kind": "ready", "service": "ai-workspace-live" }
+{ "kind": "ready", "service": "Codmes-live" }
 { "kind": "result", "id": "3", "result": { "ok": true, "taskId": "task-..." } }
-{ "kind": "runtime.event", "engine": "workspace-agent", "adapter": "ai-workspace-runtime", "type": "message.delta", "text": "..." }
+{ "kind": "runtime.event", "engine": "workspace-agent", "adapter": "Codmes-runtime", "type": "message.delta", "text": "..." }
 { "kind": "error", "id": "3", "error": "..." }
 ```
 
@@ -1224,7 +1224,7 @@ Server responses use:
 
 ## Model / Provider / Auth Boundary
 
-AI Workspace provider and credential APIs are owned by the runtime config store.
+Codmes provider and credential APIs are owned by the runtime config store.
 HTTP and CLI commands must both use that same store. Do not add parallel
 endpoints that bypass it.
 
@@ -1240,19 +1240,19 @@ POST   /api/providers/custom
 DELETE /api/providers/custom/:id
 ```
 
-Use AI Workspace CLI commands:
+Use Codmes CLI commands:
 
 ```text
-aiw model list
-aiw model set-default <provider> <model>
-aiw auth list
-aiw auth set <provider> <key> <value>
-aiw provider list
+codmes model list
+codmes model set-default <provider> <model>
+codmes auth list
+codmes auth set <provider> <key> <value>
+codmes provider list
 ```
 
 ### `GET /api/models`
 
-Returns the AI Workspace model list.
+Returns the Codmes model list.
 
 ---
 
@@ -1287,7 +1287,7 @@ Response (proposed patch stored as artifact):
 }
 ```
 
-The patch is stored under `.ai-workspace/diffs/` and requires explicit approval
+The patch is stored under `.codmes/diffs/` and requires explicit approval
 before files are modified. Use `POST /api/agent/code-task/:id/patches/:proposalId/approve`
 to approve and apply.
 

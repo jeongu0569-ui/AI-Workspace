@@ -79,7 +79,7 @@ export const SAFE_TOOL_MODES = {
 };
 
 export async function ensureToolModesDir(workspaceRoot) {
-  const dir = path.join(workspaceRoot, ".ai-workspace", "tool-modes");
+  const dir = path.join(workspaceRoot, ".codmes", "tool-modes");
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }

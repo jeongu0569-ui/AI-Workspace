@@ -3,12 +3,17 @@ node_modules/
 .env
 HermesWorkspace/
 .hermes-workspace/
+.codmes/
+.codmes-runtime/
 coverage/
 .build/
+.ai-workspace/
 .aiw-runtime/
 *.egg-info/
 __pycache__/
 *.pyc
 client/apple/.build/
+client/apple/Codmes.xcodeproj/project.xcworkspace/xcuserdata/
+client/apple/Codmes.xcodeproj/xcuserdata/
 client/apple/AIWorkspace.xcodeproj/project.xcworkspace/xcuserdata/
 client/apple/AIWorkspace.xcodeproj/xcuserdata/

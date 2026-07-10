@@ -9,7 +9,7 @@ import { executeConversationSearch, executeConversationRead } from "./conversati
 
 test("Conversation Tools: index, search and read", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-tools-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   const mockSession = {
     id: "session-123",
@@ -30,7 +30,7 @@ test("Conversation Tools: index, search and read", async () => {
   
   // Write actual session JSON to state root so conversation_read can find it
   await fs.writeFile(
-    path.join(root, ".ai-workspace", "sessions", "session-123.json"),
+    path.join(root, ".codmes", "sessions", "session-123.json"),
     JSON.stringify(mockSession, null, 2),
     "utf8"
   );
@@ -61,7 +61,7 @@ test("Conversation Tools: index, search and read", async () => {
 
 test("Conversation Tools: fuzzy keyword recall does not require exact phrase match", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-fuzzy-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const session = {
     id: "session-music",
@@ -81,7 +81,7 @@ test("Conversation Tools: fuzzy keyword recall does not require exact phrase mat
   };
 
   await fs.writeFile(
-    path.join(root, ".ai-workspace", "sessions", "session-music.json"),
+    path.join(root, ".codmes", "sessions", "session-music.json"),
     JSON.stringify(session, null, 2),
     "utf8"
   );
@@ -99,7 +99,7 @@ test("Conversation Tools: fuzzy keyword recall does not require exact phrase mat
 
 test("Conversation Tools: last_week is previous calendar week and last_7_days is rolling", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-time-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const sessions = [
     {
@@ -133,7 +133,7 @@ test("Conversation Tools: last_week is previous calendar week and last_7_days is
 
   for (const session of sessions) {
     await fs.writeFile(
-      path.join(root, ".ai-workspace", "sessions", `${session.id}.json`),
+      path.join(root, ".codmes", "sessions", `${session.id}.json`),
       JSON.stringify(session, null, 2),
       "utf8"
     );
@@ -164,7 +164,7 @@ test("Conversation Tools: last_week is previous calendar week and last_7_days is
 
 test("Conversation Tools: read surrounding messages preserves message ids and removes overlap duplicates", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-read-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const session = {
     id: "session-read",
@@ -177,7 +177,7 @@ test("Conversation Tools: read surrounding messages preserves message ids and re
     ]
   };
   await fs.writeFile(
-    path.join(root, ".ai-workspace", "sessions", "session-read.json"),
+    path.join(root, ".codmes", "sessions", "session-read.json"),
     JSON.stringify(session, null, 2),
     "utf8"
   );
@@ -194,7 +194,7 @@ test("Conversation Tools: read surrounding messages preserves message ids and re
 
 test("Conversation Tools: archived sessions are hidden unless includeArchived is true", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-archived-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const session = {
     id: "session-archived",
@@ -216,7 +216,7 @@ test("Conversation Tools: archived sessions are hidden unless includeArchived is
     }
   };
   await fs.writeFile(
-    path.join(root, ".ai-workspace", "sessions", "session-archived.json"),
+    path.join(root, ".codmes", "sessions", "session-archived.json"),
     JSON.stringify(session, null, 2),
     "utf8"
   );

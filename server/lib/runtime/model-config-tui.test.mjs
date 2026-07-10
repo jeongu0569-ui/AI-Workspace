@@ -10,20 +10,22 @@ import {
   vendoredModelEntry
 } from "./model-config-tui.mjs";
 
-test("vendored model TUI is scoped to AI Workspace runtime state", async () => {
+test("vendored model TUI is scoped to Codmes runtime state", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-model-tui-"));
+  const workspaceRoot = path.join(root, "workspace");
+  await fs.mkdir(workspaceRoot, { recursive: true });
   const fakePython = path.join(root, "python");
   await fs.writeFile(fakePython, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 
   const launch = createModelTuiLaunch({
     repoRoot: "/repo",
-    workspaceRoot: "/workspace",
+    workspaceRoot,
     args: ["--refresh"],
-    env: { AIW_RUNTIME_PYTHON: fakePython }
+    env: { CODMES_RUNTIME_PYTHON: fakePython }
   });
 
   assert.equal(launch.command, fakePython);
   assert.deepEqual(launch.args, [vendoredModelEntry("/repo"), "--refresh"]);
-  assert.equal(launch.env.HERMES_HOME, modelConfigHome("/workspace"));
+  assert.equal(launch.env.HERMES_HOME, modelConfigHome(workspaceRoot));
   assert.match(launch.env.PYTHONPATH, /vendor\/hermes-agent/);
 });

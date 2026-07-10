@@ -1,11 +1,11 @@
 # docsearch MCP Integration Guide
 
-AI Workspace currently has a dependency-free search fallback named `workspace-scan`. For semantic search, docsearch MCP should be treated as a server-side search capability, not an Apple-client feature.
+Codmes currently has a dependency-free search fallback named `workspace-scan`. For semantic search, docsearch MCP should be treated as a server-side search capability, not an Apple-client feature.
 
 ## Recommended Role
 
 ```text
-AI Workspace Server
+Codmes Server
   -> workspace/context router
   -> runtime tool registry
   -> docsearch MCP server
@@ -20,9 +20,9 @@ The client sends scope and user intent. The server/runtime decides when to searc
 Use the server MCP management API or the matching CLI wrapper when available.
 
 ```bash
-aiw mcp add docsearch --command docsearch-mcp --args "serve"
-aiw mcp enable docsearch
-aiw doctor
+codmes mcp add docsearch --command docsearch-mcp --args "serve"
+codmes mcp enable docsearch
+codmes doctor
 ```
 
 Equivalent HTTP shape:
@@ -74,7 +74,7 @@ normalizes the response to:
 }
 ```
 
-If no suitable MCP server is configured, AI Workspace falls back to native
+If no suitable MCP server is configured, Codmes falls back to native
 workspace search and returns:
 
 ```json
@@ -91,7 +91,7 @@ workspace search and returns:
 The native path starts with:
 
 - chunk schema in `server/lib/rag/vector-provider.mjs`
-- PDF text cache in `.ai-workspace/index/pdf-text/`
+- PDF text cache in `.codmes/index/pdf-text/`
 - runtime injection fields: `searchResults` and `ragChunks`
 
 docsearch MCP remains useful while native vector storage is being implemented.

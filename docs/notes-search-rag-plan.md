@@ -1,6 +1,6 @@
 # Notes, PDF, Search, And RAG Plan
 
-AI Workspace should treat notes, PDFs, attachments, and code projects as
+Codmes should treat notes, PDFs, attachments, and code projects as
 server-owned workspace resources. Clients display and edit them, but indexing
 and retrieval belong to the Workspace Server.
 
@@ -9,12 +9,12 @@ and retrieval belong to the Workspace Server.
 Default workspace root:
 
 ```text
-AIWorkspace/
+Codmes/
 ├── Notes/
 ├── Code/
 ├── Documents/
 ├── Attachments/
-└── .ai-workspace/
+└── .codmes/
 ```
 
 The user sees an Obsidian/VS Code-style tree. Internally, the server tracks
@@ -31,7 +31,7 @@ server/lib/file-index.mjs
 Index path:
 
 ```text
-.ai-workspace/index/files.json
+.codmes/index/files.json
 ```
 
 Index item:
@@ -105,7 +105,7 @@ Example:
 Phase 2 target is not full GoodNotes-level annotation yet. The stable order is:
 
 1. Serve PDFs as raw files for client preview.
-2. Store file metadata in `.ai-workspace/index/files.json`.
+2. Store file metadata in `.codmes/index/files.json`.
 3. Add PDF text extraction where possible.
 4. Add extracted text chunks to the search layer.
 5. Add server-side annotation storage.
@@ -118,7 +118,7 @@ state.
 Suggested later annotation state:
 
 ```text
-.ai-workspace/pdf-annotations/<file-hash>.json
+.codmes/pdf-annotations/<file-hash>.json
 ```
 
 ## RAG Direction
@@ -145,8 +145,8 @@ prefer server-side search tools rather than attaching many raw files.
 docsearch should be treated as a server capability:
 
 ```text
-aiw mcp add docsearch <command> [args...]
-aiw mcp enable docsearch
+codmes mcp add docsearch <command> [args...]
+codmes mcp enable docsearch
 ```
 
 Expected path:

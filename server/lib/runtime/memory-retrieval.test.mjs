@@ -15,20 +15,20 @@ import {
 
 test("Memory Retrieval: search across memory pools", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-memory-retrieval-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "memory", "user"), { recursive: true });
-  await fs.mkdir(path.join(root, ".ai-workspace", "memory", "folders"), { recursive: true });
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "memory", "user"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "memory", "folders"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   // 1. User memory
   await fs.writeFile(
-    path.join(root, ".ai-workspace", "memory", "user", "memories.jsonl"),
+    path.join(root, ".codmes", "memory", "user", "memories.jsonl"),
     JSON.stringify({ content: "User has a MacBook Pro 16 inch.", pinned: true, createdAt: new Date().toISOString() }) + "\n",
     "utf8"
   );
   
   // 2. Folder memory
   await fs.writeFile(
-    path.join(root, ".ai-workspace", "memory", "folders", "folder-computer.json"),
+    path.join(root, ".codmes", "memory", "folders", "folder-computer.json"),
     JSON.stringify([{ content: "Computer folder: local LLM setup.", pinned: false, createdAt: new Date().toISOString() }]),
     "utf8"
   );
@@ -56,7 +56,7 @@ test("Memory Retrieval: update pipeline saves scoped memories and reviews user m
     folderId: "folder-notes",
     createdAt: "2026-07-08T10:00:00+09:00",
     summary: {
-      content: "주제: AI Workspace, RAG\n결정: docsearch MCP를 공식 검색 경로로 사용한다\n선호: 사용자는 다크 모드 UI를 좋아한다",
+      content: "주제: Codmes, RAG\n결정: docsearch MCP를 공식 검색 경로로 사용한다\n선호: 사용자는 다크 모드 UI를 좋아한다",
       coveredMessageIds: ["u1", "a1"],
       updatedAt: "2026-07-08T10:05:00+09:00"
     },
@@ -86,7 +86,7 @@ test("Memory Retrieval: update pipeline saves scoped memories and reviews user m
   });
   assert.equal(projectSearch.some((memory) => memory.type === "project_memory"), true);
 
-  const folderSearch = await searchMemory(root, "AI Workspace", {
+  const folderSearch = await searchMemory(root, "Codmes", {
     currentFolderId: "folder-notes",
     maxResults: 10
   });

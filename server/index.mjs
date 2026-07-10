@@ -29,6 +29,8 @@ import {
   BUILTIN_PROVIDERS,
   listCredentialStatus,
   listProviderRegistry,
+  providerBaseUrlKeys,
+  providerEnvKeys,
   readCredentials,
   readRuntimeConfig,
   removeCredentialValue,
@@ -39,11 +41,11 @@ import {
 import { readSecurityConfig, writeSecurityConfig } from "./lib/runtime/security-policy.mjs";
 import { enableSkill, listSkills, readSkill } from "./lib/runtime/skill-registry.mjs";
 
-const DEFAULT_PORT = Number.parseInt(process.env.AIW_PORT || process.env.PORT || "8787", 10);
-const WORKSPACE_HOST = process.env.AIW_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
-const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "AIWorkspace");
-const WORKSPACE_ROOT = path.resolve(process.env.AIW_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
-const SERVER_TOKEN = process.env.AIW_SERVER_TOKEN || "";
+const DEFAULT_PORT = Number.parseInt(process.env.CODMES_PORT || process.env.AIW_PORT || process.env.PORT || "8787", 10);
+const WORKSPACE_HOST = process.env.CODMES_HOST || process.env.AIW_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
+const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "CodmesWorkspace");
+const WORKSPACE_ROOT = path.resolve(process.env.CODMES_WORKSPACE_ROOT || process.env.AIW_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
+const SERVER_TOKEN = process.env.CODMES_SERVER_TOKEN || process.env.AIW_SERVER_TOKEN || "";
 
 const TEXT_FILE_LIMIT = 5 * 1024 * 1024;
 
@@ -52,8 +54,8 @@ async function main() {
   const server = http.createServer(handleRequest);
   server.on("upgrade", handleUpgrade);
   server.listen(DEFAULT_PORT, WORKSPACE_HOST, () => {
-    console.log(`[workspace] listening on http://${WORKSPACE_HOST}:${DEFAULT_PORT}`);
-    console.log(`[workspace] root ${WORKSPACE_ROOT}`);
+    console.log(`[codmes] listening on http://${WORKSPACE_HOST}:${DEFAULT_PORT}`);
+    console.log(`[codmes] root ${WORKSPACE_ROOT}`);
   });
 }
 
@@ -113,7 +115,7 @@ function startLiveBridge(socket) {
     }
   }, close);
   socket.on("data", decode);
-  send({ kind: "ready", service: "ai-workspace-live" });
+  send({ kind: "ready", service: "codmes-live" });
 }
 
 function createAgentEngine() {
@@ -131,7 +133,7 @@ function isAuthorized(req, url) {
   const authorization = String(req.headers.authorization || "");
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   const queryToken = url.searchParams.get("token") || "";
-  const headerToken = String(req.headers["x-aiw-token"] || "").trim();
+  const headerToken = String(req.headers["x-codmes-token"] || req.headers["x-aiw-token"] || "").trim();
   return bearer === SERVER_TOKEN || queryToken === SERVER_TOKEN || headerToken === SERVER_TOKEN;
 }
 
@@ -203,7 +205,7 @@ async function ensureWorkspace() {
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.code), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.documents), { recursive: true });
   await fs.mkdir(path.join(WORKSPACE_ROOT, WORKSPACE_DIRS.attachments), { recursive: true });
-  await writeJsonIfMissing(path.join(WORKSPACE_ROOT, ".ai-workspace", "metadata.json"), {
+  await writeJsonIfMissing(path.join(WORKSPACE_ROOT, ".codmes", "metadata.json"), {
     schemaVersion: 1,
     workspaceRoot: WORKSPACE_ROOT,
     createdAt: new Date().toISOString(),
@@ -236,7 +238,7 @@ async function handleRequest(req, res) {
     if (req.method === "GET" && url.pathname === "/api/health") {
       return sendJson(res, {
         ok: true,
-        service: "ai-workspace",
+        service: "codmes",
         authRequired: Boolean(SERVER_TOKEN)
       });
     }
@@ -685,7 +687,7 @@ async function handleRequest(req, res) {
         engine.close();
       }
     }
-    // --- AI Workspace runtime routes ---
+    // --- Codmes runtime routes ---
     if (
       url.pathname === "/api/models"
       || url.pathname === "/api/workspace/models"
@@ -712,8 +714,8 @@ async function workspaceInfo() {
     })),
     runtime: {
       status: "ok",
-      owner: "ai-workspace",
-      configPath: ".ai-workspace/config"
+      owner: "codmes",
+      configPath: ".codmes/config"
     },
     chatRuntime: {
       status: "ok",
@@ -721,8 +723,8 @@ async function workspaceInfo() {
     },
     agent: {
       engine: "workspace-agent",
-      statePath: ".ai-workspace",
-      runtimes: ["ai-workspace-runtime", "chat", "models", "sessions", "code-agent"],
+      statePath: ".codmes",
+      runtimes: ["codmes-runtime", "chat", "models", "sessions", "code-agent"],
       taskEndpoint: "/api/agent/tasks",
       approvalEndpoint: "/api/agent/approvals",
       codeTaskEndpoint: "/api/agent/code-task",
@@ -744,7 +746,7 @@ async function readTree(url) {
   const children = await Promise.all(entries
     .filter((entry) => !entry.name.startsWith(".DS_Store"))
     .filter((entry) => !(relativePath === "" && entry.name === ".hermes-workspace"))
-    .filter((entry) => !(relativePath === "" && entry.name === ".ai-workspace"))
+    .filter((entry) => !(relativePath === "" && (entry.name === ".codmes" || entry.name === ".ai-workspace")))
     .map(async (entry) => {
       const childRelativePath = joinWorkspacePath(relativePath, entry.name);
       const childAbsolutePath = path.join(absolutePath, entry.name);
@@ -956,7 +958,7 @@ async function indexStatus() {
     provider: index.provider,
     builtAt: index.builtAt,
     itemCount: index.itemCount || 0,
-    indexPath: ".ai-workspace/index/files.json"
+    indexPath: ".codmes/index/files.json"
   };
 }
 
@@ -1081,7 +1083,7 @@ async function doctorStatus() {
   ]);
   return {
     ok: true,
-    service: "ai-workspace",
+    service: "codmes",
     workspaceRoot: WORKSPACE_ROOT,
     authRequired: Boolean(SERVER_TOKEN),
     runtime: {
@@ -1249,10 +1251,10 @@ async function createCustomProvider(req) {
   }
   const stored = [];
   if (body.baseUrl) {
-    stored.push(await setCredentialValue(WORKSPACE_ROOT, "custom", "AIW_CUSTOM_BASE_URL", String(body.baseUrl)));
+    stored.push(await setCredentialValue(WORKSPACE_ROOT, "custom", "CODMES_CUSTOM_BASE_URL", String(body.baseUrl)));
   }
   if (body.apiKey || body.token) {
-    stored.push(await setCredentialValue(WORKSPACE_ROOT, "custom", "AIW_CUSTOM_API_KEY", String(body.apiKey || body.token)));
+    stored.push(await setCredentialValue(WORKSPACE_ROOT, "custom", "CODMES_CUSTOM_API_KEY", String(body.apiKey || body.token)));
   }
   if (body.model) {
     await setDefaultModel(WORKSPACE_ROOT, "custom", String(body.model));
@@ -1272,14 +1274,14 @@ function providerCredentialKey(provider, rawKey) {
   const key = String(rawKey || "").trim();
   const normalized = key.toLowerCase();
   if (provider.id === "custom") {
-    if (["baseurl", "base_url", "url", "endpoint"].includes(normalized)) return "AIW_CUSTOM_BASE_URL";
-    if (["apikey", "api_key", "token", "access_token", "key"].includes(normalized)) return "AIW_CUSTOM_API_KEY";
+    if (["baseurl", "base_url", "url", "endpoint"].includes(normalized)) return "CODMES_CUSTOM_BASE_URL";
+    if (["apikey", "api_key", "token", "access_token", "key"].includes(normalized)) return "CODMES_CUSTOM_API_KEY";
   }
   if (["baseurl", "base_url", "url", "endpoint"].includes(normalized) && provider.baseUrlEnv) {
-    return provider.baseUrlEnv;
+    return providerBaseUrlKeys(provider)[0] || provider.baseUrlEnv;
   }
   if (["apikey", "api_key", "token", "access_token", "key"].includes(normalized)) {
-    return provider.env?.[0] || key;
+    return providerEnvKeys(provider)[0] || key;
   }
   return key;
 }
@@ -1444,7 +1446,7 @@ async function rejectCodeTaskPatch(taskId, proposalId, req) {
 
 async function summarizeSession(sessionIdParam) {
   const sessionId = decodeURIComponent(sessionIdParam);
-  const filePath = path.join(WORKSPACE_ROOT, ".ai-workspace", "sessions", `${sessionId}.json`);
+  const filePath = path.join(WORKSPACE_ROOT, ".codmes", "sessions", `${sessionId}.json`);
   const session = JSON.parse(await fs.readFile(filePath, "utf8"));
   const { buildSessionSummary } = await import("./lib/session-runtime.mjs");
   const summary = buildSessionSummary(session);
@@ -1459,7 +1461,7 @@ async function summarizeSession(sessionIdParam) {
 async function extractMemoryFromSession(sessionIdParam) {
   const sessionId = String(sessionIdParam || "").trim();
   if (!sessionId) throw Object.assign(new Error("sessionId is required."), { status: 400 });
-  const filePath = path.join(WORKSPACE_ROOT, ".ai-workspace", "sessions", `${sessionId}.json`);
+  const filePath = path.join(WORKSPACE_ROOT, ".codmes", "sessions", `${sessionId}.json`);
   const session = JSON.parse(await fs.readFile(filePath, "utf8"));
   const { updateMemoryFromSession } = await import("./lib/runtime/memory-retrieval.mjs");
   return await updateMemoryFromSession(WORKSPACE_ROOT, session);
@@ -1527,7 +1529,7 @@ async function handleRuntimeProxy(req, res, url) {
       const body = await readJsonBody(req);
       return sendJson(res, await engine.createSession(body), 201);
     }
-    throw Object.assign(new Error("Unknown AI Workspace runtime endpoint."), { status: 404 });
+    throw Object.assign(new Error("Unknown Codmes runtime endpoint."), { status: 404 });
   } finally {
     engine.close();
   }
@@ -1614,7 +1616,7 @@ function stringField(...values) {
 }
 
 function uploadTempDir() {
-  return path.join(WORKSPACE_ROOT, ".ai-workspace", "uploads");
+  return path.join(WORKSPACE_ROOT, ".codmes", "uploads");
 }
 
 function requireUploadId(value) {
@@ -1719,7 +1721,7 @@ function contentTypeForPath(filePath) {
 }
 
 async function getUserMemories() {
-  const filePath = path.join(WORKSPACE_ROOT, ".ai-workspace", "memory", "user", "memories.jsonl");
+  const filePath = path.join(WORKSPACE_ROOT, ".codmes", "memory", "user", "memories.jsonl");
   try {
     const data = await fs.readFile(filePath, "utf8");
     return data.split("\n").filter(Boolean).map(JSON.parse);
@@ -1729,7 +1731,7 @@ async function getUserMemories() {
 }
 
 async function saveUserMemories(list) {
-  const dir = path.join(WORKSPACE_ROOT, ".ai-workspace", "memory", "user");
+  const dir = path.join(WORKSPACE_ROOT, ".codmes", "memory", "user");
   await fs.mkdir(dir, { recursive: true });
   const filePath = path.join(dir, "memories.jsonl");
   await fs.writeFile(filePath, list.map(m => JSON.stringify(m)).join("\n") + "\n", "utf8");

@@ -97,7 +97,7 @@ export class McpClient {
     // Setup stderr file redirect if workspaceRoot is available
     if (this.workspaceRoot) {
       try {
-        const logDir = path.join(this.workspaceRoot, ".ai-workspace", "tool-logs");
+        const logDir = path.join(this.workspaceRoot, ".codmes", "tool-logs");
         await fs.mkdir(logDir, { recursive: true });
         const logPath = path.join(logDir, `mcp-${this.name}.stderr.log`);
         this.stderrStream = createWriteStream(logPath, { flags: "a" });
@@ -156,7 +156,7 @@ export class McpClient {
       await this.sendRequest("initialize", {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "ai-workspace-client", version: "1.0.0" }
+        clientInfo: { name: "codmes-client", version: "1.0.0" }
       });
       this.status = "running";
       this.sendNotification("notifications/initialized");

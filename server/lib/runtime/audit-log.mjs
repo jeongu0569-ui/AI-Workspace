@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 export function auditLogPath(workspaceRoot) {
-  return path.join(workspaceRoot, ".ai-workspace", "audit", "audit.jsonl");
+  return path.join(workspaceRoot, ".codmes", "audit", "audit.jsonl");
 }
 
 export async function appendAuditEvent(workspaceRoot, event = {}) {
@@ -25,7 +25,7 @@ export async function readAuditSummary(workspaceRoot, { limit = 500 } = {}) {
     lines = (await fs.readFile(filePath, "utf8")).trim().split("\n").filter(Boolean);
   } catch {
     return {
-      path: ".ai-workspace/audit/audit.jsonl",
+      path: ".codmes/audit/audit.jsonl",
       total: 0,
       recentDenied: 0,
       recentApprovalRequired: 0,
@@ -41,7 +41,7 @@ export async function readAuditSummary(workspaceRoot, { limit = 500 } = {}) {
     }
   }).filter(Boolean);
   return {
-    path: ".ai-workspace/audit/audit.jsonl",
+    path: ".codmes/audit/audit.jsonl",
     total: lines.length,
     recentDenied: recent.filter((item) => item.status === "denied" || item.status === "deny").length,
     recentApprovalRequired: recent.filter((item) => item.status === "approval_required" || item.status === "approve").length,

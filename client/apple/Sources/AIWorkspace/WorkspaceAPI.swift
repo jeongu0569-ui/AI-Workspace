@@ -64,7 +64,7 @@ struct WorkspaceAPI {
             throw WorkspaceAPIError.badStatus(status, String(data: data, encoding: .utf8) ?? "")
         }
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AIWorkspaceRawPreviews", isDirectory: true)
+            .appendingPathComponent("CodmesRawPreviews", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         let fileURL = temporaryDirectory
             .appendingPathComponent(UUID().uuidString + "-" + name)

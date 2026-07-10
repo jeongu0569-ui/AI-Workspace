@@ -3,41 +3,45 @@
 ## Server
 
 ```bash
-cd /Users/user/Desktop/AI-Workspace-on-hermes
+git clone https://github.com/jeongu0569-ui/Codmes.git
+cd Codmes
+npm install
+npm link
+npm run runtime:bootstrap
 
-AIW_WORKSPACE_ROOT="$HOME/AIWorkspace" \
-AIW_HOST="127.0.0.1" \
-AIW_PORT="8787" \
-aiw serve
+CODMES_WORKSPACE_ROOT="$HOME/CodmesWorkspace" \
+CODMES_HOST="127.0.0.1" \
+CODMES_PORT="8787" \
+codmes serve
 ```
 
 Optional bearer-token protection:
 
 ```bash
-AIW_WORKSPACE_ROOT="$HOME/AIWorkspace" \
-AIW_HOST="0.0.0.0" \
-AIW_PORT="8787" \
-AIW_SERVER_TOKEN="choose-a-long-local-token" \
-aiw serve
+CODMES_WORKSPACE_ROOT="$HOME/CodmesWorkspace" \
+CODMES_HOST="0.0.0.0" \
+CODMES_PORT="8787" \
+CODMES_SERVER_TOKEN="choose-a-long-local-token" \
+codmes serve
 ```
 
-When `AIW_SERVER_TOKEN` is set, the Apple client must store the same token in
-Settings. CLI commands also read `AIW_SERVER_TOKEN` and send it as
+When `CODMES_SERVER_TOKEN` is set, the Apple client must store the same token in
+Settings. CLI commands also read `CODMES_SERVER_TOKEN` and send it as
 `Authorization: Bearer <token>`.
 
 Equivalent development command:
 
 ```bash
-AIW_WORKSPACE_ROOT="$HOME/AIWorkspace" npm start
+CODMES_WORKSPACE_ROOT="$HOME/CodmesWorkspace" npm start
 ```
 
 For iPhone/iPad testing over Tailscale or LAN:
 
 ```bash
-AIW_WORKSPACE_ROOT="$HOME/AIWorkspace" \
-AIW_HOST="0.0.0.0" \
-AIW_PORT="8787" \
-aiw serve
+CODMES_WORKSPACE_ROOT="$HOME/CodmesWorkspace" \
+CODMES_HOST="0.0.0.0" \
+CODMES_PORT="8787" \
+codmes serve
 ```
 
 Then connect the app to:
@@ -49,23 +53,23 @@ http://<server-ip-or-tailscale-ip>:8787
 ## Status
 
 ```bash
-aiw status
-aiw status --json
+codmes status
+codmes status --json
 curl http://127.0.0.1:8787/api/workspace
 ```
 
 ## Index
 
 ```bash
-aiw index status
-aiw index rebuild
-aiw index search "architecture" --scope Notes --limit 10
+codmes index status
+codmes index rebuild
+codmes index search "architecture" --scope Notes --limit 10
 ```
 
 Current index state is stored at:
 
 ```text
-<workspace>/.ai-workspace/index/files.json
+<workspace>/.codmes/index/files.json
 ```
 
 Expected runtime fields:
@@ -74,8 +78,8 @@ Expected runtime fields:
 {
   "runtime": {
     "status": "ok",
-    "owner": "ai-workspace",
-    "configPath": ".ai-workspace/config"
+    "owner": "codmes",
+    "configPath": ".codmes/config"
   }
 }
 ```
@@ -84,79 +88,80 @@ Expected runtime fields:
 
 ```bash
 npm run runtime:bootstrap
-aiw model
-aiw provider list
-aiw model list
-aiw model set-default openai-api gpt-5.4-mini
-aiw auth list
-aiw auth set openai-api OPENAI_API_KEY sk-...
+codmes model
+codmes provider list
+codmes model list
+codmes model set-default openai-api gpt-5.4-mini
+codmes auth list
+codmes auth set openai-api OPENAI_API_KEY sk-...
 ```
 
 Credential config is stored under:
 
 ```text
-<workspace>/.ai-workspace/config/auth.json
+<workspace>/.codmes/config/auth.json
 ```
 
 Runtime config is stored under:
 
 ```text
-<workspace>/.ai-workspace/config/config.yaml
+<workspace>/.codmes/config/config.yaml
 ```
 
-Environment variables with the `AIW_` prefix are also detected where relevant:
+Environment variables with the `CODMES_` prefix are preferred. Existing `AIW_`
+variables are still detected as a deprecated fallback:
 
 ```bash
-export AIW_OPENAI_API_KEY="sk-..."
-export AIW_OLLAMA_BASE_URL="http://127.0.0.1:11434"
-export AIW_LMSTUDIO_BASE_URL="http://127.0.0.1:1234/v1"
+export CODMES_OPENAI_API_KEY="sk-..."
+export CODMES_OLLAMA_BASE_URL="http://127.0.0.1:11434"
+export CODMES_LMSTUDIO_BASE_URL="http://127.0.0.1:1234/v1"
 ```
 
 
 ### First Model Execution Backend
 
-AI Workspace owns a first OpenAI-compatible execution backend. Configure a
+Codmes owns a first OpenAI-compatible execution backend. Configure a
 provider/model pair, then `WS /api/live` can stream `message.delta` events
 without starting a separate AI runtime server.
 
 OpenAI API example:
 
 ```bash
-aiw model set-default openai-api gpt-5.4-mini
-aiw auth set openai-api OPENAI_API_KEY sk-...
+codmes model set-default openai-api gpt-5.4-mini
+codmes auth set openai-api OPENAI_API_KEY sk-...
 ```
 
 LM Studio example:
 
 ```bash
-aiw model set-default lmstudio local-model
-aiw auth set lmstudio LM_BASE_URL http://127.0.0.1:1234/v1
+codmes model set-default lmstudio local-model
+codmes auth set lmstudio LM_BASE_URL http://127.0.0.1:1234/v1
 ```
 
 Custom OpenAI-compatible endpoint example:
 
 ```bash
-aiw model set-default custom my-model
-aiw auth set custom AIW_CUSTOM_BASE_URL http://127.0.0.1:1234/v1
-aiw auth set custom AIW_CUSTOM_API_KEY local-dev-key
+codmes model set-default custom my-model
+codmes auth set custom CODMES_CUSTOM_BASE_URL http://127.0.0.1:1234/v1
+codmes auth set custom CODMES_CUSTOM_API_KEY local-dev-key
 ```
 
 Local Ollama shortcut:
 
 ```bash
-aiw ollama
-aiw ollama --model gemma4:e2b-mlx
+codmes ollama
+codmes ollama --model gemma4:e2b-mlx
 ```
 
-The interactive route is `aiw model` -> `Ollama` -> `Ollama Local`. It stores
+The interactive route is `codmes model` -> `Ollama` -> `Ollama Local`. It stores
 the dedicated `ollama-local` provider rather than disguising the server as a
 generic custom endpoint. The Apple Settings screen uses the same provider and
 model APIs.
 
-The literal `ollama launch aiw` integration must be added by Ollama upstream;
-the local `aiw ollama` command performs the equivalent AI Workspace setup.
+The literal `ollama launch codmes` integration must be added by Ollama upstream;
+the local `codmes ollama` command performs the equivalent Codmes setup.
 
-When the selected model supports OpenAI-compatible tool calls, AI Workspace
+When the selected model supports OpenAI-compatible tool calls, Codmes
 filters tools by surface:
 
 ```text
@@ -210,23 +215,23 @@ curl -X POST http://127.0.0.1:8787/api/sessions \
 ## Code Tasks
 
 ```bash
-aiw code create Code/demo-app "change the greeting"
-aiw code list
-aiw approvals list
+codmes code create Code/demo-app "change the greeting"
+codmes code list
+codmes approvals list
 ```
 
 General task resume/cancel commands:
 
 ```bash
-aiw tasks list
-aiw tasks show <taskId>
-aiw tasks resume <taskId>
-aiw tasks cancel <taskId> --reason "No longer needed"
+codmes tasks list
+codmes tasks show <taskId>
+codmes tasks resume <taskId>
+codmes tasks cancel <taskId> --reason "No longer needed"
 ```
 
 Runtime work that needs approval, such as a policy-gated MCP tool call, is
 stored as `approval_required` instead of blocking the server while it waits.
-After approval, `aiw tasks resume <taskId>` or
+After approval, `codmes tasks resume <taskId>` or
 `POST /api/agent/approvals/:id/respond` can continue the saved pending state.
 
 General `[Chat]` sessions that are not attached to a folder or project are
@@ -259,7 +264,7 @@ curl -X POST http://127.0.0.1:8787/api/memory/extract-from-session \
 Manual patch proposal:
 
 ```bash
-aiw code patch <taskId> \
+codmes code patch <taskId> \
   --path src/index.js \
   --find "return 'hello';" \
   --replace "return 'hello workspace';"
@@ -268,14 +273,14 @@ aiw code patch <taskId> \
 Apply after approval:
 
 ```bash
-aiw code apply <taskId> <proposalId> --check --command "npm test"
+codmes code apply <taskId> <proposalId> --check --command "npm test"
 ```
 
 ## Apple Client
 
 ```bash
-cd /Users/user/Desktop/AI-Workspace-on-hermes/client/apple
-swift run AIWorkspace
+cd /Users/user/Desktop/Codmes/client/apple
+swift run Codmes
 ```
 
 In the app settings, set the server URL to:
@@ -291,19 +296,19 @@ For iPhone/iPad, use the Mac server's LAN or Tailscale address.
 For a background server:
 
 ```bash
-cd /Users/user/Desktop/AI-Workspace-on-hermes
+cd /Users/user/Desktop/Codmes
 
-AIW_WORKSPACE_ROOT="$HOME/AIWorkspace" \
-AIW_HOST="0.0.0.0" \
-AIW_PORT="8787" \
-node server/index.mjs > /tmp/ai-workspace.log 2>&1 &
+CODMES_WORKSPACE_ROOT="$HOME/CodmesWorkspace" \
+CODMES_HOST="0.0.0.0" \
+CODMES_PORT="8787" \
+node server/index.mjs > /tmp/Codmes.log 2>&1 &
 
-echo $! > /tmp/ai-workspace.pid
-tail -f /tmp/ai-workspace.log
+echo $! > /tmp/Codmes.pid
+tail -f /tmp/Codmes.log
 ```
 
 Stop it:
 
 ```bash
-kill "$(cat /tmp/ai-workspace.pid)"
+kill "$(cat /tmp/Codmes.pid)"
 ```

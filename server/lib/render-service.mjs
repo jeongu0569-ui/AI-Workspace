@@ -144,6 +144,9 @@ body {
   width: 100%;
   padding: 0;
 }
+.markdown-body > *:last-child {
+  margin-bottom: 0 !important;
+}
 .code-document pre {
   margin-bottom: 0;
 }

@@ -1,6 +1,37 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+function parseThinkTags(str) {
+  let text = "";
+  let reasoning = "";
+  let cursor = 0;
+  
+  while (cursor < str.length) {
+    const openIdx = str.indexOf("<think>", cursor);
+    if (openIdx === -1) {
+      text += str.slice(cursor);
+      break;
+    }
+    
+    text += str.slice(cursor, openIdx);
+    
+    const closeIdx = str.indexOf("</think>", openIdx);
+    if (closeIdx === -1) {
+      reasoning += str.slice(openIdx + 7);
+      break;
+    }
+    
+    reasoning += str.slice(openIdx + 7, closeIdx);
+    cursor = closeIdx + 8;
+    
+    while (cursor < str.length && /\s/.test(str[cursor])) {
+      cursor++;
+    }
+  }
+  
+  return { text, reasoning };
+}
+
 export class SessionRuntime {
   constructor({ runtime, stateStore }) {
     this.runtime = runtime;
@@ -57,14 +88,24 @@ export class SessionRuntime {
         if (session && Array.isArray(session.messages)) {
           return {
             sessionId,
-            messages: session.messages.map((m, idx) => ({
-              id: String(idx + 1),
-              role: m.role,
-              content: m.content,
-              timestamp: String(Math.floor(new Date(m.createdAt || 0).getTime() / 1000)),
-              toolName: "",
-              finishReason: "stop"
-            }))
+            messages: session.messages.map((m, idx) => {
+              let content = m.content || "";
+              let reasoning = m.reasoning || "";
+              if (!reasoning && content.includes("<think>")) {
+                const parsed = parseThinkTags(content);
+                content = parsed.text;
+                reasoning = parsed.reasoning;
+              }
+              return {
+                id: String(idx + 1),
+                role: m.role,
+                content,
+                reasoning,
+                timestamp: String(Math.floor(new Date(m.createdAt || 0).getTime() / 1000)),
+                toolName: "",
+                finishReason: "stop"
+              };
+            })
           };
         }
       } catch {}
@@ -152,7 +193,8 @@ export class SessionRuntime {
               taskId: message.taskId,
               source: message.source,
               toolName: message.toolName,
-              finishReason: message.finishReason
+              finishReason: message.finishReason,
+              reasoning: message.reasoning
             })
           });
           session.updatedAt = new Date().toISOString();
@@ -240,7 +282,8 @@ function extractTopics(text) {
   const topics = [];
   const lower = String(text || "").toLowerCase();
   const pairs = [
-    ["ai workspace", "AI Workspace"],
+    ["codmes", "Codmes"],
+    ["ai workspace", "Codmes"],
     ["hermes", "Hermes"],
     ["codex", "Codex-style UX"],
     ["docsearch", "docsearch MCP"],
@@ -263,7 +306,7 @@ function extractEntities(text) {
   const entities = new Set();
   const matches = String(text || "").match(/\b[A-Z][A-Za-z0-9_-]{2,}\b/g) || [];
   for (const match of matches) entities.add(match);
-  for (const keyword of ["AI Workspace", "Hermes", "CodeAgentRuntime", "docsearch MCP", "Obsidian"]) {
+  for (const keyword of ["Codmes", "Hermes", "CodeAgentRuntime", "docsearch MCP", "Obsidian"]) {
     if (String(text || "").includes(keyword)) entities.add(keyword);
   }
   return Array.from(entities).slice(0, 20);

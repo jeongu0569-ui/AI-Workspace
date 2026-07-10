@@ -1783,11 +1783,11 @@ def resolve_provider(
     except ImportError:
         pass  # boto3 not installed — skip Bedrock auto-detection
 
-    if os.environ.get("AIW_VENDOR_RUNTIME") == "1":
+    if os.environ.get("CODMES_VENDOR_RUNTIME") == "1" or os.environ.get("AIW_VENDOR_RUNTIME") == "1":
         message = (
-            "No inference provider configured. Run 'aiw model' to choose a "
-            "provider and model. AI Workspace stores the result under the "
-            "selected workspace's .ai-workspace/config directory."
+            "No inference provider configured. Run 'codmes model' to choose a "
+            "provider and model. Codmes stores the result under the "
+            "selected workspace's .codmes/config directory."
         )
     else:
         message = (

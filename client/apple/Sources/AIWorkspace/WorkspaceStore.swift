@@ -1252,7 +1252,9 @@ final class WorkspaceStore: ObservableObject {
 
     private func updateApprovalLine(_ id: UUID, state: ApprovalState) {
         guard let index = chatLines.firstIndex(where: { $0.id == id }) else { return }
-        chatLines[index].approvalState = state
+        var updatedLine = chatLines[index]
+        updatedLine.approvalState = state
+        chatLines[index] = updatedLine
     }
 
     private func appendActivity(type: String, text: String) {
@@ -1260,16 +1262,20 @@ final class WorkspaceStore: ObservableObject {
         let item = ChatActivity(type: group, text: text.isEmpty ? group : text)
         if let activeActivityLineId,
            let index = chatLines.firstIndex(where: { $0.id == activeActivityLineId }) {
-            if let itemIndex = chatLines[index].activityItems.firstIndex(where: { $0.type == group }) {
-                chatLines[index].activityItems[itemIndex].text = mergeActivityText(
-                    chatLines[index].activityItems[itemIndex].text,
+            var updatedLine = chatLines[index]
+            if let itemIndex = updatedLine.activityItems.firstIndex(where: { $0.type == group }) {
+                var updatedItems = updatedLine.activityItems
+                updatedItems[itemIndex].text = mergeActivityText(
+                    updatedItems[itemIndex].text,
                     text
                 )
+                updatedLine.activityItems = updatedItems
             } else {
-                chatLines[index].activityItems.append(item)
+                updatedLine.activityItems.append(item)
             }
-            chatLines[index].text = activitySummary(chatLines[index].activityItems)
-            chatLines[index].isStreamingActivity = true
+            updatedLine.text = activitySummary(updatedLine.activityItems)
+            updatedLine.isStreamingActivity = true
+            chatLines[index] = updatedLine
         } else {
             let line = ChatLine(role: "activity", text: activitySummary([item]), activityItems: [item], isStreamingActivity: true)
             activeActivityLineId = line.id
@@ -1282,7 +1288,9 @@ final class WorkspaceStore: ObservableObject {
               let index = chatLines.firstIndex(where: { $0.id == activeActivityLineId }) else {
             return
         }
-        chatLines[index].isStreamingActivity = false
+        var updatedLine = chatLines[index]
+        updatedLine.isStreamingActivity = false
+        chatLines[index] = updatedLine
     }
 
     private func activitySummary(_ items: [ChatActivity]) -> String {

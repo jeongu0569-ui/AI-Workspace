@@ -391,7 +391,7 @@ struct RuntimeProviderOption: Codable, Identifiable, Hashable {
     }
     var setupHint: String {
         if isLocalOllama { return "Uses the Workspace Server's local Ollama endpoint." }
-        if isOAuth { return "Account sign-in is managed by the AI Workspace server runtime." }
+        if isOAuth { return "Account sign-in is managed by the Codmes Server runtime." }
         if needsAPIKey { return "Stores an API key in the server runtime config." }
         return "No API key is required."
     }
@@ -503,19 +503,49 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     }
 }
 
-struct ChatLine: Identifiable {
-    let id = UUID()
+struct ChatLine: Identifiable, Equatable {
+    let id: UUID
     let role: String
     var text: String
     var approvalState: ApprovalState?
-    var activityItems: [ChatActivity] = []
-    var isStreamingActivity = false
+    var activityItems: [ChatActivity]
+    var isStreamingActivity: Bool
+
+    init(id: UUID = UUID(), role: String, text: String, approvalState: ApprovalState? = nil, activityItems: [ChatActivity] = [], isStreamingActivity: Bool = false) {
+        self.id = id
+        self.role = role
+        self.text = text
+        self.approvalState = approvalState
+        self.activityItems = activityItems
+        self.isStreamingActivity = isStreamingActivity
+    }
+
+    static func == (lhs: ChatLine, rhs: ChatLine) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.role == rhs.role &&
+        lhs.text == rhs.text &&
+        lhs.approvalState == rhs.approvalState &&
+        lhs.activityItems == rhs.activityItems &&
+        lhs.isStreamingActivity == rhs.isStreamingActivity
+    }
 }
 
-struct ChatActivity: Identifiable {
-    let id = UUID()
+struct ChatActivity: Identifiable, Equatable {
+    let id: UUID
     let type: String
     var text: String
+
+    init(id: UUID = UUID(), type: String, text: String) {
+        self.id = id
+        self.type = type
+        self.text = text
+    }
+
+    static func == (lhs: ChatActivity, rhs: ChatActivity) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.type == rhs.type &&
+        lhs.text == rhs.text
+    }
 }
 
 enum ApprovalState: String {

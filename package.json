@@ -1,16 +1,17 @@
 {
-  "name": "ai-workspace",
+  "name": "codmes",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
+    "codmes": "./bin/codmes.mjs",
     "aiw": "./bin/aiw.mjs",
-    "ai-workspace": "./bin/aiw.mjs"
+    "ai-workspace": "./bin/codmes.mjs"
   },
   "scripts": {
     "start": "node server/index.mjs",
     "runtime:bootstrap": "node scripts/bootstrap-runtime.mjs",
-    "check": "node --check bin/aiw.mjs && node --check server/index.mjs && node --check server/lib/path-utils.mjs && node --test"
+    "check": "node --check bin/codmes.mjs && node --check bin/aiw.mjs && node --check server/index.mjs && node --check server/lib/path-utils.mjs && node --test"
   },
   "engines": {
     "node": ">=22"

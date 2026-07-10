@@ -7,7 +7,7 @@ import { getPdfTextMetadata } from "./pdf-text.mjs";
 const MAX_HASH_BYTES = 20 * 1024 * 1024;
 
 export function indexPath(workspaceRoot) {
-  return path.join(workspaceRoot, ".ai-workspace", "index", "files.json");
+  return path.join(workspaceRoot, ".codmes", "index", "files.json");
 }
 
 export async function readIndex(workspaceRoot) {
@@ -76,7 +76,7 @@ async function visitWorkspace(workspaceRoot, absolutePath, items) {
   const stat = await fs.stat(absolutePath);
   if (stat.isDirectory()) {
     const relative = path.relative(workspaceRoot, absolutePath).replace(/\\/g, "/");
-    if (relative === ".ai-workspace" || relative.startsWith(".ai-workspace/")) return;
+    if (relative === ".codmes" || relative.startsWith(".codmes/")) return;
     const entries = await fs.readdir(absolutePath, { withFileTypes: true });
     entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
     for (const entry of entries) {

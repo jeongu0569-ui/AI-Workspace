@@ -4,6 +4,8 @@ import {
   BUILTIN_PROVIDERS,
   listRuntimeModels,
   patchProviderCredentialEntry,
+  providerBaseUrlKeys,
+  providerEnvKeys,
   readCredentials,
   readProviderCredentialEntry,
   readRuntimeConfig
@@ -31,7 +33,7 @@ const CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 export class OpenAICompatibleRuntime extends EventEmitter {
   constructor({ workspaceRoot, env = process.env, fetchImpl = globalThis.fetch } = {}) {
     super();
-    this.name = "ai-workspace-openai-compatible";
+    this.name = "codmes-openai-compatible";
     this.workspaceRoot = workspaceRoot;
     this.env = env;
     this.fetch = fetchImpl;
@@ -67,7 +69,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       ok: true,
       sessionId,
       runtimeSessionId: sessionId,
-      source: "ai-workspace"
+      source: "codmes"
     };
   }
 
@@ -338,17 +340,29 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       return await this.requestCodexResponses(selection, messages, params, filteredTools);
     }
 
+    const requestPayload = {
+      model: selection.model,
+      messages,
+      stream: true,
+      tools: filteredTools.length > 0 ? filteredTools : undefined,
+      tool_choice: filteredTools.length > 0 ? "auto" : undefined,
+      ...reasoningOptions(params.reasoningEffort)
+    };
+
+    if (this.env.CODMES_DEBUG_LLM_REQUEST === "1" || this.env.AIW_DEBUG_LLM_REQUEST === "1") {
+      console.error("[codmes] LLM request", JSON.stringify({
+        provider: selection.provider.id,
+        model: selection.model,
+        messageCount: messages.length,
+        toolCount: filteredTools.length,
+        stream: true
+      }));
+    }
+
     const response = await this.fetch(`${selection.baseUrl}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        model: selection.model,
-        messages,
-        stream: true,
-        tools: filteredTools.length > 0 ? filteredTools : undefined,
-        tool_choice: filteredTools.length > 0 ? "auto" : undefined,
-        ...reasoningOptions(params.reasoningEffort)
-      })
+      body: JSON.stringify(requestPayload)
     });
 
     if (!response.ok) {
@@ -359,21 +373,54 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       );
     }
 
+    let reasoningText = "";
     const contentType = response.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const json = await response.json();
       text = extractNonStreamingText(json);
-      if (text) {
+      const reasoning = json.choices?.[0]?.message?.reasoning_content
+        || json.choices?.[0]?.delta?.reasoning_content
+        || "";
+      
+      let finalContent = text;
+      let finalReasoning = reasoning;
+      
+      if (!reasoning && text.includes("<think>")) {
+        const parsed = parseThinkTags(text);
+        finalContent = parsed.text;
+        finalReasoning = parsed.reasoning;
+      }
+
+      if (finalReasoning) {
+        reasoningText = finalReasoning;
+        this.emit("event", {
+          type: "reasoning.delta",
+          sessionId: params.sessionId,
+          taskId: params.taskId,
+          text: finalReasoning
+        });
+      }
+      if (finalContent) {
+        text = finalContent;
         this.emit("event", {
           type: "message.delta",
           sessionId: params.sessionId,
           taskId: params.taskId,
-          text
+          text: finalContent
         });
       }
       toolCalls.push(...extractNonStreamingToolCalls(json));
     } else {
       for await (const chunk of parseOpenAIStream(response)) {
+        if (chunk.reasoning) {
+          reasoningText += chunk.reasoning;
+          this.emit("event", {
+            type: "reasoning.delta",
+            sessionId: params.sessionId,
+            taskId: params.taskId,
+            text: chunk.reasoning
+          });
+        }
         if (chunk.text) {
           text += chunk.text;
           this.emit("event", {
@@ -388,6 +435,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     }
     return {
       text,
+      reasoning: reasoningText,
       toolCalls: normalizeToolCalls(toolCalls)
     };
   }
@@ -978,7 +1026,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   async buildSystemPrompt(params) {
     const context = params.context?.workspaceContext || params.context || {};
     const parts = [
-      "You are AI Workspace's built-in assistant.",
+      "You are Codmes's built-in assistant.",
       "Answer in the same language as the user's latest message.",
       "Use provided workspace context when relevant, but do not expose it as raw metadata.",
       ...recallToolPolicyLines()
@@ -1095,7 +1143,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     const model = params.model || config.defaultModel?.model || "";
     if (!providerId || !model) {
       throw Object.assign(
-        new Error("No default model is configured. Run `aiw model set-default <provider> <model>`."),
+        new Error("No default model is configured. Run `codmes model set-default <provider> <model>`."),
         { status: 503, setupRequired: true }
       );
     }
@@ -1108,7 +1156,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     const baseUrl = await this.resolveBaseUrl(provider, config);
     if (!baseUrl) {
       throw Object.assign(
-        new Error(`Provider '${providerId}' needs a base URL. Store ${provider.baseUrlEnv || "baseUrl"} with aiw auth set or set the matching environment variable.`),
+        new Error(`Provider '${providerId}' needs a base URL. Store ${provider.baseUrlEnv || "baseUrl"} with codmes auth set or set the matching environment variable.`),
         { status: 503, setupRequired: true }
       );
     }
@@ -1118,7 +1166,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       : await this.resolveApiKey(provider);
     if (provider.authType === "api_key" && !apiKey && !["lmstudio", "custom"].includes(provider.id)) {
       throw Object.assign(
-        new Error(`Provider '${providerId}' needs an API key. Run aiw auth set ${providerId} <KEY_NAME> <VALUE>.`),
+        new Error(`Provider '${providerId}' needs an API key. Run codmes auth set ${providerId} <KEY_NAME> <VALUE>.`),
         { status: 503, setupRequired: true }
       );
     }
@@ -1131,7 +1179,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       apiMode: params.apiMode || config.defaultModel?.apiMode || (provider.id === "openai-codex" ? "codex_responses" : "chat_completions"),
       extraHeaders: provider.id === "openrouter" ? {
         "HTTP-Referer": "http://localhost",
-        "X-Title": "AI Workspace"
+        "X-Title": "Codmes"
       } : provider.id === "openai-codex" ? codexBackendHeaders(apiKey) : {}
     };
   }
@@ -1139,12 +1187,12 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   async resolveBaseUrl(provider, config = null) {
     const credentials = await readCredentials(this.workspaceRoot);
     const values = credentials.providers?.[provider.id]?.values || {};
-    const baseKey = provider.baseUrlEnv || "";
+    const baseKeys = providerBaseUrlKeys(provider);
     return (config?.defaultModel?.provider === provider.id ? config.defaultModel?.baseUrl : "")
       || values.baseUrl
       || values.BASE_URL
-      || (baseKey ? values[baseKey] : "")
-      || (baseKey ? this.env[baseKey] : "")
+      || firstValue(values, baseKeys)
+      || firstValue(this.env, baseKeys)
       || provider.defaultBaseUrl
       || (provider.id === "openai-codex" ? CODEX_BASE_URL : "")
       || OPENAI_COMPATIBLE_DEFAULTS[provider.id]
@@ -1154,7 +1202,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
   async resolveApiKey(provider) {
     const credentials = await readCredentials(this.workspaceRoot);
     const values = credentials.providers?.[provider.id]?.values || {};
-    for (const key of provider.env || []) {
+    for (const key of providerEnvKeys(provider)) {
       if (values[key]) return values[key];
       if (this.env[key]) return this.env[key];
     }
@@ -1167,7 +1215,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     const refreshToken = String(entry?.refresh_token || "").trim();
     if (!accessToken) {
       throw Object.assign(
-        new Error("OpenAI Codex is not authenticated. Run `aiw model` and sign in to OpenAI Codex."),
+        new Error("OpenAI Codex is not authenticated. Run `codmes model` and sign in to OpenAI Codex."),
         { status: 503, setupRequired: true }
       );
     }
@@ -1189,7 +1237,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       headers: {
         "content-type": "application/x-www-form-urlencoded",
         accept: "application/json",
-        "user-agent": "aiw-cli/0.0.0"
+        "user-agent": "codmes-cli/0.0.0"
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",
@@ -1232,10 +1280,17 @@ function buildMessages(params, systemPrompt) {
   return messages;
 }
 
+function firstValue(source, keys) {
+  for (const key of keys || []) {
+    if (source?.[key]) return source[key];
+  }
+  return "";
+}
+
 function buildSystemMessage(params) {
   const context = params.context?.workspaceContext || params.context || {};
   const parts = [
-    "You are AI Workspace's built-in assistant.",
+    "You are Codmes's built-in assistant.",
     "Answer in the same language as the user's latest message.",
     "Use provided workspace context when relevant, but do not expose it as raw metadata.",
     ...recallToolPolicyLines()
@@ -1332,9 +1387,65 @@ function responsesReasoningOptions(value) {
   };
 }
 
+function getPartialMatch(str, target) {
+  for (let len = Math.min(str.length, target.length - 1); len > 0; len--) {
+    if (target.startsWith(str.slice(-len))) {
+      return len;
+    }
+  }
+  return 0;
+}
+
+function parseThinkTags(str) {
+  let text = "";
+  let reasoning = "";
+  let cursor = 0;
+  
+  while (cursor < str.length) {
+    const openIdx = str.indexOf("<think>", cursor);
+    if (openIdx === -1) {
+      const tail = str.slice(cursor);
+      const partialOpen = getPartialMatch(tail, "<think>");
+      if (partialOpen > 0) {
+        text += tail.slice(0, tail.length - partialOpen);
+      } else {
+        text += tail;
+      }
+      break;
+    }
+    
+    text += str.slice(cursor, openIdx);
+    
+    const closeIdx = str.indexOf("</think>", openIdx);
+    if (closeIdx === -1) {
+      const tail = str.slice(openIdx + 7);
+      const partialClose = getPartialMatch(tail, "</think>");
+      if (partialClose > 0) {
+        reasoning += tail.slice(0, tail.length - partialClose);
+      } else {
+        reasoning += tail;
+      }
+      break;
+    }
+    
+    reasoning += str.slice(openIdx + 7, closeIdx);
+    cursor = closeIdx + 8;
+    
+    while (cursor < str.length && /\s/.test(str[cursor])) {
+      cursor++;
+    }
+  }
+  
+  return { text, reasoning };
+}
+
 async function* parseOpenAIStream(response) {
   const decoder = new TextDecoder();
   let buffer = "";
+  let fullTextAccumulator = "";
+  let lastEmittedTextLength = 0;
+  let lastEmittedReasoningLength = 0;
+
   for await (const rawChunk of response.body) {
     buffer += decoder.decode(rawChunk, { stream: true });
     let boundary;
@@ -1352,11 +1463,39 @@ async function* parseOpenAIStream(response) {
             || json.choices?.[0]?.message?.content
             || json.output_text
             || "";
+          const reasoning = json.choices?.[0]?.delta?.reasoning_content || "";
           const toolCalls = json.choices?.[0]?.delta?.tool_calls || [];
-          if (text || toolCalls.length) {
+          
+          if (reasoning) {
             yield {
-              text,
+              text: "",
+              reasoning,
               toolCallDelta: toolCalls.length ? toolCalls : null,
+              raw: json
+            };
+          } else if (text) {
+            fullTextAccumulator += text;
+            const parsed = parseThinkTags(fullTextAccumulator);
+            
+            const deltaText = parsed.text.slice(lastEmittedTextLength);
+            const deltaReasoning = parsed.reasoning.slice(lastEmittedReasoningLength);
+            
+            if (deltaText) lastEmittedTextLength = parsed.text.length;
+            if (deltaReasoning) lastEmittedReasoningLength = parsed.reasoning.length;
+            
+            if (deltaText || deltaReasoning || toolCalls.length) {
+              yield {
+                text: deltaText,
+                reasoning: deltaReasoning,
+                toolCallDelta: toolCalls.length ? toolCalls : null,
+                raw: json
+              };
+            }
+          } else if (toolCalls.length) {
+            yield {
+              text: "",
+              reasoning: "",
+              toolCallDelta: toolCalls,
               raw: json
             };
           }
@@ -1678,7 +1817,7 @@ function decodeJwtPayload(token) {
 
 function codexBackendHeaders(accessToken) {
   const headers = {
-    "user-agent": "codex_cli_rs/0.0.0 (AI Workspace)",
+    "user-agent": "codex_cli_rs/0.0.0 (Codmes)",
     originator: "codex_cli_rs"
   };
   const claims = decodeJwtPayload(accessToken);

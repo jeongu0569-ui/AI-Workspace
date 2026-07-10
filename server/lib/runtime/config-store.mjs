@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { parseConfigYaml, stringifyConfigYaml } from "./yaml-utils.mjs";
+import { migrateWorkspaceState, stateRoot } from "./state-dir.mjs";
 
 export const BUILTIN_PROVIDERS = [
   { id: "nous", name: "Nous Research", authType: "oauth_device_code", tab: "accounts", env: ["AIW_NOUS_API_KEY", "NOUS_API_KEY"], models: ["anthropic/claude-fable-5", "anthropic/claude-opus-4.8", "openai/gpt-5.5", "openai/gpt-5.4-mini"] },
@@ -47,10 +48,11 @@ export const BUILTIN_PROVIDERS = [
 ];
 
 export function runtimeConfigDir(workspaceRoot) {
-  return path.join(workspaceRoot, ".ai-workspace", "config");
+  return path.join(stateRoot(workspaceRoot), "config");
 }
 
 export async function ensureRuntimeConfig(workspaceRoot) {
+  await migrateWorkspaceState(workspaceRoot);
   const dir = runtimeConfigDir(workspaceRoot);
   await fs.mkdir(dir, { recursive: true });
   await writeYamlIfMissing(path.join(dir, "config.yaml"), "model:\n  default:\n  provider:\n");
@@ -58,7 +60,11 @@ export async function ensureRuntimeConfig(workspaceRoot) {
 }
 
 export function listProviderRegistry() {
-  return BUILTIN_PROVIDERS.map((provider) => ({ ...provider }));
+  return BUILTIN_PROVIDERS.map((provider) => ({
+    ...provider,
+    env: providerEnvKeys(provider),
+    baseUrlEnv: primaryCodmesEnvKey(provider.baseUrlEnv)
+  }));
 }
 
 export async function readRuntimeConfig(workspaceRoot) {
@@ -230,6 +236,7 @@ export async function readCredentials(workspaceRoot) {
       values: {
         baseUrl: configObj.model.base_url,
         BASE_URL: configObj.model.base_url,
+        CODMES_CUSTOM_BASE_URL: configObj.model.base_url,
         AIW_CUSTOM_BASE_URL: configObj.model.base_url
       }
     };
@@ -252,7 +259,7 @@ export async function readCredentials(workspaceRoot) {
       
       const providerDef = BUILTIN_PROVIDERS.find((p) => p.id === providerId);
       if (providerDef && providerDef.env) {
-        for (const envKey of providerDef.env) {
+        for (const envKey of providerEnvKeys(providerDef)) {
           values[envKey] = activeEntry.access_token;
         }
       }
@@ -262,7 +269,9 @@ export async function readCredentials(workspaceRoot) {
       values.BASE_URL = activeEntry.base_url;
       const providerDef = BUILTIN_PROVIDERS.find((p) => p.id === providerId);
       if (providerDef && providerDef.baseUrlEnv) {
-        values[providerDef.baseUrlEnv] = activeEntry.base_url;
+        for (const envKey of providerBaseUrlKeys(providerDef)) {
+          values[envKey] = activeEntry.base_url;
+        }
       }
     }
   }
@@ -278,6 +287,7 @@ export async function readCredentials(workspaceRoot) {
       if (cp.base_url) {
         values.baseUrl = cp.base_url;
         values.BASE_URL = cp.base_url;
+        values.CODMES_CUSTOM_BASE_URL = cp.base_url;
         values.AIW_CUSTOM_BASE_URL = cp.base_url;
       }
 
@@ -296,7 +306,9 @@ export async function readCredentials(workspaceRoot) {
       if (cp.key_env) {
         const poolEntries = pool[providerId] || [];
         if (poolEntries.length > 0 && poolEntries[0].access_token) {
-          values[cp.key_env] = poolEntries[0].access_token;
+          for (const envKey of envAliases(cp.key_env)) {
+            values[envKey] = poolEntries[0].access_token;
+          }
           values.apiKey = poolEntries[0].access_token;
           values.API_KEY = poolEntries[0].access_token;
         }
@@ -362,9 +374,9 @@ export async function listCredentialStatus(workspaceRoot, env = process.env) {
     const hasSecretOnlyStoredCredential = rawStoredKeys.some((key) =>
       ["apiKey", "API_KEY", "token", "TOKEN"].includes(key)
     );
-    const envKeys = (provider.env || []).filter((key) => Boolean(env[key]));
-    if (provider.baseUrlEnv && env[provider.baseUrlEnv]) {
-      envKeys.push(provider.baseUrlEnv);
+    const envKeys = providerEnvKeys(provider).filter((key) => Boolean(env[key]));
+    for (const key of providerBaseUrlKeys(provider)) {
+      if (env[key]) envKeys.push(key);
     }
     
     // Check if configured
@@ -374,7 +386,11 @@ export async function listCredentialStatus(workspaceRoot, env = process.env) {
       || (provider.authType.startsWith("oauth") && hasSecretOnlyStoredCredential);
     if (provider.id === "custom") {
       // Custom provider needs base_url configuration to be "configured"
-      const hasBaseUrl = stored.values?.baseUrl || stored.values?.AIW_CUSTOM_BASE_URL || env.AIW_CUSTOM_BASE_URL;
+      const hasBaseUrl = stored.values?.baseUrl
+        || stored.values?.CODMES_CUSTOM_BASE_URL
+        || stored.values?.AIW_CUSTOM_BASE_URL
+        || env.CODMES_CUSTOM_BASE_URL
+        || env.AIW_CUSTOM_BASE_URL;
       configured = Boolean(hasBaseUrl);
     }
 
@@ -430,29 +446,29 @@ export async function setCredentialValue(workspaceRoot, providerId, key, value) 
   }
 
   if (providerId === "custom") {
-    if (key === "AIW_CUSTOM_BASE_URL") {
+    if (envAliases("CODMES_CUSTOM_BASE_URL").includes(key)) {
       entry.base_url = value;
       // Also update config.yaml custom_providers
       let cp = configObj.custom_providers.find((c) => c.name === "custom");
       if (!cp) {
-        cp = { name: "custom", base_url: value, key_env: "AIW_CUSTOM_API_KEY" };
+        cp = { name: "custom", base_url: value, key_env: "CODMES_CUSTOM_API_KEY" };
         configObj.custom_providers.push(cp);
       } else {
         cp.base_url = value;
       }
-    } else if (key === "AIW_CUSTOM_API_KEY") {
+    } else if (envAliases("CODMES_CUSTOM_API_KEY").includes(key)) {
       entry.access_token = value;
       // Ensure custom_providers is configured in config.yaml
       let cp = configObj.custom_providers.find((c) => c.name === "custom");
       if (!cp) {
-        cp = { name: "custom", base_url: entry.base_url || "", key_env: "AIW_CUSTOM_API_KEY" };
+        cp = { name: "custom", base_url: entry.base_url || "", key_env: "CODMES_CUSTOM_API_KEY" };
         configObj.custom_providers.push(cp);
       }
     }
   } else {
     // Normal provider
-    const isApiKey = provider.env && provider.env.includes(key);
-    const isBaseUrl = provider.baseUrlEnv === key;
+    const isApiKey = providerEnvKeys(provider).includes(key);
+    const isBaseUrl = providerBaseUrlKeys(provider).includes(key);
     if (isApiKey || key.toLowerCase().includes("key") || key.toLowerCase().includes("token")) {
       entry.access_token = value;
     } else if (isBaseUrl || key.toLowerCase().includes("url")) {
@@ -504,16 +520,16 @@ export async function removeCredentialValue(workspaceRoot, providerId, key = "")
     const entry = pool[providerId][0];
     if (entry) {
       if (providerId === "custom") {
-        if (key === "AIW_CUSTOM_BASE_URL") {
+        if (envAliases("CODMES_CUSTOM_BASE_URL").includes(key)) {
           entry.base_url = "";
           configObj.custom_providers = configObj.custom_providers.filter((c) => c.name !== "custom");
-        } else if (key === "AIW_CUSTOM_API_KEY") {
+        } else if (envAliases("CODMES_CUSTOM_API_KEY").includes(key)) {
           entry.access_token = "";
         }
       } else {
         const provider = BUILTIN_PROVIDERS.find((item) => item.id === providerId);
-        const isApiKey = provider && provider.env && provider.env.includes(key);
-        const isBaseUrl = provider && provider.baseUrlEnv === key;
+        const isApiKey = provider && providerEnvKeys(provider).includes(key);
+        const isBaseUrl = provider && providerBaseUrlKeys(provider).includes(key);
         if (isApiKey || key.toLowerCase().includes("key") || key.toLowerCase().includes("token")) {
           entry.access_token = "";
         } else if (isBaseUrl || key.toLowerCase().includes("url")) {
@@ -528,6 +544,28 @@ export async function removeCredentialValue(workspaceRoot, providerId, key = "")
   await fs.writeFile(configPath, stringifyConfigYaml(configContent, configObj), "utf8");
 
   return { provider: providerId, key, removed: true };
+}
+
+export function envAliases(key) {
+  const raw = String(key || "").trim();
+  if (!raw) return [];
+  const aliases = [raw];
+  if (raw.startsWith("AIW_")) aliases.unshift(`CODMES_${raw.slice(4)}`);
+  if (raw.startsWith("CODMES_")) aliases.push(`AIW_${raw.slice(7)}`);
+  return Array.from(new Set(aliases));
+}
+
+export function providerEnvKeys(provider) {
+  return Array.from(new Set((provider.env || []).flatMap(envAliases)));
+}
+
+export function providerBaseUrlKeys(provider) {
+  return Array.from(new Set(envAliases(provider.baseUrlEnv || "")));
+}
+
+function primaryCodmesEnvKey(key) {
+  if (!key) return key;
+  return key.startsWith("AIW_") ? `CODMES_${key.slice(4)}` : key;
 }
 
 async function writeJsonIfMissing(filePath, value) {

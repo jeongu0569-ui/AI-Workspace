@@ -15,7 +15,7 @@ export function validateSkillName(name) {
 }
 
 export function skillsDir(workspaceRoot) {
-  return path.join(workspaceRoot, ".ai-workspace", "skills");
+  return path.join(workspaceRoot, ".codmes", "skills");
 }
 
 export async function listSkills(workspaceRoot) {

@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-test("workspace server protects APIs with AIW_SERVER_TOKEN and exposes management APIs", async () => {
-  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-server-api-"));
+test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes management APIs", async () => {
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-server-api-"));
   const port = 18000 + Math.floor(Math.random() * 10000);
   const token = "test-token";
   const server = spawn(process.execPath, ["server/index.mjs"], {
@@ -14,10 +14,10 @@ test("workspace server protects APIs with AIW_SERVER_TOKEN and exposes managemen
     env: {
       ...process.env,
       NODE_ENV: "test",
-      AIW_HOST: "127.0.0.1",
-      AIW_PORT: String(port),
-      AIW_WORKSPACE_ROOT: workspaceRoot,
-      AIW_SERVER_TOKEN: token
+      CODMES_HOST: "127.0.0.1",
+      CODMES_PORT: String(port),
+      CODMES_WORKSPACE_ROOT: workspaceRoot,
+      CODMES_SERVER_TOKEN: token
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -34,7 +34,7 @@ test("workspace server protects APIs with AIW_SERVER_TOKEN and exposes managemen
     assert.equal(unauthorized.status, 401);
 
     const workspace = await fetchJson(`${baseUrl}/api/workspace`, { token });
-    assert.equal(workspace.runtime.owner, "ai-workspace");
+    assert.equal(workspace.runtime.owner, "codmes");
 
     await fs.writeFile(path.join(workspaceRoot, "Notes", "auth-note.md"), "# Token Test\n", "utf8");
     const rebuilt = await fetchJson(`${baseUrl}/api/index/rebuild`, { token, method: "POST" });
@@ -68,7 +68,7 @@ test("workspace server protects APIs with AIW_SERVER_TOKEN and exposes managemen
     const doctor = await fetchJson(`${baseUrl}/api/doctor`, { token });
     assert.equal(doctor.ok, true);
     assert.equal(doctor.authRequired, true);
-    assert.equal(doctor.audit.path, ".ai-workspace/audit/audit.jsonl");
+    assert.equal(doctor.audit.path, ".codmes/audit/audit.jsonl");
 
     const providers = await fetchJson(`${baseUrl}/api/providers`, { token });
     assert.ok(providers.providers.some((provider) => provider.id === "custom"));

@@ -3,7 +3,7 @@ import path from "node:path";
 
 export async function archiveExpiredSessions(workspaceRoot, options = {}) {
   const thresholdDays = options.thresholdDays || 30;
-  const sessionsDir = path.join(workspaceRoot, ".ai-workspace", "sessions");
+  const sessionsDir = path.join(workspaceRoot, ".codmes", "sessions");
   
   let files = [];
   try {
@@ -46,7 +46,7 @@ export async function archiveExpiredSessions(workspaceRoot, options = {}) {
 
 export async function archiveOverflowGeneralSessions(workspaceRoot, options = {}) {
   const limit = Number.isFinite(Number(options.limit)) ? Number(options.limit) : 30;
-  const sessionsDir = path.join(workspaceRoot, ".ai-workspace", "sessions");
+  const sessionsDir = path.join(workspaceRoot, ".codmes", "sessions");
   let files = [];
   try {
     files = await fs.readdir(sessionsDir);
@@ -98,7 +98,7 @@ export function isArchiveExempt(session) {
 }
 
 async function hasPendingApproval(workspaceRoot, sessionId) {
-  const approvalsDir = path.join(workspaceRoot, ".ai-workspace", "approvals");
+  const approvalsDir = path.join(workspaceRoot, ".codmes", "approvals");
   let files = [];
   try {
     files = await fs.readdir(approvalsDir);
@@ -116,7 +116,7 @@ async function hasPendingApproval(workspaceRoot, sessionId) {
 }
 
 export async function listArchivedSessions(workspaceRoot) {
-  const sessionsDir = path.join(workspaceRoot, ".ai-workspace", "sessions");
+  const sessionsDir = path.join(workspaceRoot, ".codmes", "sessions");
   let files = [];
   try {
     files = await fs.readdir(sessionsDir);
@@ -141,7 +141,7 @@ export async function listArchivedSessions(workspaceRoot) {
 }
 
 export async function archiveSession(workspaceRoot, sessionId) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "sessions", `${sessionId}.json`);
+  const filePath = path.join(workspaceRoot, ".codmes", "sessions", `${sessionId}.json`);
   let session = null;
   try {
     const data = await fs.readFile(filePath, "utf8");
@@ -163,7 +163,7 @@ export async function archiveSession(workspaceRoot, sessionId) {
 }
 
 export async function unarchiveSession(workspaceRoot, sessionId) {
-  const filePath = path.join(workspaceRoot, ".ai-workspace", "sessions", `${sessionId}.json`);
+  const filePath = path.join(workspaceRoot, ".codmes", "sessions", `${sessionId}.json`);
   let session = null;
   try {
     const data = await fs.readFile(filePath, "utf8");

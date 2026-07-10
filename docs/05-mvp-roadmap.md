@@ -4,49 +4,56 @@
 
 Status: done.
 
-- Product name is AI Workspace.
-- `aiw` remains the user-facing CLI.
-- AI Workspace owns runtime state.
+- Product name is Codmes.
+- `codmes` remains the user-facing CLI.
+- Codmes owns runtime state.
 - External server wrapper language is removed from the target architecture.
 - Local reference runtime code remains a migration source, not the product
   boundary.
 
 ## Phase 1: Workspace Server
 
-Status: in progress.
+Status: done for MVP, in progress for polish.
 
 - Initialize workspace root.
 - Create `Notes/`, `Code/`, `Documents/`, `Attachments/`.
 - Add path-safe REST APIs.
 - Add file/folder create, move, copy, upload, delete.
-- Add metadata and `.ai-workspace` state root.
+- Add metadata and `.codmes` state root.
 - Add render/search/context services.
+- Add small and chunked upload APIs.
+- Add PDF metadata and first-pass PDF text extraction cache.
 
-Exit criteria:
+Still improving:
 
-- `npm run check` passes.
-- Server can list `Notes` and `Code`.
-- Server rejects absolute and traversal paths.
-- Server can create/read/write/move/delete a markdown file.
+- upload manager UX and retry behavior.
+- richer PDF thumbnails and annotation data.
+- filesystem watcher-backed refresh instead of periodic polling in clients.
 
 ## Phase 2: Runtime Ownership
 
 Status: in progress.
 
-- `aiw model` uses AI Workspace model config.
-- `aiw provider list` uses AI Workspace provider registry.
-- `aiw auth` writes AI Workspace credential config.
-- `/api/models` returns AI Workspace model options.
-- `/api/sessions` returns AI Workspace sessions.
-- `/api/live` emits `runtime.event`.
+- `codmes model` uses Codmes-owned model config: done.
+- `codmes provider list` uses Codmes provider registry: done.
+- `codmes auth` writes Codmes credential config: done.
+- `/api/providers`, `/api/models`, `/api/auth`, `/api/model/default`: done.
+- OpenAI-compatible runtime execution: done.
+- OpenAI Codex `/responses` transport with OAuth credential handling and refresh path: done.
+- Ollama Local provider setup and model discovery: done.
+- `/api/sessions` returns Codmes sessions: done.
+- `/api/live` emits `runtime.event`: done.
+- Model output streams as `message.delta`: done.
+- Assistant replies persist in `.codmes/sessions`: done.
+- MCP stdio JSON-RPC client and tool execution path: done.
+- MCP approval-required propagation, approval inbox item, and resume path: done.
 
 Remaining:
 
-- Implement real model execution backend.
-- Stream model output through AI Workspace events.
-- Persist assistant replies directly in `.ai-workspace/sessions`.
-- Port provider/model/auth logic into dedicated `server/lib/runtime/*` modules.
-- Add OAuth flows for account-based providers.
+- Polish provider/model/auth module boundaries in `server/lib/runtime/*`.
+- Add first-class browser OAuth start/status/callback APIs for account providers.
+- Improve provider GUI parity with the desktop reference app.
+- Harden Codex/OAuth manual diagnostics without forcing live external API calls in tests.
 
 ## Phase 3: Code Runtime
 
@@ -66,7 +73,7 @@ Status: in progress.
 Remaining:
 
 - Rich diff viewer.
-- Automatic LLM-authored patch generation through the AI Workspace runtime.
+- Automatic LLM-authored patch generation through the Codmes runtime.
 - Failure-log-based repair loop.
 - Stronger sandbox policy.
 
@@ -94,27 +101,38 @@ Remaining:
 Status: in progress.
 
 - Xcode project structure: done.
-- macOS/iOS targets: started.
-- Chat shell: in progress.
-- Notes/Code tree: in progress.
-- Markdown/code rendering: in progress.
-- Session/model menus: in progress.
-- Approval/task controls: in progress.
+- macOS/iOS targets: done for buildable MVP.
+- Chat shell: done for MVP, in progress for UI polish.
+- Notes/Code tree: done for MVP.
+- Markdown/code rendering with server Shiki fallback/native fallback: done for MVP.
+- Session/model menus: done for MVP.
+- Approval/task controls: done for MVP.
+- Keychain token storage: done.
+- Provider grouping in Apple settings (`Accounts`, `API Keys`, `Local`): done for MVP.
 
 Remaining:
 
-- Rename remaining internal Hermes-era Swift symbols.
-- Make the client talk only to AI Workspace public APIs.
+- Rename remaining internal legacy Swift symbols where safe.
 - Improve Notes/PDF/Code editor surfaces.
 - Add right-side global chat panel polish.
 - Add upload manager progress and retry UX.
+- Add richer provider OAuth GUI flows.
+- Add native Apple Pencil/PDF annotation UX.
 
 ## Phase 5: Notes/PDF/Search
 
-Status: planned.
+Status: in progress.
 
-- Markdown reading mode and edit mode.
-- PDF reading and annotation mode.
+- Markdown reading mode and edit mode: first pass done.
+- PDF metadata and text extraction cache: first pass done.
+- Workspace metadata search: done.
+- docsearch MCP integration path and fallback: done.
+- Vector/RAG backend design and provider skeleton: started.
+
+Remaining:
+
+- Native vector index implementation.
+- OCR.
+- PDF annotation and Apple Pencil storage/sync.
 - Server-side thumbnails and page previews.
 - Search/index status UI.
-- MCP/docsearch ownership under AI Workspace runtime.

@@ -5,26 +5,32 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const runtimeRoot = path.join(repoRoot, ".aiw-runtime");
+const runtimeRoot = path.join(repoRoot, ".codmes-runtime");
+const legacyRuntimeRoot = path.join(repoRoot, ".aiw-runtime");
 const vendorRoot = path.join(repoRoot, "vendor", "hermes-agent");
 const isWindows = process.platform === "win32";
 const runtimePython = path.join(runtimeRoot, isWindows ? "Scripts/python.exe" : "bin/python");
+const legacyRuntimePython = path.join(legacyRuntimeRoot, isWindows ? "Scripts/python.exe" : "bin/python");
 
 if (!fs.existsSync(path.join(vendorRoot, "pyproject.toml"))) {
   throw new Error("Vendored runtime metadata is missing.");
 }
 
 const bootstrapPython = findPython();
+if (!fs.existsSync(runtimePython) && fs.existsSync(legacyRuntimePython)) {
+  fs.renameSync(legacyRuntimeRoot, runtimeRoot);
+}
 if (!fs.existsSync(runtimePython)) {
   run(bootstrapPython, ["-m", "venv", runtimeRoot]);
 }
 
 run(runtimePython, ["-m", "pip", "install", "--disable-pip-version-check", "-e", vendorRoot]);
-console.log(`AI Workspace runtime ready: ${runtimePython}`);
+console.log(`Codmes runtime ready: ${runtimePython}`);
 
 function findPython() {
   const home = process.env.HOME || process.env.USERPROFILE || "";
   for (const command of [
+    process.env.CODMES_BOOTSTRAP_PYTHON,
     process.env.AIW_BOOTSTRAP_PYTHON,
     home && path.join(home, ".hermes", "hermes-agent", "venv", isWindows ? "Scripts/python.exe" : "bin/python"),
     "python3",
@@ -35,7 +41,7 @@ function findPython() {
     });
     if (!result.error && result.status === 0) return command;
   }
-  throw new Error("Python 3.11-3.13 is required to install the AI Workspace runtime.");
+  throw new Error("Python 3.11-3.13 is required to install the Codmes runtime.");
 }
 
 function run(command, args) {

@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 export function pdfTextCacheDirectory(workspaceRoot) {
-  return path.join(workspaceRoot, ".ai-workspace", "index", "pdf-text");
+  return path.join(workspaceRoot, ".codmes", "index", "pdf-text");
 }
 
 export function pdfTextCachePath(workspaceRoot, relativePath, stat) {

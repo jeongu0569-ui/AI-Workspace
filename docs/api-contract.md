@@ -8,12 +8,12 @@ http://127.0.0.1:8787
 
 ## Auth
 
-`GET /api/health` is public. When `AIW_SERVER_TOKEN` is set, all other HTTP
+`GET /api/health` is public. When `CODMES_SERVER_TOKEN` is set, all other HTTP
 endpoints require one of:
 
 ```text
 Authorization: Bearer <token>
-x-aiw-token: <token>
+x-codmes-token: <token>
 ?token=<token>
 ```
 
@@ -91,7 +91,7 @@ The server resolves context requests for `none`, `current`, `note`, `folder`,
 
 Current search provider is `workspace-scan`. It supports content search,
 filename hits, scope filtering, `kind`/`kinds`, modified date filters, and
-first-pass PDF text extraction through `.ai-workspace/index/pdf-text/`.
+first-pass PDF text extraction through `.codmes/index/pdf-text/`.
 
 Native RAG design is tracked in `docs/rag-backend-design.md`. docsearch MCP
 integration is tracked in `docs/docsearch-mcp-integration.md`.
@@ -112,7 +112,7 @@ integration is tracked in `docs/docsearch-mcp-integration.md`.
 
 `POST /api/auth/:provider` accepts easy client-facing keys such as `apiKey`,
 `token`, and `baseUrl`; the server maps them to the provider registry storage
-keys under `.ai-workspace/config`.
+keys under `.codmes/config`.
 
 ## Sessions
 
@@ -284,8 +284,8 @@ The server uses `marked` and `shiki`.
 
 ## Models, Providers, Auth
 
-`aiw model`, `aiw provider`, and `aiw auth` own local runtime config under
-`.ai-workspace/config`. The same store is now exposed through HTTP so the Apple
+`codmes model`, `codmes provider`, and `codmes auth` own local runtime config under
+`.codmes/config`. The same store is now exposed through HTTP so the Apple
 client can configure runtime access without shell commands.
 
 | Method | Path | Status | Auth | Client |
@@ -338,7 +338,7 @@ MCP process execution still happens inside the runtime, not in the client.
 | GET | `/api/doctor` | implemented | token when configured | available |
 
 The response includes runtime, MCP, skills, security, index, and search summary.
-It also includes an audit summary when `.ai-workspace/audit/audit.jsonl`
+It also includes an audit summary when `.codmes/audit/audit.jsonl`
 exists.
 
 ## Known Gaps

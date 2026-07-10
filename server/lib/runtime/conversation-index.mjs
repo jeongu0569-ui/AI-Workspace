@@ -3,7 +3,7 @@ import path from "node:path";
 import { resolveTimeRange } from "./time-range.mjs";
 
 export async function ensureConversationIndex(workspaceRoot) {
-  const dir = path.join(workspaceRoot, ".ai-workspace", "conversation-index");
+  const dir = path.join(workspaceRoot, ".codmes", "conversation-index");
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
@@ -266,7 +266,7 @@ function normalizeToken(token) {
 }
 
 export async function readConversationMessages(workspaceRoot, sessionId, messageIds = [], options = {}) {
-  const sessionPath = path.join(workspaceRoot, ".ai-workspace", "sessions", `${sessionId}.json`);
+  const sessionPath = path.join(workspaceRoot, ".codmes", "sessions", `${sessionId}.json`);
   let session = null;
   try {
     const data = await fs.readFile(sessionPath, "utf8");

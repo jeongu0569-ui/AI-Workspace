@@ -9,6 +9,7 @@ import { ModelRuntime } from "./model-runtime.mjs";
 import { SessionRuntime } from "./session-runtime.mjs";
 import { LLMRuntime } from "./llm-runtime.mjs";
 import { OpenAICompatibleRuntime } from "./runtime/openai-compatible-runtime.mjs";
+import { migrateWorkspaceState, stateRoot } from "./runtime/state-dir.mjs";
 
 export function createWorkspaceAgentEngine(config) {
   const runtime = config.runtime === undefined
@@ -87,7 +88,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
       : {
           sessionId: `session-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`,
           runtimeSessionId: "",
-          source: "ai-workspace"
+          source: "codmes"
         };
     const sessionObj = {
       id: result.sessionId,
@@ -206,6 +207,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
         await this.sessionRuntime.appendSessionMessage(params.sessionId, {
           role: "assistant",
           content: result.reply,
+          reasoning: result.reasoning,
           taskId: task.id,
           source: "result"
         });
@@ -624,7 +626,7 @@ export class WorkspaceAgentEngine extends EventEmitter {
   }
 
   runtimeName() {
-    return this.runtime?.name || "ai-workspace-runtime";
+    return this.runtime?.name || "codmes-runtime";
   }
 
   close() {
@@ -758,22 +760,25 @@ export class WorkspaceAgentEngine extends EventEmitter {
 export class WorkspaceAgentStateStore {
   constructor(workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
-    this.root = path.join(workspaceRoot, ".ai-workspace");
+    this.root = stateRoot(workspaceRoot);
     this.ready = null;
   }
 
   async ensure() {
     if (!this.ready) {
-      this.ready = Promise.all([
-        fs.mkdir(path.join(this.root, "sessions"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "tasks"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "memory"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "approvals"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "decisions"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "tool-logs"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "diffs"), { recursive: true }),
-        fs.mkdir(path.join(this.root, "index"), { recursive: true })
-      ]);
+      this.ready = (async () => {
+        await migrateWorkspaceState(this.workspaceRoot);
+        await Promise.all([
+          fs.mkdir(path.join(this.root, "sessions"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "tasks"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "memory"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "approvals"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "decisions"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "tool-logs"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "diffs"), { recursive: true }),
+          fs.mkdir(path.join(this.root, "index"), { recursive: true })
+        ]);
+      })();
     }
     await this.ready;
   }
@@ -901,7 +906,7 @@ export class WorkspaceAgentStateStore {
       ...definedFields(value)
     };
     await this.appendJsonl("decisions/events.jsonl", record);
-    return { path: ".ai-workspace/decisions/events.jsonl", record };
+    return { path: ".codmes/decisions/events.jsonl", record };
   }
 
   async recordApprovalRequest(value) {
@@ -1002,7 +1007,7 @@ export class WorkspaceAgentStateStore {
     const fileName = `${safeArtifactName(taskId)}${suffix}.diff`;
     const filePath = path.join(this.root, "diffs", fileName);
     await fs.writeFile(filePath, String(content || ""), "utf8");
-    return `.ai-workspace/diffs/${fileName}`;
+    return `.codmes/diffs/${fileName}`;
   }
 
   async readTask(taskId) {
@@ -1086,10 +1091,10 @@ function workspaceRuntimeNotConfiguredReply(params = {}) {
     ok: true,
     sessionId: params.sessionId,
     runtimeSessionId: "",
-    source: "ai-workspace",
+    source: "codmes",
     reply: [
-      "AI Workspace runtime is running, but no model execution backend is configured yet.",
-      "Configure a provider with `aiw auth` and select a model with `aiw model set-default`."
+      "Codmes Runtime is running, but no model execution backend is configured yet.",
+      "Configure a provider with `codmes auth` and select a model with `codmes model set-default`."
     ].join("\n")
   };
 }

@@ -210,9 +210,9 @@ struct RootView: View {
     private func iOSSidebar(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("AI Workspace")
+                Text("Codmes")
                     .font(.title2.weight(.semibold))
-                Text(store.workspace?.rootName ?? "AI Workspace")
+                Text(store.workspace?.rootName ?? "Codmes")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -766,7 +766,7 @@ private struct RuntimeModelSettingsView: View {
                     .disabled(model.isEmpty || isSaving)
 
                     if provider.isOAuth {
-                        Text("Run `aiw model` on the server to sign in.")
+                        Text("Run `codmes model` on the server to sign in.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

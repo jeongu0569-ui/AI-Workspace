@@ -36,7 +36,7 @@ test("workspace agent engine resolves context and records task state", async () 
   assert.equal(runtime.lastPrompt.context.workspaceContext.workspace.activePath, "Notes/a.md");
   assert.equal(runtime.lastPrompt.context.workspaceContext.inlineBlocks[0].path, "Notes/a.md");
 
-  const taskDir = path.join(root, ".ai-workspace", "tasks");
+  const taskDir = path.join(root, ".codmes", "tasks");
   const allFiles = await fs.readdir(taskDir);
   const taskFiles = allFiles.filter(f => f.startsWith("task-") && f.endsWith(".json"));
   assert.equal(taskFiles.length > 0, true);
@@ -44,7 +44,7 @@ test("workspace agent engine resolves context and records task state", async () 
   assert.equal(task.sessionId, session.sessionId);
   assert.equal(task.status, "submitted");
 
-  const events = await fs.readFile(path.join(root, ".ai-workspace", "sessions", "events.jsonl"), "utf8");
+  const events = await fs.readFile(path.join(root, ".codmes", "sessions", "events.jsonl"), "utf8");
   assert.match(events, /session.create/);
 });
 
@@ -60,8 +60,8 @@ test("workspace agent engine records live tool events under workspace state", as
   });
   await engine.flush();
 
-  const allEvents = await fs.readFile(path.join(root, ".ai-workspace", "tool-logs", "live-events.jsonl"), "utf8");
-  const toolEvents = await fs.readFile(path.join(root, ".ai-workspace", "tool-logs", "tool-events.jsonl"), "utf8");
+  const allEvents = await fs.readFile(path.join(root, ".codmes", "tool-logs", "live-events.jsonl"), "utf8");
+  const toolEvents = await fs.readFile(path.join(root, ".codmes", "tool-logs", "tool-events.jsonl"), "utf8");
   assert.match(allEvents, /workspace-agent/);
   assert.match(toolEvents, /tool.start/);
   assert.match(toolEvents, /search_files/);
@@ -101,7 +101,7 @@ test("workspace agent state creates the unified state directory shape", async ()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "agent-state-"));
   await new WorkspaceAgentStateStore(root).ensure();
   for (const folder of ["sessions", "tasks", "memory", "approvals", "decisions", "tool-logs", "diffs", "index"]) {
-    const stat = await fs.stat(path.join(root, ".ai-workspace", folder));
+    const stat = await fs.stat(path.join(root, ".codmes", folder));
     assert.equal(stat.isDirectory(), true);
   }
 });

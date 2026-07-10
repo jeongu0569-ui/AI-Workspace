@@ -6,7 +6,9 @@ import test from "node:test";
 
 import {
   ensureRuntimeConfig,
+  envAliases,
   listCredentialStatus,
+  providerEnvKeys,
   readCredentials,
   readRuntimeConfig,
   runtimeConfigDir,
@@ -14,8 +16,8 @@ import {
   setDefaultModel
 } from "./config-store.mjs";
 
-test("Hermes-compatible custom endpoint config is executable by AI Workspace", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-custom-model-"));
+test("Hermes-compatible custom endpoint config is executable by Codmes", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-custom-model-"));
   await ensureRuntimeConfig(root);
   await fs.writeFile(path.join(runtimeConfigDir(root), "config.yaml"), `model:
   default: gemma4:e2b-mlx
@@ -43,10 +45,28 @@ custom_providers:
 });
 
 test("OAuth providers count token-only credentials as configured", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-oauth-status-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-oauth-status-"));
   await ensureRuntimeConfig(root);
   await setCredentialValue(root, "openai-codex", "access_token", "token-value");
   const status = await listCredentialStatus(root, {});
   const codex = status.find((item) => item.provider === "openai-codex");
   assert.equal(codex.configured, true);
+});
+
+test("CODMES env aliases are preferred while AIW env aliases remain compatible", async () => {
+  assert.deepEqual(envAliases("AIW_OPENAI_API_KEY"), ["CODMES_OPENAI_API_KEY", "AIW_OPENAI_API_KEY"]);
+  assert.deepEqual(envAliases("CODMES_CUSTOM_API_KEY"), ["CODMES_CUSTOM_API_KEY", "AIW_CUSTOM_API_KEY"]);
+
+  const keys = providerEnvKeys({ env: ["AIW_OPENAI_API_KEY", "OPENAI_API_KEY"] });
+  assert.deepEqual(keys, ["CODMES_OPENAI_API_KEY", "AIW_OPENAI_API_KEY", "OPENAI_API_KEY"]);
+
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-env-status-"));
+  await ensureRuntimeConfig(root);
+  const status = await listCredentialStatus(root, {
+    CODMES_OPENAI_API_KEY: "new-key",
+    AIW_OPENAI_API_KEY: "legacy-key"
+  });
+  const openai = status.find((item) => item.provider === "openai-api");
+  assert.equal(openai.configured, true);
+  assert.ok(openai.envKeys.includes("CODMES_OPENAI_API_KEY"));
 });

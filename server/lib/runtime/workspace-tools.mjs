@@ -12,7 +12,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "workspace_search",
-      description: "Search text files in the AI Workspace. Use this when the user asks about notes, code, or documents that are not already in context.",
+      description: "Search text files in Codmes. Use this when the user asks about notes, code, or documents that are not already in context.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -350,7 +350,7 @@ async function listWorkspaceTree(workspaceRoot, args) {
     dirEntries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
     for (const entry of dirEntries) {
       if (entries.length >= maxEntries) return;
-      if (entry.name === ".DS_Store" || entry.name === ".ai-workspace" || entry.name === ".hermes-workspace") continue;
+      if (entry.name === ".DS_Store" || entry.name === ".codmes" || entry.name === ".ai-workspace" || entry.name === ".hermes-workspace") continue;
       const absolutePath = path.join(directory, entry.name);
       const rel = path.relative(workspaceRoot, absolutePath).replace(/\\/g, "/");
       const itemStat = await fs.stat(absolutePath);

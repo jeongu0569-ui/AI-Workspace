@@ -4,7 +4,7 @@
 
 ```text
 Apple Client / Web clients / CLI
-  -> AI Workspace Server
+  -> Codmes Server
       -> WorkspaceAgentEngine
           -> ChatRuntime
           -> ModelRuntime
@@ -16,7 +16,7 @@ Apple Client / Web clients / CLI
       -> Render/search/context services
 ```
 
-AI Workspace owns the server and runtime state. The Hermes core runtime (config, auth, model, provider, sessions, tools, approvals, live socket) is natively absorbed into AI Workspace. It is not an adapter or bridge structure connecting to an external Hermes server.
+Codmes owns the server and runtime state. The Hermes core runtime (config, auth, model, provider, sessions, tools, approvals, live socket) is natively absorbed into Codmes. It is not an adapter or bridge structure connecting to an external Hermes server.
 
 ## Runtime Modules
 
@@ -48,26 +48,26 @@ server/lib/runtime/
 ```
 
 `config-store.mjs` is the first step. It stores runtime configuration under
-`.ai-workspace/config` and exposes provider, model, and credential commands for
-`aiw`.
+`.codmes/config` and exposes provider, model, and credential commands for
+`codmes`.
 
 ## Workspace State
 
 The workspace root is a normal server-side folder:
 
 ```text
-AIWorkspace/
+Codmes/
 ├── Notes/
 ├── Code/
 ├── Documents/
 ├── Attachments/
-└── .ai-workspace/
+└── .codmes/
 ```
 
 Runtime state lives under:
 
 ```text
-.ai-workspace/
+.codmes/
 ├── config/
 │   ├── config.yaml
 │   └── auth.json
@@ -104,7 +104,7 @@ C:/Users/user/secret.txt
 
 ## Public API Rule
 
-Clients should talk to AI Workspace APIs only:
+Clients should talk to Codmes APIs only:
 
 ```text
 GET  /api/models
@@ -115,7 +115,7 @@ WS   /api/live
 ```
 
 The Apple client should not know about any external server URL or dashboard
-credential. It only needs the AI Workspace Server URL.
+credential. It only needs the Codmes Server URL.
 
 ## Code Runtime
 
@@ -138,14 +138,14 @@ server-side operations with scope limits, approval, timeout, and logs.
 
 The local reference implementation remains useful for provider catalog,
 credential, streaming, tool, approval, MCP, and sandbox ideas. Those ideas
-should be ported into AI Workspace-owned modules instead of being kept behind an
+should be ported into Codmes-owned modules instead of being kept behind an
 external server dependency.
 
 ## Current Native Runtime Backend
 
-The runtime backend is an OpenAI-compatible native engine under `server/lib/runtime/openai-compatible-runtime.mjs`. It resolves the selected provider/model from `.ai-workspace/config/config.yaml`, streams chat completions into AI Workspace live events, and lets the session runtime persist only the visible user/assistant messages.
+The runtime backend is an OpenAI-compatible native engine under `server/lib/runtime/openai-compatible-runtime.mjs`. It resolves the selected provider/model from `.codmes/config/config.yaml`, streams chat completions into Codmes live events, and lets the session runtime persist only the visible user/assistant messages.
 
-Assistant replies are persisted from the same streaming events that power the live UI. The engine buffers `message.delta` events by session/task and writes a single assistant message to `.ai-workspace/sessions` on `turn.complete`, with a non-streaming result fallback for models that only return final text.
+Assistant replies are persisted from the same streaming events that power the live UI. The engine buffers `message.delta` events by session/task and writes a single assistant message to `.codmes/sessions` on `turn.complete`, with a non-streaming result fallback for models that only return final text.
 
 The native runtime exposes surface-filtered tools:
 
@@ -179,7 +179,7 @@ dangerous tools can be discovered but are not automatically expanded.
 search/query tool. When no suitable MCP server is configured or the call fails,
 the runtime returns a normalized `workspace-search-fallback` result instead.
 
-Tool calls are executed by AI Workspace itself, emitted as `tool.start`, `tool.complete`, or `tool.error` live events, then passed back to the model as tool results before the final assistant message is streamed.
+Tool calls are executed by Codmes itself, emitted as `tool.start`, `tool.complete`, or `tool.error` live events, then passed back to the model as tool results before the final assistant message is streamed.
 
 Prompt assembly uses compact context:
 
@@ -192,7 +192,7 @@ current user message
 ```
 
 The runtime does not paste the entire historical transcript into every request.
-Session summaries and extracted memory are stored under `.ai-workspace` and
+Session summaries and extracted memory are stored under `.codmes` and
 updated as sessions are written.
 
 MCP tool calls that need user approval no longer block the runtime stream while

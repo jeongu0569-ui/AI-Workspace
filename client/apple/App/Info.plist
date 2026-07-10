@@ -11,7 +11,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>AI Workspace</string>
+	<string>Codmes</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -28,7 +28,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AI Workspace connects to the local Workspace Server.</string>
+	<string>Codmes connects to the local Workspace Server.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

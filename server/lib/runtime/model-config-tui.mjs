@@ -2,11 +2,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { migrateWorkspaceStateSync, stateRoot } from "./state-dir.mjs";
 
 const REQUIRED_IMPORTS = "import yaml, httpx, requests, rich, prompt_toolkit";
 
 export function modelConfigHome(workspaceRoot) {
-  return path.join(workspaceRoot, ".ai-workspace", "config");
+  migrateWorkspaceStateSync(workspaceRoot);
+  return path.join(stateRoot(workspaceRoot), "config");
 }
 
 export function vendoredModelEntry(repoRoot) {
@@ -15,7 +17,10 @@ export function vendoredModelEntry(repoRoot) {
 
 export function resolveModelRuntimePython(repoRoot, env = process.env) {
   const candidates = [
+    env.CODMES_RUNTIME_PYTHON,
     env.AIW_RUNTIME_PYTHON,
+    path.join(repoRoot, ".codmes-runtime", "bin", "python"),
+    path.join(repoRoot, ".codmes-runtime", "Scripts", "python.exe"),
     path.join(repoRoot, ".aiw-runtime", "bin", "python"),
     path.join(repoRoot, ".aiw-runtime", "Scripts", "python.exe"),
     path.join(repoRoot, ".venv", "bin", "python"),
@@ -36,7 +41,7 @@ export function resolveModelRuntimePython(repoRoot, env = process.env) {
   }
 
   throw new Error(
-    "AI Workspace's model setup runtime is unavailable. Set AIW_RUNTIME_PYTHON " +
+    "Codmes model setup runtime is unavailable. Set CODMES_RUNTIME_PYTHON " +
     "to a compatible Python environment or run `npm run runtime:bootstrap`."
   );
 }
@@ -54,6 +59,7 @@ export function createModelTuiLaunch({ repoRoot, workspaceRoot, args = [], env =
       HERMES_HOME: modelConfigHome(workspaceRoot),
       PYTHONPATH: [vendorRoot, existingPythonPath].filter(Boolean).join(path.delimiter),
       PYTHONNOUSERSITE: "1",
+      CODMES_VENDOR_RUNTIME: "1",
       AIW_VENDOR_RUNTIME: "1"
     }
   };

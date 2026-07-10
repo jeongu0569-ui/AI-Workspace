@@ -2,9 +2,9 @@
 
 ## Goal
 
-Build AI Workspace as a standalone, server-centered workspace app.
+Build Codmes as a standalone, server-centered workspace app.
 
-AI Workspace is not an Obsidian plugin, not a thin chat app, and not a wrapper
+Codmes is not an Obsidian plugin, not a thin chat app, and not a wrapper
 around an external AI server. The product should combine three familiar
 surfaces:
 
@@ -22,8 +22,8 @@ records.
 
 ```text
 Client
-  -> AI Workspace Server
-  -> AI Workspace runtime
+  -> Codmes Server
+  -> Codmes runtime
        - chat/session runtime
        - model/provider/auth runtime
        - stream/event runtime
@@ -33,7 +33,7 @@ Client
        - code task runtime
 ```
 
-The runtime should be internal to AI Workspace. A separate external AI server
+The runtime should be internal to Codmes. A separate external AI server
 should not be required for normal operation.
 
 ## Migration Position
@@ -43,7 +43,7 @@ it already had useful ideas for provider catalogs, auth storage, model picking,
 streaming events, tool calls, approvals, MCP, and code-agent behavior.
 
 That codebase is a migration reference, not the final product boundary. The
-direction is to bring the useful runtime ideas into AI Workspace-owned modules:
+direction is to bring the useful runtime ideas into Codmes-owned modules:
 
 ```text
 server/lib/runtime/
@@ -81,7 +81,7 @@ but it conflicts with this product's final shape:
 - iPhone cannot reliably treat NAS/shared folders as a local Obsidian Vault.
 - Code agent features need a Codex-like UI, not a cramped note plugin panel.
 
-The new app should make AI Workspace Server the center. Clients should fetch
+The new app should make Codmes Server the center. Clients should fetch
 only the data they need.
 
 ## User-Facing Model
@@ -110,26 +110,26 @@ and permissions.
 The server owns a real folder on disk:
 
 ```text
-/Users/user/AIWorkspace
-/DATA/AIWorkspace
-/NAS/AIWorkspace
+/Users/user/Codmes
+/DATA/Codmes
+/NAS/Codmes
 ```
 
 Default layout:
 
 ```text
-AIWorkspace/
+Codmes/
 ├── Notes/
 ├── Code/
 ├── Documents/
 ├── Attachments/
-└── .ai-workspace/
+└── .codmes/
 ```
 
-The `.ai-workspace` folder is the primary AI Workspace state root:
+The `.codmes` folder is the primary Codmes state root:
 
 ```text
-.ai-workspace/
+.codmes/
 ├── config/
 ├── sessions/
 ├── tasks/
@@ -149,8 +149,8 @@ The MVP should prove:
 - Notes/Code/Documents/Attachments file tree
 - Markdown/text/code open and save
 - Basic PDF/raw file delivery
-- AI Workspace-owned model/provider/auth config
-- AI Workspace-owned session store
+- Codmes-owned model/provider/auth config
+- Codmes-owned session store
 - Workspace Agent Engine boundary with task/session/tool logs
 - Code task inspect/propose/apply/check/git flow
 - Approval inbox

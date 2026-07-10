@@ -22,7 +22,7 @@ test("Session Archive: exemption check", () => {
 
 test("Session Archive: automatic archive and manual restore", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-session-archive-"));
-  await fs.mkdir(path.join(root, ".ai-workspace", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   const oldDate = new Date(Date.now() - 32 * 24 * 3600 * 1000).toISOString();
   
@@ -44,32 +44,32 @@ test("Session Archive: automatic archive and manual restore", async () => {
     visibleInSidebar: true
   };
   
-  await fs.writeFile(path.join(root, ".ai-workspace", "sessions", "sess-expired.json"), JSON.stringify(expiredSession), "utf8");
-  await fs.writeFile(path.join(root, ".ai-workspace", "sessions", "sess-active.json"), JSON.stringify(activeSession), "utf8");
+  await fs.writeFile(path.join(root, ".codmes", "sessions", "sess-expired.json"), JSON.stringify(expiredSession), "utf8");
+  await fs.writeFile(path.join(root, ".codmes", "sessions", "sess-active.json"), JSON.stringify(activeSession), "utf8");
   
   // Auto-archive
   const archiveRes = await archiveExpiredSessions(root, { thresholdDays: 30 });
   assert.equal(archiveRes.archivedCount, 1);
   
-  const sess1 = JSON.parse(await fs.readFile(path.join(root, ".ai-workspace", "sessions", "sess-expired.json"), "utf8"));
+  const sess1 = JSON.parse(await fs.readFile(path.join(root, ".codmes", "sessions", "sess-expired.json"), "utf8"));
   assert.ok(sess1.archivedAt);
   assert.equal(sess1.visibleInSidebar, false);
   
-  const sess2 = JSON.parse(await fs.readFile(path.join(root, ".ai-workspace", "sessions", "sess-active.json"), "utf8"));
+  const sess2 = JSON.parse(await fs.readFile(path.join(root, ".codmes", "sessions", "sess-active.json"), "utf8"));
   assert.ok(!sess2.archivedAt);
   assert.equal(sess2.visibleInSidebar, true);
   
   // Manual unarchive
   await unarchiveSession(root, "sess-expired");
-  const sessRestore = JSON.parse(await fs.readFile(path.join(root, ".ai-workspace", "sessions", "sess-expired.json"), "utf8"));
+  const sessRestore = JSON.parse(await fs.readFile(path.join(root, ".codmes", "sessions", "sess-expired.json"), "utf8"));
   assert.equal(sessRestore.archivedAt, null);
   assert.equal(sessRestore.visibleInSidebar, true);
 });
 
 test("Session Archive: general chat overflow keeps latest 30 visible and exempts scoped chats", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-session-overflow-"));
-  const sessionsDir = path.join(root, ".ai-workspace", "sessions");
-  const approvalsDir = path.join(root, ".ai-workspace", "approvals");
+  const sessionsDir = path.join(root, ".codmes", "sessions");
+  const approvalsDir = path.join(root, ".codmes", "approvals");
   await fs.mkdir(sessionsDir, { recursive: true });
   await fs.mkdir(approvalsDir, { recursive: true });
 

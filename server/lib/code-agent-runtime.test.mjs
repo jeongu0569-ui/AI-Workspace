@@ -104,21 +104,21 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.ok(result.taskMemory.readFiles.includes("Code/demo-app/src/index.js"));
 
   const task = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.equal(task.type, "code");
   assert.equal(task.status, "inspected");
   assert.equal(task.scopePath, "Code/demo-app");
-  assert.equal(task.git.diffRef, `.ai-workspace/diffs/${result.taskId}.diff`);
+  assert.equal(task.git.diffRef, `.codmes/diffs/${result.taskId}.diff`);
   assert.ok(task.taskMemory.readFiles.includes("Code/demo-app/src/index.js"));
   assert.ok(task.taskMemory.nextSteps.some((step) => step.includes("patch proposal")));
 
-  const toolLog = await fs.readFile(path.join(root, ".ai-workspace", "tool-logs", "tool-events.jsonl"), "utf8");
+  const toolLog = await fs.readFile(path.join(root, ".codmes", "tool-logs", "tool-events.jsonl"), "utf8");
   assert.match(toolLog, /code.inspect.start/);
   assert.match(toolLog, /code.inspect.complete/);
 
-  const decisions = await fs.readFile(path.join(root, ".ai-workspace", "decisions", "events.jsonl"), "utf8");
+  const decisions = await fs.readFile(path.join(root, ".codmes", "decisions", "events.jsonl"), "utf8");
   assert.match(decisions, /code.inspect.plan/);
 
   await assert.rejects(
@@ -142,7 +142,7 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.match(patch.proposal.diffRef, /\.diff$/);
   assert.ok(patch.taskMemory.proposedFiles.includes("Code/demo-app/src/index.js"));
   const proposedTask = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.ok(proposedTask.taskMemory.proposedFiles.includes("Code/demo-app/src/index.js"));
@@ -165,7 +165,7 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.deepEqual(applied.filesChanged, ["Code/demo-app/src/index.js"]);
   assert.ok(applied.taskMemory.changedFiles.includes("Code/demo-app/src/index.js"));
   const patchedTask = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.ok(patchedTask.taskMemory.changedFiles.includes("Code/demo-app/src/index.js"));
@@ -183,7 +183,7 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.ok(check.taskMemory.commands.includes("npm run test"));
 
   const checkedTask = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.equal(checkedTask.status, "checked");
@@ -195,7 +195,7 @@ test("code agent runtime inspects a Code project and records artifacts", async (
   assert.equal(checkedTask.taskMemory.checkResults.at(-1).allPassed, true);
   assert.ok(checkedTask.taskMemory.nextSteps.some((step) => step.includes("Review git diff")));
   const approval = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "approvals", `${patch.approvalRequest.id}.json`),
+    path.join(root, ".codmes", "approvals", `${patch.approvalRequest.id}.json`),
     "utf8"
   ));
   assert.equal(approval.status, "approved");
@@ -234,13 +234,13 @@ test("code agent runtime rejects a proposed patch without changing files", async
   );
 
   const rejectedTask = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.equal(rejectedTask.patchProposals[0].status, "rejected");
   assert.equal(rejectedTask.patchProposals[0].rejectionReason, "Wrong direction.");
   const approval = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "approvals", `${patch.approvalRequest.id}.json`),
+    path.join(root, ".codmes", "approvals", `${patch.approvalRequest.id}.json`),
     "utf8"
   ));
   assert.equal(approval.status, "rejected");
@@ -282,7 +282,7 @@ test("code agent runtime can run approved checks immediately after applying a pa
   );
 
   const checkedTask = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.equal(checkedTask.status, "checked");
@@ -396,7 +396,7 @@ test("code agent runtime generates automatic patches using mock LLM server", asy
   assert.ok(patch.proposal.changes[0].newHash);
 
   const proposedTask = JSON.parse(await fs.readFile(
-    path.join(root, ".ai-workspace", "tasks", `${result.taskId}.json`),
+    path.join(root, ".codmes", "tasks", `${result.taskId}.json`),
     "utf8"
   ));
   assert.equal(proposedTask.status, "patch_proposed");

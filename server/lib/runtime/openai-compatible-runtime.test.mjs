@@ -9,7 +9,7 @@ import { setCredentialValue, setDefaultModel, writeRuntimeConfig } from "./confi
 import { writeSecurityConfig } from "./security-policy.mjs";
 import { saveToolModeOverride } from "./tool-mode-registry.mjs";
 
-test("OpenAI-compatible runtime streams chat completions from AI Workspace config", async () => {
+test("OpenAI-compatible runtime streams chat completions from Codmes config", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-"));
   await setDefaultModel(root, "custom", "demo-model");
   await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
@@ -1052,7 +1052,7 @@ rl.on("line", (line) => {
   const res = await client.callTool("test_tool", { val: "world" });
   assert.deepEqual(res.content, [{ type: "text", text: "hello world" }]);
 
-  const logFile = path.join(root, ".ai-workspace", "tool-logs", "mcp-lifecycle.stderr.log");
+  const logFile = path.join(root, ".codmes", "tool-logs", "mcp-lifecycle.stderr.log");
   const logContent = await fs.readFile(logFile, "utf8");
   assert.match(logContent, /mcp log test/);
 

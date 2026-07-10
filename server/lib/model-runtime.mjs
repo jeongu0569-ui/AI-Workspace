@@ -10,7 +10,7 @@ export class ModelRuntime {
 
     return {
       runtime: "model-runtime",
-      source: "ai-workspace",
+      source: "codmes",
       providers: [],
       models
     };
