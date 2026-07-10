@@ -129,7 +129,7 @@ Code는 서버의 `Code/` 폴더 안 프로젝트를 다루는 화면입니다.
 - 채팅 세션 제목, 요약, 메시지 검색
 - 사용자, 프로젝트, 폴더, 세션 메모리 검색
 
-docsearch MCP가 설정된 경우 문서와 PDF 질문에서 docsearch를 우선 사용하고, 사용할 수 없으면 기본 Workspace 검색으로 돌아갑니다. 네이티브 벡터 인덱스와 OCR은 계속 개발 중입니다.
+docsearch MCP가 설정된 경우 문서와 PDF 질문에서 docsearch를 우선 사용하고, 사용할 수 없으면 기본 Workspace 검색으로 돌아갑니다. Codmes 자체에 OCR 엔진이나 네이티브 임베딩/벡터 DB를 중복 구현하지 않습니다. 스캔 PDF OCR이나 semantic RAG가 필요하면 서버 쪽에 docsearch-mcp 같은 외부 검색 도구를 연결하는 방향입니다.
 
 ### 6. Approvals와 Tasks
 
@@ -387,8 +387,8 @@ WebSocket과 raw 파일 URL은 token query를 사용할 수 있습니다. Apple 
 
 ## 현재 한계와 앞으로의 작업
 
-- 네이티브 벡터 RAG 백엔드는 초기 인터페이스 단계입니다.
-- OCR 기반 PDF 검색은 아직 계획 단계입니다.
+- 앱 내부 네이티브 벡터 DB, 임베딩 인덱싱, 자체 OCR은 제품 범위에서 제외했습니다. 필요한 경우 서버에 외부 docsearch/OCR 파이프라인을 연결합니다.
+- 텍스트 레이어가 있는 PDF와 Markdown/텍스트 파일은 기존 추출 및 Workspace 검색 경로로 처리합니다.
 - PDF 필기와 Apple Pencil 주석 저장은 완성되지 않았습니다.
 - Code 화면은 아직 VS Code 수준의 LSP, 디버거, 확장 기능을 제공하지 않습니다.
 - 모델별 OAuth 흐름은 프로바이더마다 구현 수준이 다릅니다.

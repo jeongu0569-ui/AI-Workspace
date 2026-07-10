@@ -60,6 +60,44 @@ test("OpenAI-compatible runtime streams chat completions from Codmes config", as
   assert.deepEqual(events.map((event) => event.type), ["turn.start", "message.delta", "message.delta", "turn.complete"]);
 });
 
+test("OpenAI-compatible runtime streams Ollama reasoning deltas as activity events", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-ollama-reasoning-"));
+  await setDefaultModel(root, "ollama-local", "gemma4:e2b-mlx");
+
+  const runtime = new OpenAICompatibleRuntime({
+    workspaceRoot: root,
+    fetchImpl: async () => ({
+      ok: true,
+      headers: { get: () => "text/event-stream" },
+      body: streamChunks([
+        'data: {"choices":[{"delta":{"role":"assistant","content":"","reasoning":"Thinking"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"","reasoning":" Process"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"안녕하세요"}}]}\n\n',
+        'data: [DONE]\n\n'
+      ])
+    })
+  });
+
+  const events = [];
+  runtime.on("event", (event) => events.push(event));
+
+  const result = await runtime.submitPrompt({
+    sessionId: "session-ollama",
+    message: "안녕"
+  });
+
+  assert.equal(result.reply, "안녕하세요");
+  assert.equal(result.reasoning, "Thinking Process");
+  assert.deepEqual(events.map((event) => event.type), [
+    "turn.start",
+    "reasoning.delta",
+    "reasoning.delta",
+    "message.delta",
+    "turn.complete"
+  ]);
+  assert.equal(events.filter((event) => event.type === "reasoning.delta").map((event) => event.text).join(""), "Thinking Process");
+});
+
 test("OpenAI-compatible runtime uses Codex Responses transport for OpenAI Codex", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-codex-"));
   await writeRuntimeConfig(root, {

@@ -254,7 +254,8 @@ workspace-scan
 
 This is a dependency-free fallback that scans text files in the workspace. It is
 not a vector index and does not replace docsearch-mcp. It gives the client and
-server a stable search API while the proper indexer is added.
+server a stable search API while semantic search remains an optional external
+server-side integration.
 
 ### `POST /api/search`
 
@@ -286,10 +287,10 @@ Response:
 }
 ```
 
-Future provider:
+External provider:
 
 ```text
-docsearch-mcp / vector index
+docsearch-mcp / external search tool
 ```
 
 ### `GET /api/index/status`
@@ -298,8 +299,8 @@ Returns the current metadata index summary from `.codmes/index/files.json`.
 
 ### `POST /api/index/rebuild`
 
-Rebuilds the current workspace file metadata index. This indexes file metadata,
-not vector embeddings.
+Rebuilds the current workspace file metadata index. This indexes file metadata
+and extracted text cache state, not vector embeddings.
 
 ## Runtime Management
 

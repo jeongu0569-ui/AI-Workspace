@@ -94,7 +94,7 @@ Remaining:
 
 - Stronger semantic memory ranking.
 - Richer folder/project conversation management UI.
-- Embedding-backed recall once native vector indexing matures.
+- Better use of external docsearch/MCP results for broad workspace recall.
 
 ## Phase 4: Apple Client
 
@@ -127,12 +127,11 @@ Status: in progress.
 - PDF metadata and text extraction cache: first pass done.
 - Workspace metadata search: done.
 - docsearch MCP integration path and fallback: done.
-- Vector/RAG backend design and provider skeleton: started.
+- External search/RAG direction documented: done.
 
 Remaining:
 
-- Native vector index implementation.
-- OCR.
 - PDF annotation and Apple Pencil storage/sync.
 - Server-side thumbnails and page previews.
 - Search/index status UI.
+- More polished docsearch MCP setup/status UX.

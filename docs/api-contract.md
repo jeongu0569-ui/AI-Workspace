@@ -93,8 +93,8 @@ Current search provider is `workspace-scan`. It supports content search,
 filename hits, scope filtering, `kind`/`kinds`, modified date filters, and
 first-pass PDF text extraction through `.codmes/index/pdf-text/`.
 
-Native RAG design is tracked in `docs/rag-backend-design.md`. docsearch MCP
-integration is tracked in `docs/docsearch-mcp-integration.md`.
+External search/RAG direction is tracked in `docs/rag-backend-design.md`.
+docsearch MCP integration is tracked in `docs/docsearch-mcp-integration.md`.
 
 ## Provider, Auth, And Models
 
@@ -344,8 +344,8 @@ exists.
 ## Known Gaps
 
 - OAuth provider flow is not complete.
-- Native vector/RAG storage is still interface-only. Current server search is a
-  text/PDF scan fallback, and docsearch MCP is the recommended external semantic
-  search path.
+- Built-in search is a text/PDF scan fallback. Codmes does not include an
+  internal OCR engine or native vector database; docsearch MCP is the
+  recommended external semantic search path.
 - Audit log exists for security policy decisions. More runtime subsystems should
   write explicit approved/rejected records as they become first-class actions.

@@ -86,12 +86,15 @@ workspace search and returns:
 }
 ```
 
-## Native RAG Path
+## Codmes Search Path
 
-The native path starts with:
+Codmes keeps a lightweight built-in search path and delegates semantic RAG to
+external tools:
 
-- chunk schema in `server/lib/rag/vector-provider.mjs`
 - PDF text cache in `.codmes/index/pdf-text/`
-- runtime injection fields: `searchResults` and `ragChunks`
+- runtime injection field: `searchResults`
+- optional MCP/docsearch tool calls for semantic document search
 
-docsearch MCP remains useful while native vector storage is being implemented.
+Codmes does not currently implement its own OCR engine, embedding runner, or
+vector database. docsearch MCP remains the recommended path when semantic search
+or indexed PDF/document retrieval is needed.

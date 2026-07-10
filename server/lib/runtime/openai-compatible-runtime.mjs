@@ -124,6 +124,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
           sessionId: params.sessionId,
           runtimeSessionId: params.sessionId,
           reply: result.reply,
+          reasoning: result.reasoning,
           provider: selection.provider.id,
           model: selection.model,
           toolRounds: result.toolRounds
@@ -163,6 +164,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
 
   async runChatLoop(selection, messages, params) {
     let reply = "";
+    let reasoning = "";
     let toolRounds = 0;
     let activeParams = {
       ...params,
@@ -173,8 +175,9 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     for (let round = 0; round <= maxToolRounds; round += 1) {
       const result = await this.requestChatCompletion(selection, messages, activeParams);
       reply += result.text;
+      if (result.reasoning) reasoning += result.reasoning;
       if (!result.toolCalls.length) {
-        return { reply, toolRounds };
+        return { reply, reasoning, toolRounds };
       }
 
       toolRounds += 1;
@@ -378,8 +381,8 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     if (contentType.includes("application/json")) {
       const json = await response.json();
       text = extractNonStreamingText(json);
-      const reasoning = json.choices?.[0]?.message?.reasoning_content
-        || json.choices?.[0]?.delta?.reasoning_content
+      const reasoning = extractReasoningField(json.choices?.[0]?.message)
+        || extractReasoningField(json.choices?.[0]?.delta)
         || "";
       
       let finalContent = text;
@@ -1439,6 +1442,18 @@ function parseThinkTags(str) {
   return { text, reasoning };
 }
 
+function extractReasoningField(value) {
+  if (!value || typeof value !== "object") return "";
+  return String(
+    value.reasoning_content
+      || value.reasoning
+      || value.thinking
+      || value.reasoningContent
+      || value.thinking_content
+      || ""
+  );
+}
+
 async function* parseOpenAIStream(response) {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1463,7 +1478,7 @@ async function* parseOpenAIStream(response) {
             || json.choices?.[0]?.message?.content
             || json.output_text
             || "";
-          const reasoning = json.choices?.[0]?.delta?.reasoning_content || "";
+          const reasoning = extractReasoningField(json.choices?.[0]?.delta);
           const toolCalls = json.choices?.[0]?.delta?.tool_calls || [];
           
           if (reasoning) {
@@ -1742,6 +1757,7 @@ function safeToolSegment(value) {
 function recallToolPolicyLines() {
   return [
     "Recall policy: use memory_search for compact long-term facts, preferences, project memories, folder memories, and session summaries.",
+    "Recall policy: if relevant long-term memory directly answers the latest user question, use it directly and do not search again.",
     "Recall policy: use conversation_search to find past sessions/messages and conversation_read only after conversation_search returns concrete sessionId/messageIds.",
     "Recall policy: do not treat memory_search results as exact transcripts; use conversation_read for exact wording and surrounding context."
   ];

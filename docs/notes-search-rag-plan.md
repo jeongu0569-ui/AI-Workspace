@@ -57,7 +57,9 @@ GET  /api/index/status
 POST /api/index/rebuild
 ```
 
-This is a metadata index, not yet a vector index.
+This is a metadata and text-scan index. It is intentionally not a native vector
+index; semantic retrieval should come from an external server tool such as
+docsearch-mcp.
 
 ## Current Search
 
@@ -109,7 +111,7 @@ Phase 2 target is not full GoodNotes-level annotation yet. The stable order is:
 3. Add PDF text extraction where possible.
 4. Add extracted text chunks to the search layer.
 5. Add server-side annotation storage.
-6. Add OCR for scanned PDFs later.
+6. Let external OCR/search pipelines handle scanned PDFs when needed.
 
 PDF annotations should not be stored only inside a client-local app cache. They
 should be workspace-owned so iPhone, iPad, and Mac see the same annotation
@@ -219,6 +221,6 @@ Next:
 
 - Full multi-user permission model
 - Handwritten PDF annotation sync
-- OCR for scanned PDFs
+- Built-in OCR for scanned PDFs
 - Full vector database ownership
 - Client-side direct indexing

@@ -44,7 +44,7 @@ export function searchStatus(workspaceRoot) {
     available: true,
     indexed: false,
     realtimeIndexing: false,
-    description: "Dependency-free text scan fallback. Replace with docsearch-mcp/vector index later.",
+    description: "Dependency-free text scan fallback. Use docsearch-mcp or another external search tool for semantic RAG.",
     searchableExtensions: Array.from(SEARCHABLE_EXTENSIONS).sort()
   };
 }
