@@ -129,7 +129,8 @@ test("OpenAI-compatible runtime uses Codex Responses transport for OpenAI Codex"
     }
   });
 
-  const result = await runtime.submitPrompt({ sessionId: "session-codex", message: "안녕" });
+  const longSessionId = "session-2026-07-13T09-00-00-000Z-12345678-1234-4234-9234-123456789abc";
+  const result = await runtime.submitPrompt({ sessionId: longSessionId, message: "안녕" });
 
   assert.equal(result.reply, "안녕하세요");
   assert.equal(result.provider, "openai-codex");
@@ -140,6 +141,11 @@ test("OpenAI-compatible runtime uses Codex Responses transport for OpenAI Codex"
   assert.equal(request.body.model, "gpt-5.4-mini");
   assert.equal(request.body.stream, true);
   assert.equal(request.body.store, false);
+  assert.equal(typeof request.body.prompt_cache_key, "string");
+  assert.ok(request.body.prompt_cache_key.length <= 64);
+  assert.equal(typeof request.options.headers.session_id, "string");
+  assert.ok(request.options.headers.session_id.length <= 64);
+  assert.equal(request.options.headers["x-client-request-id"], request.options.headers.session_id);
   assert.ok(Array.isArray(request.body.input));
   assert.equal(request.body.input.at(-1).content[0].type, "input_text");
 });

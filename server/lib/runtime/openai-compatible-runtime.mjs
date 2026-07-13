@@ -507,9 +507,10 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       ...selection.extraHeaders
     };
     if (selection.apiKey) headers.authorization = `Bearer ${selection.apiKey}`;
-    if (params.sessionId) {
-      headers.session_id = String(params.sessionId);
-      headers["x-client-request-id"] = String(params.sessionId);
+    const cacheScopeId = codexCacheScopeId(params.sessionId);
+    if (cacheScopeId) {
+      headers.session_id = cacheScopeId;
+      headers["x-client-request-id"] = cacheScopeId;
     }
 
     const body = {
@@ -518,6 +519,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       input,
       store: false,
       stream: true,
+      prompt_cache_key: codexPromptCacheKey(instructions, responseTools) || cacheScopeId,
       ...responsesReasoningOptions(params.reasoningEffort)
     };
     if (responseTools.length) {
@@ -1455,6 +1457,29 @@ function responsesReasoningOptions(value) {
     reasoning: { effort: normalized, summary: "auto" },
     include: ["reasoning.encrypted_content"]
   };
+}
+
+function codexPromptCacheKey(instructions, tools) {
+  if (!instructions && (!tools || !tools.length)) return null;
+  const sortedTools = (tools || [])
+    .filter((tool) => tool && typeof tool === "object")
+    .slice()
+    .sort((a, b) => String(a.name || a.type || "").localeCompare(String(b.name || b.type || "")));
+  const toolsPart = sortedTools.length
+    ? JSON.stringify(sortedTools)
+    : "";
+  const digest = createHash("sha256")
+    .update(`${instructions || ""}\0${toolsPart}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `pck_${digest}`;
+}
+
+function codexCacheScopeId(sessionId) {
+  const raw = String(sessionId || "").trim();
+  if (!raw) return "";
+  const digest = createHash("sha256").update(raw).digest("hex").slice(0, 24);
+  return `codmes_${digest}`;
 }
 
 function getPartialMatch(str, target) {

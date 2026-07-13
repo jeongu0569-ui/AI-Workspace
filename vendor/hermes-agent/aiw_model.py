@@ -11,7 +11,10 @@ def main() -> None:
     # HERMES_HOME to AI Workspace's private runtime configuration directory.
     from hermes_cli.main import main as hermes_main
 
-    sys.argv = ["aiw", "model", *sys.argv[1:]]
+    # Preserve upstream Hermes model TUI behavior and presentation. Codmes only
+    # scopes HERMES_HOME/PYTHONPATH from the Node launcher; the interactive flow
+    # itself should behave like `hermes model`.
+    sys.argv = ["hermes", "model", *sys.argv[1:]]
     hermes_main()
 
 
