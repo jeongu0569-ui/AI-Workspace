@@ -11,7 +11,7 @@ export const BUILTIN_PROVIDERS = [
   { id: "novita", name: "NovitaAI", authType: "api_key", tab: "keys", env: ["AIW_NOVITA_API_KEY", "NOVITA_API_KEY"], baseUrlEnv: "NOVITA_BASE_URL", models: ["moonshotai/kimi-k2.5", "minimax/minimax-m2.7", "zai-org/glm-5"] },
   { id: "lmstudio", name: "LM Studio", authType: "api_key", tab: "keys", env: ["AIW_LM_API_KEY", "LM_API_KEY"], baseUrlEnv: "LM_BASE_URL", defaultBaseUrl: "http://127.0.0.1:1234/v1", models: ["local-model"] },
   { id: "anthropic", name: "Anthropic", authType: "api_key", tab: "keys", env: ["AIW_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"], baseUrlEnv: "ANTHROPIC_BASE_URL", models: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6"] },
-  { id: "openai-codex", name: "OpenAI Codex", authType: "oauth_external", tab: "accounts", env: [], models: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"] },
+  { id: "openai-codex", name: "OpenAI Codex", authType: "oauth_external", tab: "accounts", env: [], models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"] },
   { id: "openai-api", name: "OpenAI API", authType: "api_key", tab: "keys", env: ["AIW_OPENAI_API_KEY", "OPENAI_API_KEY"], baseUrlEnv: "OPENAI_BASE_URL", models: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5-mini"] },
   { id: "alibaba", name: "Qwen Cloud", authType: "api_key", tab: "keys", env: ["AIW_DASHSCOPE_API_KEY", "DASHSCOPE_API_KEY"], baseUrlEnv: "DASHSCOPE_BASE_URL", models: ["qwen3.7-max", "qwen3.6-plus", "qwen3-coder-plus"] },
   { id: "xai-oauth", name: "xAI Grok OAuth", authType: "oauth_external", tab: "accounts", env: [], models: ["grok-build-0.1", "grok-composer-2.5-fast", "grok-4.3"] },

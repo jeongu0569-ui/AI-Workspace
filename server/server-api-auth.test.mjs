@@ -78,6 +78,9 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
 
     const openAiModels = await fetchJson(`${baseUrl}/api/providers/openai-codex/models`, { token });
     assert.equal(openAiModels.provider, "openai-codex");
+    assert.ok(openAiModels.models.includes("gpt-5.6-sol"));
+    assert.ok(openAiModels.models.includes("gpt-5.6-terra"));
+    assert.ok(openAiModels.models.includes("gpt-5.6-luna"));
     assert.ok(openAiModels.models.includes("gpt-5.4-mini"));
 
     const storedAuth = await fetchJson(`${baseUrl}/api/auth/ollama-local`, {
