@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Codmes document extraction worker.
 
-This worker uses Python stdlib fallbacks first, and automatically upgrades
-extraction quality when Codmes bootstrap libraries or optional native tools are
-installed:
+This worker uses Python stdlib fallbacks first, and upgrades extraction quality
+with libraries installed by Codmes runtime bootstrap:
 
-- PyMuPDF: PDF text extraction and scanned-PDF page rendering
+- PyMuPDF: PDF text extraction and PDF block coordinates
 - MarkItDown/python-docx/python-pptx/openpyxl/xlrd: document/table extraction
-- LibreOffice/soffice: legacy office and HWP/HWPX/PPT/PPTX -> PDF -> text
 - openpyxl/xlrd: spreadsheet extraction
-- tesseract: image/scanned-PDF OCR text recognition
-- pdftoppm: optional scanned-PDF page rendering fallback
+
+Codmes intentionally does not depend on native OCR or office-conversion
+binaries such as tesseract, pdftoppm, LibreOffice, or soffice. Scanned images
+inside PDFs are therefore not searchable until a library-owned OCR path is added.
 
 The Node server owns scheduling, caching, and indexing. This script only turns
 one workspace file into normalized JSON text blocks.
@@ -24,8 +24,6 @@ import io
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
 import zipfile
@@ -88,10 +86,8 @@ def extract_bytes(data: bytes, name: str, args: argparse.Namespace, depth: int) 
         blocks.extend(pdf_blocks)
         warnings.extend(pdf_warnings)
     elif ext in IMAGE_EXTS:
-        text, ocr_blocks, warning = image_to_blocks(data, ext, name=name, page=None, kind="image")
-        if warning:
-            warnings.append(warning)
-        blocks.extend(ocr_blocks)
+        text = ""
+        warnings.append("Image OCR is not enabled in Codmes core.")
     elif ext == ".hwpx":
         text = hwpx_to_text(data)
         if text:
@@ -169,13 +165,7 @@ def extract_pdf(data: bytes, name: str) -> tuple[str, list[dict[str, Any]], list
         blocks.append(block(name, text, source="pdf-text", page=None, kind="pdf", metadata={"pageCount": page_count}))
         return text, blocks, warnings
 
-    ocr_text, ocr_blocks, ocr_warnings = ocr_pdf_bytes(data, name)
-    warnings.extend(ocr_warnings)
-    if ocr_text:
-        blocks.extend(ocr_blocks)
-        return "\n\n".join(ocr_text).strip(), blocks, warnings
-
-    return "", blocks, warnings or ["No text layer found and OCR tools were unavailable or returned no text."]
+    return "", blocks, warnings or ["No text layer found; scanned PDF OCR is not enabled in Codmes core."]
 
 
 def pymupdf_pdf_to_blocks(data: bytes, name: str) -> tuple[str, list[dict[str, Any]], str | None]:
@@ -265,225 +255,6 @@ def estimate_pdf_pages(data: bytes) -> int | None:
     return len(matches) if matches else None
 
 
-def ocr_pdf_bytes(data: bytes, name: str) -> tuple[list[str], list[dict[str, Any]], list[str]]:
-    warnings: list[str] = []
-    blocks: list[dict[str, Any]] = []
-    pdftoppm = shutil.which("pdftoppm")
-    tesseract = shutil.which("tesseract")
-    if not tesseract:
-        return [], [], ["OCR skipped: tesseract not found."]
-    with tempfile.TemporaryDirectory(prefix="codmes-pdf-ocr-") as tmp:
-        tmp_path = Path(tmp)
-        pdf_path = tmp_path / "input.pdf"
-        pdf_path.write_bytes(data)
-        if pdftoppm:
-            prefix = tmp_path / "page"
-            result = subprocess.run(
-                [pdftoppm, "-png", "-r", os.getenv("CODMES_OCR_DPI", "160"), str(pdf_path), str(prefix)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=int(os.getenv("CODMES_PDF_RENDER_TIMEOUT_SECONDS", "90")),
-                check=False,
-            )
-            if result.returncode != 0:
-                return [], [], [f"pdftoppm failed: {result.stderr.strip() or result.stdout.strip()}"]
-            page_images = sorted(tmp_path.glob("page-*.png"))
-        elif fitz is not None:
-            page_images, render_warning = render_pdf_pages_with_pymupdf(data, tmp_path)
-            if render_warning:
-                warnings.append(render_warning)
-        else:
-            return [], [], ["OCR skipped: no PDF renderer found. Install PyMuPDF through runtime bootstrap or provide pdftoppm."]
-        texts: list[str] = []
-        for page_number, image in enumerate(page_images, start=1):
-            page_text, page_blocks, warning = image_path_to_blocks(image, name=name, page=page_number, kind="pdf")
-            if warning:
-                warnings.append(warning)
-            texts.append(page_text)
-            blocks.extend(page_blocks)
-        return texts, blocks, warnings
-
-
-def render_pdf_pages_with_pymupdf(data: bytes, tmp_path: Path) -> tuple[list[Path], str | None]:
-    if fitz is None:
-        return [], "PyMuPDF not installed."
-    dpi = int(os.getenv("CODMES_OCR_DPI", "160"))
-    scale = dpi / 72
-    matrix = fitz.Matrix(scale, scale)
-    try:
-        doc = fitz.open(stream=data, filetype="pdf")
-    except Exception as exc:
-        return [], f"PyMuPDF render open failed: {exc}"
-    images: list[Path] = []
-    try:
-        for index, page in enumerate(doc, start=1):
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
-            image_path = tmp_path / f"pymupdf-page-{index:04d}.png"
-            pix.save(str(image_path))
-            images.append(image_path)
-    finally:
-        doc.close()
-    return images, None
-
-
-def image_to_blocks(data: bytes, ext: str, *, name: str, page: int | None, kind: str) -> tuple[str, list[dict[str, Any]], str | None]:
-    tesseract = shutil.which("tesseract")
-    if not tesseract:
-        return "", [], "OCR skipped: tesseract not found."
-    with tempfile.TemporaryDirectory(prefix="codmes-image-ocr-") as tmp:
-        image_path = Path(tmp) / f"image{ext if ext != '.heic' else '.png'}"
-        image_path.write_bytes(data)
-        return image_path_to_blocks(image_path, name=name, page=page, kind=kind)
-
-
-def image_path_to_blocks(image_path: Path, *, name: str, page: int | None, kind: str) -> tuple[str, list[dict[str, Any]], str | None]:
-    langs = os.getenv("CODMES_OCR_LANGS", "kor+eng")
-    result = subprocess.run(
-        [shutil.which("tesseract") or "tesseract", str(image_path), "stdout", "-l", langs, "tsv"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        timeout=int(os.getenv("CODMES_OCR_TIMEOUT_SECONDS", "60")),
-        check=False,
-    )
-    if result.returncode != 0:
-        return "", [], f"tesseract failed for {image_path.name}: {result.stderr.strip()}"
-    image_width, image_height = image_size(image_path)
-    ocr_blocks = parse_tesseract_tsv(
-        result.stdout,
-        path=name,
-        page=page,
-        kind=kind,
-        image_width=image_width,
-        image_height=image_height,
-    )
-    text = normalize_text("\n".join(item["text"] for item in ocr_blocks))
-    return text, ocr_blocks, None
-
-
-def parse_tesseract_tsv(
-    tsv: str,
-    *,
-    path: str,
-    page: int | None,
-    kind: str,
-    image_width: int | None = None,
-    image_height: int | None = None,
-) -> list[dict[str, Any]]:
-    lines = [line for line in str(tsv or "").splitlines() if line.strip()]
-    if not lines:
-        return []
-    header = lines[0].split("\t")
-    rows: list[dict[str, str]] = []
-    for line in lines[1:]:
-        values = line.split("\t")
-        if len(values) < len(header):
-            values.extend([""] * (len(header) - len(values)))
-        rows.append(dict(zip(header, values)))
-
-    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = {}
-    for row in rows:
-        if row.get("level") != "5":
-            continue
-        text = (row.get("text") or "").strip()
-        if not text:
-            continue
-        try:
-            conf = float(row.get("conf") or "-1")
-            left = int(float(row.get("left") or "0"))
-            top = int(float(row.get("top") or "0"))
-            width = int(float(row.get("width") or "0"))
-            height = int(float(row.get("height") or "0"))
-        except ValueError:
-            continue
-        if conf < 0 or width <= 0 or height <= 0:
-            continue
-        key = (
-            row.get("page_num") or "1",
-            row.get("block_num") or "0",
-            row.get("par_num") or "0",
-            row.get("line_num") or "0",
-            row.get("word_num") or "0",
-        )
-        line_key = key[:-1]
-        groups.setdefault(line_key, []).append({
-            "text": text,
-            "conf": conf,
-            "left": left,
-            "top": top,
-            "right": left + width,
-            "bottom": top + height,
-        })
-
-    blocks: list[dict[str, Any]] = []
-    for index, (_key, words) in enumerate(groups.items(), start=1):
-        words.sort(key=lambda item: (item["top"], item["left"]))
-        text = normalize_text(" ".join(word["text"] for word in words))
-        if not text:
-            continue
-        left = min(word["left"] for word in words)
-        top = min(word["top"] for word in words)
-        right = max(word["right"] for word in words)
-        bottom = max(word["bottom"] for word in words)
-        bbox = {
-            "unit": "pixel",
-            "x": left,
-            "y": top,
-            "width": right - left,
-            "height": bottom - top,
-        }
-        if image_width and image_height:
-            bbox["imageWidth"] = image_width
-            bbox["imageHeight"] = image_height
-            bbox["normalized"] = {
-                "x": left / image_width,
-                "y": top / image_height,
-                "width": (right - left) / image_width,
-                "height": (bottom - top) / image_height,
-            }
-        blocks.append(block(
-            path,
-            text,
-            source="ocr",
-            page=page,
-            kind=kind,
-            metadata={
-                "ocrEngine": "tesseract",
-                "lineIndex": index,
-                "averageConfidence": round(sum(word["conf"] for word in words) / len(words), 2),
-                "imageWidth": image_width,
-                "imageHeight": image_height,
-            },
-            bbox=bbox,
-            confidence=round(sum(word["conf"] for word in words) / len(words), 2),
-        ))
-    return blocks
-
-
-def image_size(image_path: Path) -> tuple[int | None, int | None]:
-    data = image_path.read_bytes()
-    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
-        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
-    if data.startswith(b"\xff\xd8"):
-        index = 2
-        while index + 9 < len(data):
-            if data[index] != 0xFF:
-                index += 1
-                continue
-            marker = data[index + 1]
-            index += 2
-            if marker in (0xD8, 0xD9):
-                continue
-            length = int.from_bytes(data[index:index + 2], "big")
-            if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
-                height = int.from_bytes(data[index + 3:index + 5], "big")
-                width = int.from_bytes(data[index + 5:index + 7], "big")
-                return width, height
-            index += max(length, 2)
-    return None, None
-
-
 def hwpx_to_text(data: bytes) -> str:
     parts: list[str] = []
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -540,48 +311,7 @@ def office_to_text(data: bytes, filename: str) -> tuple[str, str | None]:
     markitdown_text, markitdown_warning = markitdown_to_text(data, filename)
     if markitdown_text:
         return markitdown_text, markitdown_warning
-    soffice = find_soffice()
-    if not soffice:
-        return "", markitdown_warning or "LibreOffice/soffice not found."
-    suffix = Path(filename).suffix or ".bin"
-    with tempfile.TemporaryDirectory(prefix="codmes-office-") as tmp:
-        tmp_path = Path(tmp)
-        input_path = tmp_path / f"input{suffix}"
-        input_path.write_bytes(data)
-        out_dir = tmp_path / "out"
-        out_dir.mkdir()
-        cmd = [
-            soffice,
-            "--headless",
-            "--nologo",
-            "--nofirststartwizard",
-            "--nodefault",
-            "--norestore",
-            "--convert-to",
-            "pdf",
-            input_path.name,
-            "--outdir",
-            str(out_dir),
-        ]
-        result = subprocess.run(
-            cmd,
-            cwd=input_path.parent,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=int(os.getenv("CODMES_LIBREOFFICE_TIMEOUT_SECONDS", "90")),
-            check=False,
-        )
-        if result.returncode != 0:
-            return "", f"LibreOffice conversion failed: {result.stderr.strip() or result.stdout.strip()}"
-        pdf = out_dir / "input.pdf"
-        if not pdf.exists():
-            candidates = list(out_dir.glob("*.pdf"))
-            pdf = candidates[0] if candidates else pdf
-        if not pdf.exists():
-            return "", "LibreOffice conversion did not produce a PDF."
-        text, _blocks, warnings = extract_pdf(pdf.read_bytes(), filename)
-        return text, "; ".join(warnings) if warnings else None
+    return "", markitdown_warning or "No library extractor available for this document."
 
 
 def markitdown_to_text(data: bytes, filename: str) -> tuple[str, str | None]:
@@ -599,17 +329,6 @@ def markitdown_to_text(data: bytes, filename: str) -> tuple[str, str | None]:
             return text, None if text else "MarkItDown returned no text."
         except Exception as exc:
             return "", f"MarkItDown failed: {exc}"
-
-
-def find_soffice() -> str | None:
-    configured = os.getenv("LIBREOFFICE_BIN")
-    candidates = [
-        configured,
-        shutil.which("soffice"),
-        shutil.which("libreoffice"),
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    ]
-    return next((candidate for candidate in candidates if candidate and Path(candidate).exists()), None)
 
 
 def hwp_ole_strings_to_text(data: bytes) -> str:

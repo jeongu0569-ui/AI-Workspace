@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { accessSync, constants as fsConstants, createReadStream, watch } from "node:fs";
+import { constants as fsConstants, createReadStream, watch } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -1425,15 +1425,10 @@ async function documentIngestDiagnostics() {
     python,
     requirements: "server/workers/document-ingest/requirements.txt",
     libraries: await pythonLibraryDiagnostics(python, ["fitz", "PIL", "openpyxl", "docx", "pptx", "markitdown"]),
-    binaries: {
-      tesseract: findExecutable("tesseract"),
-      pdftoppm: findExecutable("pdftoppm"),
-      soffice: findExecutable("soffice") || findExecutable("libreoffice") || await fileIfExists("/Applications/LibreOffice.app/Contents/MacOS/soffice")
-    },
     notes: [
-      "PyMuPDF handles most PDF text extraction and can render scanned PDF pages for OCR.",
-      "Tesseract is still required for OCR text recognition unless a future Apple Vision/server OCR provider is enabled.",
-      "LibreOffice/soffice is optional but improves legacy Office/HWP conversion quality."
+      "Codmes core document extraction uses runtime Python libraries only.",
+      "Native OCR and office-conversion binaries such as tesseract, pdftoppm, LibreOffice, and soffice are not part of the core dependency path.",
+      "Scanned PDF/image OCR is intentionally disabled until Codmes owns a library-based OCR provider."
     ]
   };
 }
@@ -1465,32 +1460,6 @@ async function pythonLibraryDiagnostics(python, modules) {
     return JSON.parse(result.stdout);
   } catch {
     return Object.fromEntries(modules.map((module) => [module, false]));
-  }
-}
-
-function findExecutable(name) {
-  const pathEnv = process.env.PATH || "";
-  const extensions = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
-  for (const dir of pathEnv.split(path.delimiter).filter(Boolean)) {
-    for (const ext of extensions) {
-      const candidate = path.join(dir, `${name}${ext}`);
-      try {
-        accessSync(candidate);
-      } catch {
-        continue;
-      }
-      return candidate;
-    }
-  }
-  return null;
-}
-
-async function fileIfExists(filePath) {
-  try {
-    await fs.access(filePath);
-    return filePath;
-  } catch {
-    return null;
   }
 }
 

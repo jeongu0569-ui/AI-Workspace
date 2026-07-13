@@ -16,14 +16,14 @@ or use scan fallback before answering.
 
 ## Scope Decisions
 
-- PDF text extraction and PDF page rendering use PyMuPDF from the Codmes
-  bootstrap environment when available.
-- Scanned PDF/image OCR uses server-side OCR. Tesseract is the current OCR
-  engine; future packaged builds can replace or supplement it with Apple Vision
-  OCR on macOS.
+- PDF text extraction and PDF block coordinates use PyMuPDF from the Codmes
+  bootstrap environment.
+- Scanned PDF/image OCR is intentionally excluded from Codmes Core for now.
+  Codmes should not require native binaries such as tesseract, pdftoppm,
+  LibreOffice, or soffice for the default search path.
 - No built-in embedding model runner.
 - Native vector storage is planned but not complete.
-- Text-layer PDFs, OCR text, Office/HWP/Excel/PPT extraction output, Markdown, code, and text documents are searchable through the built-in chunk index.
+- Text-layer PDFs, Office/HWP/Excel/PPT extraction output, Markdown, code, and text documents are searchable through the built-in chunk index.
 - External tools may still exist for unrelated capabilities, but document search is no longer a required MCP dependency.
 
 ## Runtime Context Injection
@@ -47,13 +47,13 @@ These are rendered into the system/context message as compact “Search results 
 First pass implemented:
 
 - PDF metadata appears under `GET /api/file/metadata`.
-- Text-layer and OCR/Office extraction utility caches text under `.codmes/index/documents/`.
+- Text-layer PDF and Office extraction utility caches text under `.codmes/index/documents/`.
 - Codmes Search can index and search extracted PDF, image, Office, HWP, spreadsheet, and ZIP text.
 
 Planned:
 
 - More robust PDF parsing for compressed streams.
-- PDF/image OCR blocks now preserve Tesseract TSV line boxes when available.
 - PDF viewer page navigation and search result highlight.
-- Selectable transparent text overlay in the Apple PDF viewer.
-- Better UI for search/index status, watched roots, OCR tools, and embedding model selection.
+- Library-owned OCR provider for scanned PDFs/images, without native binary requirements.
+- Selectable transparent text overlay in the Apple PDF viewer after OCR ownership is decided.
+- Better UI for search/index status, watched roots, and embedding model selection.

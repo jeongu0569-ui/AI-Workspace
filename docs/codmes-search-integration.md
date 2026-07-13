@@ -74,14 +74,16 @@ server/workers/document-ingest/extract_document.py
 Supported first-pass inputs:
 
 - PDF text layers
-- PDF text and page rendering through PyMuPDF installed by `npm run runtime:bootstrap`
-- scanned PDF OCR when `tesseract` is available; PyMuPDF renders pages and
-  `pdftoppm` remains an optional renderer fallback
-- image OCR when `tesseract` is available
+- PDF text and page block coordinates through PyMuPDF installed by `npm run runtime:bootstrap`
 - HWPX XML text
 - DOCX/PPTX/XLSX/XLS through Python libraries installed by bootstrap where possible
-- HWP/DOC/PPT/ODT/ODP through LibreOffice/`soffice` conversion when available
+- HWP/DOC/PPT/ODT/ODP through MarkItDown or internal fallbacks where possible
 - ZIP files containing supported document/image formats
+
+Codmes Core intentionally does not require native OCR or office-conversion
+binaries such as `tesseract`, `pdftoppm`, LibreOffice, or `soffice`. Scanned
+PDF/image OCR is therefore not part of the default search path until Codmes owns
+a library-based OCR provider.
 
 Extraction cache:
 
@@ -102,15 +104,13 @@ The worker returns blocks with:
 }
 ```
 
-`page` and `bbox` are already part of the schema so future PDF viewer work can
-open a search result at the matching page and highlight/copy OCR text. When
-Tesseract OCR is available, Codmes requests TSV output and stores line-level
-pixel bounding boxes plus normalized coordinates. The next client/PDF-viewer
-layer is to render those boxes as a selectable transparent text overlay. The
-Apple client now has the first server-owned PDF annotation layer in place:
-iOS/iPadOS page ink is stored through `GET/PUT /api/file/annotations`, while
-search-result page jumps, OCR highlight overlays, and selectable OCR text remain
-the next PDF/search integration step.
+`page` and `bbox` are already part of the schema so the PDF viewer can open a
+search result at the matching page and highlight text-layer blocks. The Apple
+client now has the first server-owned PDF annotation layer in place: iOS/iPadOS
+page ink is stored through `GET/PUT /api/file/annotations`, and text-layer PDF
+search results can jump to the matching page. Selectable OCR overlays are
+planned only after Codmes owns an OCR provider without native binary
+requirements.
 
 ## Direction
 

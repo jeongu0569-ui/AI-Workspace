@@ -112,11 +112,11 @@ Phase 2 uses a GoodNotes-style structure with a thin first feature set:
 
 1. Serve PDFs as raw files for client preview.
 2. Store file metadata in `.codmes/index/files.json`.
-3. Add PDF/Office/HWP/Excel/image text extraction where possible.
+3. Add PDF/Office/HWP/Excel text extraction where possible.
 4. Add extracted text blocks to the search layer.
 5. Store server-owned annotation layers in `.codmes/annotations`.
 6. Add iOS/iPadOS page-level PencilKit ink overlays through PDFKit.
-7. Add coordinate-accurate OCR overlays for PDF/image selection.
+7. Add page/coordinate-aware PDF search result highlights for text-layer blocks.
 
 PDF annotations should not be stored only inside a client-local app cache. They
 should be workspace-owned so iPhone, iPad, and Mac see the same annotation
@@ -221,7 +221,7 @@ Next:
 - show file metadata panel
 - show indexed/not indexed badges
 - show PDF text extraction state
-- show document extraction/OCR tool availability
+- show document extraction library availability
 - show search provider status
 - let users rebuild index from Settings/Diagnostics
 
@@ -229,6 +229,7 @@ Next:
 
 - Full multi-user permission model
 - Handwritten PDF annotation sync
+- Native-binary OCR dependency management
 - Client-only OCR
 - Client-owned vector indexing
 - Client-side direct indexing

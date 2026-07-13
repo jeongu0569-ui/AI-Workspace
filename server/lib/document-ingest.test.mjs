@@ -52,42 +52,6 @@ test("document ingest extracts DOCX text without LibreOffice through OpenXML fal
   assert.equal(result.blocks[0].source, "openxml");
 });
 
-test("document ingest worker parses Tesseract TSV into OCR blocks with bbox", async () => {
-  const script = `
-import importlib.util, json, sys
-module_path = sys.argv[1]
-tsv = sys.argv[2]
-spec = importlib.util.spec_from_file_location("codmes_extract_document", module_path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
-blocks = mod.parse_tesseract_tsv(tsv, path="Documents/scan.pdf", page=2, kind="pdf", image_width=1000, image_height=2000)
-print(json.dumps(blocks, ensure_ascii=False))
-`;
-  const tsv = [
-    "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
-    "5\t1\t1\t1\t1\t1\t100\t200\t60\t20\t96\tHello",
-    "5\t1\t1\t1\t1\t2\t170\t202\t80\t18\t94\tCodmes",
-    "5\t1\t1\t1\t2\t1\t100\t260\t40\t20\t90\tNext"
-  ].join("\n");
-  const { stdout } = await execFileAsync("python3", [
-    "-c",
-    script,
-    path.resolve("server/workers/document-ingest/extract_document.py"),
-    tsv
-  ]);
-  const blocks = JSON.parse(stdout);
-  assert.equal(blocks.length, 2);
-  assert.equal(blocks[0].text, "Hello Codmes");
-  assert.equal(blocks[0].page, 2);
-  assert.equal(blocks[0].bbox.x, 100);
-  assert.equal(blocks[0].bbox.y, 200);
-  assert.equal(blocks[0].bbox.width, 150);
-  assert.equal(blocks[0].bbox.height, 20);
-  assert.equal(blocks[0].bbox.normalized.x, 0.1);
-  assert.equal(blocks[0].source, "ocr");
-  assert.equal(blocks[0].confidence, 95);
-});
-
 async function createMinimalDocx(filePath, text) {
   const script = `
 import zipfile, sys
