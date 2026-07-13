@@ -6,11 +6,13 @@ with libraries installed by Codmes runtime bootstrap:
 
 - PyMuPDF: PDF text extraction and PDF block coordinates
 - MarkItDown/python-docx/python-pptx/openpyxl/xlrd: document/table extraction
+- MarkItDown Document Intelligence/Content Understanding: optional
+  service-backed OCR for scanned PDFs and images when configured
 - openpyxl/xlrd: spreadsheet extraction
 
 Codmes intentionally does not depend on native OCR or office-conversion
-binaries such as tesseract, pdftoppm, LibreOffice, or soffice. Scanned images
-inside PDFs are therefore not searchable until a library-owned OCR path is added.
+binaries such as tesseract, pdftoppm, LibreOffice, or soffice. OCR, when used,
+is routed through MarkItDown-backed providers rather than local native binaries.
 
 The Node server owns scheduling, caching, and indexing. This script only turns
 one workspace file into normalized JSON text blocks.
@@ -86,8 +88,11 @@ def extract_bytes(data: bytes, name: str, args: argparse.Namespace, depth: int) 
         blocks.extend(pdf_blocks)
         warnings.extend(pdf_warnings)
     elif ext in IMAGE_EXTS:
-        text = ""
-        warnings.append("Image OCR is not enabled in Codmes core.")
+        text, warning = markitdown_to_text(data, name)
+        if warning:
+            warnings.append(warning)
+        if text:
+            blocks.append(block(name, text, source="markitdown", page=None, kind="image"))
     elif ext == ".hwpx":
         text = hwpx_to_text(data)
         if text:
@@ -165,7 +170,14 @@ def extract_pdf(data: bytes, name: str) -> tuple[str, list[dict[str, Any]], list
         blocks.append(block(name, text, source="pdf-text", page=None, kind="pdf", metadata={"pageCount": page_count}))
         return text, blocks, warnings
 
-    return "", blocks, warnings or ["No text layer found; scanned PDF OCR is not enabled in Codmes core."]
+    markitdown_text, markitdown_warning = markitdown_to_text(data, name)
+    if markitdown_warning:
+        warnings.append(markitdown_warning)
+    if markitdown_text:
+        blocks.append(block(name, markitdown_text, source="markitdown", page=None, kind="pdf", metadata={"pageCount": page_count}))
+        return markitdown_text, blocks, warnings
+
+    return "", blocks, warnings or ["No text layer found; configure MarkItDown OCR provider for scanned PDFs."]
 
 
 def pymupdf_pdf_to_blocks(data: bytes, name: str) -> tuple[str, list[dict[str, Any]], str | None]:
@@ -319,12 +331,25 @@ def markitdown_to_text(data: bytes, filename: str) -> tuple[str, str | None]:
         from markitdown import MarkItDown  # type: ignore
     except Exception:
         return "", "MarkItDown not installed."
+    markitdown_kwargs: dict[str, Any] = {}
+    docintel_endpoint = os.getenv("CODMES_MARKITDOWN_DOCINTEL_ENDPOINT")
+    if docintel_endpoint:
+        markitdown_kwargs["docintel_endpoint"] = docintel_endpoint
+    docintel_api_version = os.getenv("CODMES_MARKITDOWN_DOCINTEL_API_VERSION")
+    if docintel_api_version:
+        markitdown_kwargs["docintel_api_version"] = docintel_api_version
+    cu_endpoint = os.getenv("CODMES_MARKITDOWN_CU_ENDPOINT")
+    if cu_endpoint:
+        markitdown_kwargs["cu_endpoint"] = cu_endpoint
+    cu_analyzer_id = os.getenv("CODMES_MARKITDOWN_CU_ANALYZER_ID")
+    if cu_analyzer_id:
+        markitdown_kwargs["cu_analyzer_id"] = cu_analyzer_id
     suffix = Path(filename).suffix or ".bin"
     with tempfile.TemporaryDirectory(prefix="codmes-markitdown-") as tmp:
         input_path = Path(tmp) / f"input{suffix}"
         input_path.write_bytes(data)
         try:
-            result = MarkItDown().convert(str(input_path))
+            result = MarkItDown(**markitdown_kwargs).convert(str(input_path))
             text = normalize_text(getattr(result, "text_content", "") or "")
             return text, None if text else "MarkItDown returned no text."
         except Exception as exc:

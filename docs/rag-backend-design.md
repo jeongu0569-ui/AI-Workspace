@@ -18,8 +18,8 @@ or use scan fallback before answering.
 
 - PDF text extraction and PDF block coordinates use PyMuPDF from the Codmes
   bootstrap environment.
-- Scanned PDF/image OCR is intentionally excluded from Codmes Core for now.
-  Codmes should not require native binaries such as tesseract, pdftoppm,
+- Scanned PDF/image OCR is routed through MarkItDown provider integrations,
+  not native local binaries. Codmes should not require tesseract, pdftoppm,
   LibreOffice, or soffice for the default search path.
 - No built-in embedding model runner.
 - Native vector storage is planned but not complete.
@@ -54,6 +54,6 @@ Planned:
 
 - More robust PDF parsing for compressed streams.
 - PDF viewer page navigation and search result highlight.
-- Library-owned OCR provider for scanned PDFs/images, without native binary requirements.
+- MarkItDown OCR/provider configuration UI for scanned PDFs/images, without native binary requirements.
 - Selectable transparent text overlay in the Apple PDF viewer after OCR ownership is decided.
 - Better UI for search/index status, watched roots, and embedding model selection.
