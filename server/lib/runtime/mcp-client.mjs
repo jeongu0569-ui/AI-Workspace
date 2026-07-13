@@ -50,13 +50,14 @@ export async function executableExists(command) {
 }
 
 export class McpClient {
-  constructor(name, command, args = [], { workspaceRoot, idleTimeoutMs = 60000, logger = console } = {}) {
+  constructor(name, command, args = [], { workspaceRoot, idleTimeoutMs = 60000, logger = console, env = {} } = {}) {
     this.name = name;
     this.command = command;
     this.args = args;
     this.workspaceRoot = workspaceRoot;
     this.idleTimeoutMs = idleTimeoutMs;
     this.logger = logger;
+    this.env = env && typeof env === "object" ? normalizeProcessEnv(env) : {};
     this.child = null;
     this.rl = null;
     this.stderrStream = null;
@@ -110,7 +111,7 @@ export class McpClient {
 
     try {
       this.child = spawn(this.command, this.args || [], {
-        env: { ...process.env },
+        env: { ...process.env, ...this.env },
         stdio: ["pipe", "pipe", "pipe"]
       });
     } catch (err) {
@@ -302,4 +303,13 @@ export class McpClient {
     }
     this.status = "stopped";
   }
+}
+
+function normalizeProcessEnv(env) {
+  const result = {};
+  for (const [key, value] of Object.entries(env || {})) {
+    if (!key || value === undefined || value === null) continue;
+    result[key] = String(value);
+  }
+  return result;
 }

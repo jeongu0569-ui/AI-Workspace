@@ -6,6 +6,7 @@ struct FileSectionView: View {
     @EnvironmentObject private var store: WorkspaceStore
     let title: String
     let root: String
+    var showsBrowserOnIOS = true
 
     var body: some View {
         Group {
@@ -21,10 +22,14 @@ struct FileSectionView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             #else
-            VStack(spacing: 0) {
-                FileBrowserPane(title: title, root: root)
-                    .frame(maxHeight: 320)
-                Divider()
+            if showsBrowserOnIOS {
+                VStack(spacing: 0) {
+                    FileBrowserPane(title: title, root: root)
+                        .frame(maxHeight: 320)
+                    Divider()
+                    FilePreviewView()
+                }
+            } else {
                 FilePreviewView()
             }
             #endif

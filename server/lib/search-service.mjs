@@ -39,12 +39,12 @@ const SEARCHABLE_EXTENSIONS = new Set([
 
 export function searchStatus(workspaceRoot) {
   return {
-    provider: process.env.DOCSEARCH_PROVIDER || "workspace-scan",
+    provider: process.env.CODMES_SEARCH_PROVIDER || "workspace-scan",
     workspaceRoot,
     available: true,
     indexed: false,
     realtimeIndexing: false,
-    description: "Dependency-free text scan fallback. Use docsearch-mcp or another external search tool for semantic RAG.",
+    description: "Codmes built-in text search. Semantic indexing is planned inside Codmes Search Runtime.",
     searchableExtensions: Array.from(SEARCHABLE_EXTENSIONS).sort()
   };
 }

@@ -16,7 +16,7 @@ import { CONVERSATION_SEARCH_DEFINITION, CONVERSATION_READ_DEFINITION } from "./
 import { MEMORY_SEARCH_DEFINITION } from "./memory-retrieval.mjs";
 
 test("Tool Mode Registry: basic loading and defaults", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-tool-modes-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-tool-modes-"));
   
   const modes = await loadToolModes(root);
   assert.equal(modes.chat.mode, "default");
@@ -31,7 +31,7 @@ test("Tool Mode Registry: basic loading and defaults", async () => {
 });
 
 test("Tool Mode Registry: saving override and custom mode", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-tool-modes-override-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-tool-modes-override-"));
   
   await saveToolModeOverride(root, "chat", {
     mode: "custom",
@@ -51,7 +51,7 @@ test("Tool Mode Registry: saving override and custom mode", async () => {
 });
 
 test("Tool Mode Registry: safe mode overrides", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-tool-modes-safe-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-tool-modes-safe-"));
   
   await saveToolModeOverride(root, "code", {
     mode: "safe"
@@ -97,14 +97,14 @@ test("Tool Mode Registry: every configured tool name has a matching definition o
 });
 
 test("Tool Mode Registry: surfaces expose focused default tools", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-tool-modes-surface-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-tool-modes-surface-"));
   const modes = await loadToolModes(root);
 
   assert.equal(modes.chat.enabledTools.includes("workspace_search"), false);
   assert.equal(modes.chat.enabledTools.includes("search_project"), false);
   assert.equal(modes.chat.enabledTools.includes("memory_search"), true);
 
-  assert.equal(modes.notes.enabledTools.includes("docsearch_search"), true);
+  assert.equal(modes.notes.enabledTools.includes("codmes_search"), true);
   assert.equal(modes.notes.enabledTools.includes("read_note_file"), true);
   assert.equal(modes.notes.enabledTools.includes("apply_patch"), false);
 

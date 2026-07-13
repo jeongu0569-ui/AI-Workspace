@@ -16,6 +16,7 @@ export function parseConfigYaml(content) {
   let inAllowedCommands = false;
   let inDeniedCommands = false;
   let inRequireApproval = false;
+  let inMcpEnv = false;
   let currentCustomProvider = null;
   let currentMcpServer = null;
 
@@ -34,6 +35,7 @@ export function parseConfigYaml(content) {
       inAllowedCommands = false;
       inDeniedCommands = false;
       inRequireApproval = false;
+      inMcpEnv = false;
       if (currentCustomProvider) {
         result.custom_providers.push(currentCustomProvider);
         currentCustomProvider = null;
@@ -97,7 +99,8 @@ export function parseConfigYaml(content) {
         if (currentMcpServer) {
           result.mcp_servers.push(currentMcpServer);
         }
-        currentMcpServer = { args: [] };
+        currentMcpServer = { args: [], env: {} };
+        inMcpEnv = false;
         const rest = trimmed.slice(1).trim();
         const colonIdx = rest.indexOf(":");
         if (colonIdx !== -1) {
@@ -108,14 +111,27 @@ export function parseConfigYaml(content) {
           }
         }
       } else if (currentMcpServer) {
-        if (trimmed.startsWith("-")) {
+        if (trimmed.startsWith("env:")) {
+          currentMcpServer.env = currentMcpServer.env || {};
+          inMcpEnv = true;
+        } else if (trimmed.startsWith("args:")) {
+          currentMcpServer.args = currentMcpServer.args || [];
+          inMcpEnv = false;
+        } else if (trimmed.startsWith("-")) {
           currentMcpServer.args.push(stripQuotes(trimmed.slice(1).trim()));
         } else {
           const colonIdx = trimmed.indexOf(":");
           if (colonIdx !== -1) {
             const k = trimmed.slice(0, colonIdx).trim();
             const v = stripQuotes(trimmed.slice(colonIdx + 1).trim());
-            if (k !== "args") {
+            if (inMcpEnv) {
+              currentMcpServer.env = currentMcpServer.env || {};
+              currentMcpServer.env[k] = v;
+            } else if (k === "scope_path") {
+              currentMcpServer.scopePath = v;
+            } else if (k === "enabled") {
+              currentMcpServer[k] = parseBooleanString(v, true);
+            } else if (k !== "args") {
               currentMcpServer[k] = v;
             }
           }
@@ -248,6 +264,15 @@ export function stringifyConfigYaml(content, { model, custom_providers, disabled
       resultLines.push(`  - name: ${mcp.name}`);
       if (mcp.command) resultLines.push(`    command: ${mcp.command}`);
       if (mcp.enabled !== undefined) resultLines.push(`    enabled: ${mcp.enabled}`);
+      if (mcp.scopePath || mcp.scope_path) resultLines.push(`    scope_path: ${mcp.scopePath || mcp.scope_path}`);
+      if (mcp.env && Object.keys(mcp.env).length > 0) {
+        resultLines.push("    env:");
+        for (const [key, value] of Object.entries(mcp.env)) {
+          if (key && value !== undefined && value !== null && String(value).trim()) {
+            resultLines.push(`      ${key}: "${escapeYamlString(String(value))}"`);
+          }
+        }
+      }
       if (mcp.args && mcp.args.length > 0) {
         resultLines.push("    args:");
         for (const arg of mcp.args) {
@@ -284,6 +309,17 @@ export function stringifyConfigYaml(content, { model, custom_providers, disabled
   resultLines.push("");
 
   return resultLines.join("\n");
+}
+
+function escapeYamlString(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function parseBooleanString(value, fallback = false) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  return fallback;
 }
 
 function stripQuotes(str) {

@@ -150,7 +150,7 @@ Assistant replies are persisted from the same streaming events that power the li
 The native runtime exposes surface-filtered tools:
 
 - Chat surface: `conversation_search`, `conversation_read`, `memory_search`, `tool_discovery`.
-- Notes surface: `workspace_search`, `docsearch_search`, `read_note_file`, `read_file_metadata`.
+- Notes surface: `workspace_search`, `codmes_search`, `read_note_file`, `read_file_metadata`.
 - Code surface: `search_project`, `read_project_file`, `inspect_git`, `get_git_diff`, `propose_patch`, `apply_patch`, `run_checks`, `run_git_command`.
 
 Surfaces are intended to behave like lightweight client plugins. `chat` is the
@@ -175,7 +175,7 @@ surface, the chat request should carry that surface id. The server then applies
 the matching prompt policy and tool mode:
 
 - `chat`: general conversation, recall, memory, and tool discovery.
-- `notes`: note/document/PDF text search, file metadata, and docsearch MCP when configured.
+- `notes`: note/document/PDF text search, file metadata, and Codmes search when configured.
 - `code`: code planning, project inspection, patch proposals, checks, git tools, and approvals.
 
 The dedicated Code Agent panel has been removed from the client direction. Code
@@ -211,7 +211,7 @@ Discovery emits `tool.discovery.request`, `tool.discovery.result`,
 persisted to session JSON or user tool-mode settings. Approval-gated or
 dangerous tools can be discovered but are not automatically expanded.
 
-`docsearch_search` first tries a configured docsearch-style MCP server with a
+`codmes_search` first tries a configured Codmes Search-style MCP server with a
 search/query tool. When no suitable MCP server is configured or the call fails,
 the runtime returns a normalized `workspace-search-fallback` result instead.
 

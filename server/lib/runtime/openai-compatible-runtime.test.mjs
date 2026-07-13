@@ -10,10 +10,10 @@ import { writeSecurityConfig } from "./security-policy.mjs";
 import { saveToolModeOverride } from "./tool-mode-registry.mjs";
 
 test("OpenAI-compatible runtime streams chat completions from Codmes config", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-"));
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
 
   let request = null;
   const runtime = new OpenAICompatibleRuntime({
@@ -102,7 +102,7 @@ test("OpenAI-compatible runtime streams Ollama reasoning deltas as activity even
 });
 
 test("OpenAI-compatible runtime uses Codex Responses transport for OpenAI Codex", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-codex-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-codex-"));
   await writeRuntimeConfig(root, {
     defaultModel: {
       provider: "openai-codex",
@@ -154,7 +154,7 @@ test("OpenAI-compatible runtime uses Codex Responses transport for OpenAI Codex"
 });
 
 test("OpenAI-compatible runtime reports setup when no model is selected", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-missing-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-missing-"));
   const runtime = new OpenAICompatibleRuntime({ workspaceRoot: root });
   await assert.rejects(
     () => runtime.submitPrompt({ sessionId: "session-1", message: "hello" }),
@@ -163,10 +163,10 @@ test("OpenAI-compatible runtime reports setup when no model is selected", async 
 });
 
 test("OpenAI-compatible runtime injects search results and RAG chunks into model context", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-rag-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-rag-"));
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
 
   let request = null;
   const runtime = new OpenAICompatibleRuntime({
@@ -210,12 +210,12 @@ test("OpenAI-compatible runtime injects search results and RAG chunks into model
 });
 
 test("OpenAI-compatible runtime executes workspace search tool calls", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-tools-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-tools-"));
   await fs.mkdir(path.join(root, "Notes"), { recursive: true });
   await fs.writeFile(path.join(root, "Notes", "git.md"), "# Git\n\ngit pull brings remote changes.", "utf8");
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
 
   const requests = [];
   const runtime = new OpenAICompatibleRuntime({
@@ -268,10 +268,10 @@ test("OpenAI-compatible runtime executes workspace search tool calls", async () 
 });
 
 test("OpenAI-compatible runtime filters tools by surface defaults", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-surface-tools-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-surface-tools-"));
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
 
   const requests = [];
   const runtime = new OpenAICompatibleRuntime({
@@ -305,22 +305,22 @@ test("OpenAI-compatible runtime filters tools by surface defaults", async () => 
   assert.equal(chatTools.has("workspace_search"), false);
   assert.equal(chatTools.has("search_project"), false);
 
-  assert.equal(notesTools.has("docsearch_search"), true);
+  assert.equal(notesTools.has("codmes_search"), true);
   assert.equal(notesTools.has("read_note_file"), true);
   assert.equal(notesTools.has("apply_patch"), false);
 
   assert.equal(codeTools.has("search_project"), true);
   assert.equal(codeTools.has("apply_patch"), true);
-  assert.equal(codeTools.has("docsearch_search"), false);
+  assert.equal(codeTools.has("codmes_search"), false);
 });
 
 test("OpenAI-compatible runtime expands discovered safe tools within the same turn", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-discovery-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-discovery-"));
   await fs.mkdir(path.join(root, "Notes"), { recursive: true });
-  await fs.writeFile(path.join(root, "Notes", "rag.md"), "docsearch MCP indexes notes and PDFs.", "utf8");
+  await fs.writeFile(path.join(root, "Notes", "rag.md"), "Codmes search indexes notes and PDFs.", "utf8");
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
 
   const requests = [];
   const runtime = new OpenAICompatibleRuntime({
@@ -342,7 +342,7 @@ test("OpenAI-compatible runtime expands discovered safe tools within the same tu
           ok: true,
           headers: { get: () => "text/event-stream" },
           body: streamChunks([
-            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_docsearch","type":"function","function":{"name":"docsearch_search","arguments":"{\\"query\\":\\"docsearch MCP\\",\\"scopePath\\":\\"Notes\\"}"}}]}}]}\n\n',
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_codmes_search","type":"function","function":{"name":"codmes_search","arguments":"{\\"query\\":\\"Codmes search\\",\\"scopePath\\":\\"Notes\\"}"}}]}}]}\n\n',
             'data: [DONE]\n\n'
           ])
         };
@@ -351,7 +351,7 @@ test("OpenAI-compatible runtime expands discovered safe tools within the same tu
         ok: true,
         headers: { get: () => "text/event-stream" },
         body: streamChunks([
-          'data: {"choices":[{"delta":{"content":"docsearch 결과를 확인했어요."}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":"Codmes search 결과를 확인했어요."}}]}\n\n',
           'data: [DONE]\n\n'
         ])
       };
@@ -366,36 +366,36 @@ test("OpenAI-compatible runtime expands discovered safe tools within the same tu
     surface: "chat"
   });
 
-  assert.equal(result.reply, "docsearch 결과를 확인했어요.");
+  assert.equal(result.reply, "Codmes search 결과를 확인했어요.");
   assert.equal(result.toolRounds, 2);
   assert.equal(requests.length, 3);
-  assert.equal(requests[0].tools.some((tool) => tool.function.name === "docsearch_search"), false);
-  assert.equal(requests[1].tools.some((tool) => tool.function.name === "docsearch_search"), true);
+  assert.equal(requests[0].tools.some((tool) => tool.function.name === "codmes_search"), false);
+  assert.equal(requests[1].tools.some((tool) => tool.function.name === "codmes_search"), true);
   const toolMessages = requests[2].messages.filter((message) => message.role === "tool");
   assert.equal(toolMessages[0].name, "tool_discovery");
-  assert.equal(toolMessages[1].name, "docsearch_search");
+  assert.equal(toolMessages[1].name, "codmes_search");
   assert.match(toolMessages[1].content, /Notes\/rag\.md/);
   assert.equal(events.some((event) => event.type === "tool.discovery.request"), true);
   assert.equal(events.some((event) => event.type === "tool.discovery.result"), true);
-  assert.equal(events.some((event) => event.type === "tool.expansion.applied" && event.expandedTools.includes("docsearch_search")), true);
+  assert.equal(events.some((event) => event.type === "tool.expansion.applied" && event.expandedTools.includes("codmes_search")), true);
 
   await runtime.submitPrompt({
     sessionId: "session-discovery",
     message: "다음 질문",
     surface: "chat"
   });
-  assert.equal(requests[3].tools.some((tool) => tool.function.name === "docsearch_search"), false);
+  assert.equal(requests[3].tools.some((tool) => tool.function.name === "codmes_search"), false);
 });
 
 test("OpenAI-compatible runtime blocks discovered tools disabled by surface mode", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-discovery-blocked-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-discovery-blocked-"));
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
   await saveToolModeOverride(root, "chat", {
     mode: "custom",
     enabledTools: ["tool_discovery", "conversation_search", "conversation_read", "memory_search"],
-    disabledTools: ["docsearch_search"]
+    disabledTools: ["codmes_search"]
   });
 
   const requests = [];
@@ -427,7 +427,7 @@ test("OpenAI-compatible runtime blocks discovered tools disabled by surface mode
   runtime.on("event", (event) => events.push(event));
 
   await runtime.submitPrompt({ sessionId: "blocked-discovery", message: "문서 검색", surface: "chat" });
-  assert.equal(requests[1].tools.some((tool) => tool.function.name === "docsearch_search"), false);
+  assert.equal(requests[1].tools.some((tool) => tool.function.name === "codmes_search"), false);
   assert.equal(events.some((event) => event.type === "tool.expansion.blocked"), true);
 });
 
@@ -488,10 +488,10 @@ rl.on("line", (line) => {
 }
 
 test("OpenAI-compatible runtime executes fallback provider chain on error", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-fallback-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-fallback-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "primary-key");
-  await setCredentialValue(root, "lmstudio", "AIW_LM_API_KEY", "fallback-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "primary-key");
+  await setCredentialValue(root, "lmstudio", "CODMES_LM_API_KEY", "fallback-key");
 
   await writeRuntimeConfig(root, {
     defaultModel: { provider: "openai-api", model: "gpt-5.5" },
@@ -537,9 +537,9 @@ test("OpenAI-compatible runtime executes fallback provider chain on error", asyn
 });
 
 test("OpenAI-compatible runtime filters tools using disabledTools config", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-tools-filter-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-tools-filter-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "test-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "test-key");
 
   await writeRuntimeConfig(root, {
     defaultModel: { provider: "openai-api", model: "gpt-5.5" },
@@ -570,9 +570,9 @@ test("OpenAI-compatible runtime filters tools using disabledTools config", async
 });
 
 test("OpenAI-compatible runtime global disabledTools can block core recall tools", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-core-disabled-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-core-disabled-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "test-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "test-key");
 
   await writeRuntimeConfig(root, {
     defaultModel: { provider: "openai-api", model: "gpt-5.5" },
@@ -601,9 +601,9 @@ test("OpenAI-compatible runtime global disabledTools can block core recall tools
 });
 
 test("OpenAI-compatible runtime exposes MCP tools and executes them via stdio JSON-RPC", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-mcp-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-mcp-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "test-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "test-key");
 
   const mockMcpScript = `
 import readline from "readline";
@@ -716,9 +716,9 @@ rl.on("line", (line) => {
 });
 
 test("OpenAI-compatible runtime routes MCP tools with underscores through the registry map", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-mcp-underscore-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-mcp-underscore-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "test-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "test-key");
   const serverPath = await writeMockMcpServer(root, {
     tools: [
       {
@@ -765,56 +765,34 @@ test("OpenAI-compatible runtime routes MCP tools with underscores through the re
   runtime.close();
 });
 
-test("OpenAI-compatible runtime docsearch_search prefers docsearch MCP and normalizes fallback", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-docsearch-mcp-"));
-  const serverPath = await writeMockMcpServer(root, {
-    tools: [
-      {
-        name: "search",
-        description: "Search indexed documents and PDFs",
-        inputSchema: { type: "object", properties: { query: { type: "string" } } }
-      }
-    ],
-    handler: "search"
-  });
+test("OpenAI-compatible runtime codmes_search uses Codmes native workspace search", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-codmes-search-"));
+  await fs.mkdir(path.join(root, "Notes"), { recursive: true });
+  await fs.writeFile(path.join(root, "Notes", "a.md"), "architecture note", "utf8");
   await writeRuntimeConfig(root, {
     mcpServers: [
-      { name: "obsidian_docsearch", command: "node", args: [serverPath], enabled: true }
+      { name: "unrelated_search_mcp", command: "node", args: ["unused.js"], enabled: true }
     ]
   });
 
   const runtime = new OpenAICompatibleRuntime({ workspaceRoot: root });
   const result = await runtime.executeToolCall({
-    id: "call_docsearch",
-    name: "docsearch_search",
+    id: "call_codmes_search",
+    name: "codmes_search",
     arguments: '{"query":"architecture"}'
-  }, { sessionId: "session-docsearch", surface: "notes" });
+  }, { sessionId: "session-codmes-search", surface: "notes" });
 
   assert.equal(result.ok, true);
-  assert.equal(result.source, "docsearch-mcp");
+  assert.equal(result.source, "codmes-search");
   assert.equal(result.fallbackUsed, false);
-  assert.match(result.results[0].snippet, /search called 1/);
+  assert.match(result.results[0].snippet, /architecture note/);
   runtime.close();
-
-  const fallbackRoot = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-docsearch-fallback-"));
-  await fs.mkdir(path.join(fallbackRoot, "Notes"), { recursive: true });
-  await fs.writeFile(path.join(fallbackRoot, "Notes", "a.md"), "architecture note", "utf8");
-  const fallbackRuntime = new OpenAICompatibleRuntime({ workspaceRoot: fallbackRoot });
-  const fallback = await fallbackRuntime.executeToolCall({
-    id: "call_docsearch_fallback",
-    name: "docsearch_search",
-    arguments: '{"query":"architecture"}'
-  }, { sessionId: "session-docsearch-fallback", surface: "notes" });
-  assert.equal(fallback.ok, true);
-  assert.equal(fallback.source, "workspace-search-fallback");
-  assert.equal(fallback.fallbackUsed, true);
-  assert.match(fallback.warning, /docsearch MCP/);
 });
 
 test("OpenAI-compatible runtime does not swallow MCP approvalRequired errors", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-mcp-approval-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-mcp-approval-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "test-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "test-key");
   await writeSecurityConfig(root, {
     approvalMode: "auto",
     allowShell: true,
@@ -851,7 +829,7 @@ test("OpenAI-compatible runtime does not swallow MCP approvalRequired errors", a
   await assert.rejects(
     () => runtime.executeToolCall({
       id: "call_delete",
-      name: "mcp_fs_delete_file",
+      name: "mcp__fs__delete_file",
       arguments: "{\"path\":\"Notes/a.md\"}"
     }, {
       sessionId: "session-approval",
@@ -872,7 +850,7 @@ test("OpenAI-compatible runtime does not swallow MCP approvalRequired errors", a
 
 test("McpClient server crash handling and timeout error", async () => {
   const { McpClient } = await import("./mcp-client.mjs");
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-mcp-crash-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-mcp-crash-"));
   
   const timeoutServerScript = `
 import readline from "readline";
@@ -941,10 +919,10 @@ test("OpenAI-compatible runtime fallback conditions separation", async () => {
 });
 
 test("SessionRuntime rename, export, and prune", async () => {
-  const { SessionRuntime } = await import("../session-runtime.mjs");
+  const { SessionRuntime, titleFromFirstUserMessage } = await import("../session-runtime.mjs");
   const { WorkspaceAgentStateStore } = await import("../agent-engine.mjs");
 
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-sessions-test-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-sessions-test-"));
   const stateStore = new WorkspaceAgentStateStore(root);
   await stateStore.ensure();
 
@@ -974,6 +952,36 @@ test("SessionRuntime rename, export, and prune", async () => {
   assert.match(exportRes.markdown, /# Session: New Title/);
   assert.match(exportRes.markdown, /## USER\n안녕/);
 
+  const autotitleSessionId = "sess-autotitle";
+  await stateStore.writeSession({
+    id: autotitleSessionId,
+    title: "Session 7/13/2026",
+    updatedAt: new Date().toISOString(),
+    messages: []
+  });
+  await sessionRuntime.appendSessionMessage(autotitleSessionId, {
+    role: "user",
+    content: "내가 공부한 것 중에 예제 들어서 설명해 줄 수있어?"
+  });
+  const autotitled = await stateStore.readSession(autotitleSessionId);
+  assert.equal(autotitled.title, "내가 공부한 것 중에 예제 들어서 설명해 줄 수있어");
+  assert.equal(titleFromFirstUserMessage("이 파일 설명 좀 해줘"), "이 파일 설명 좀 해줘");
+
+  const legacySessionId = "sess-legacy-title";
+  await stateStore.writeSession({
+    id: legacySessionId,
+    title: "Codmes Chat 2026. 7. 13. AM 10:36:15",
+    updatedAt: new Date().toISOString(),
+    messages: [
+      { role: "user", content: "너를 표로 소개해봐", createdAt: new Date().toISOString() }
+    ]
+  });
+  const listed = await sessionRuntime.listSessions(20, { includeArchived: true });
+  const repaired = listed.sessions.find((session) => session.id === legacySessionId);
+  assert.equal(repaired.title, "너를 표로 소개해봐");
+  const repairedStored = await stateStore.readSession(legacySessionId);
+  assert.equal(repairedStored.title, "너를 표로 소개해봐");
+
   const emptySessionId = "sess-empty";
   await stateStore.writeSession({
     id: emptySessionId,
@@ -991,10 +999,10 @@ test("SessionRuntime rename, export, and prune", async () => {
 });
 
 test("OpenAI-compatible runtime fallback event condition mapping", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-openai-runtime-fallback-cond-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-openai-runtime-fallback-cond-"));
   await setDefaultModel(root, "openai-api", "gpt-5.5");
-  await setCredentialValue(root, "openai-api", "AIW_OPENAI_API_KEY", "primary-key");
-  await setCredentialValue(root, "lmstudio", "AIW_LM_API_KEY", "fallback-key");
+  await setCredentialValue(root, "openai-api", "CODMES_OPENAI_API_KEY", "primary-key");
+  await setCredentialValue(root, "lmstudio", "CODMES_LM_API_KEY", "fallback-key");
 
   await writeRuntimeConfig(root, {
     defaultModel: { provider: "openai-api", model: "gpt-5.5" },
@@ -1041,7 +1049,7 @@ test("OpenAI-compatible runtime fallback event condition mapping", async () => {
 
 test("McpClient lifecycle: initialize, list, call, idle-timeout, and logs", async () => {
   const { McpClient } = await import("./mcp-client.mjs");
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-mcp-lifecycle-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-mcp-lifecycle-"));
 
   const mockMcpScript = `
 import readline from "readline";

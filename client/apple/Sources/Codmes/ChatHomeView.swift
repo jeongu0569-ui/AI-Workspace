@@ -473,6 +473,11 @@ struct SessionManagerView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @Binding var isPresented: Bool
     @State private var pendingDelete: HermesSessionSummary?
+    @State private var renamingSession: HermesSessionSummary?
+    @State private var renameTitle = ""
+    @State private var selectedSessionIds = Set<String>()
+    @State private var pendingBulkDelete = false
+    @State private var pendingDeleteGroupFolder: ConversationFolder?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -506,12 +511,35 @@ struct SessionManagerView: View {
                 Label(store.selectedHermesProjectTitle, systemImage: "folder")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text("\(selectedVisibleSessions.count) selected")
+                    .font(.caption)
+                    .foregroundStyle(selectedVisibleSessions.isEmpty ? .tertiary : .secondary)
                 Spacer()
+                Button(allVisibleSelected ? "Deselect all" : "Select all") {
+                    if allVisibleSelected {
+                        selectedSessionIds.subtract(visibleDeletableSessionIds)
+                    } else {
+                        selectedSessionIds.formUnion(visibleDeletableSessionIds)
+                    }
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .disabled(visibleDeletableSessionIds.isEmpty)
+
+                Button(role: .destructive) {
+                    pendingBulkDelete = true
+                } label: {
+                    Label("Delete selected", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .disabled(selectedVisibleSessions.isEmpty)
+
                 if let folder = store.conversationFolders.first(where: { $0.id == store.selectedHermesProjectId }) {
                     Button(role: .destructive) {
-                        Task { await store.deleteConversationFolder(folder) }
+                        pendingDeleteGroupFolder = folder
                     } label: {
-                        Label("Delete folder", systemImage: "trash")
+                        Label("Delete folder only", systemImage: "trash")
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -524,6 +552,16 @@ struct SessionManagerView: View {
             } else {
                 List(store.filteredSessionsForSelectedHermesProject) { session in
                     HStack(spacing: 12) {
+                        Button {
+                            toggleSessionSelection(session)
+                        } label: {
+                            Image(systemName: selectedSessionIds.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selectedSessionIds.contains(session.id) ? .primary : .tertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(session.id == store.liveSessionId)
+                        .help(session.id == store.liveSessionId ? "Active session cannot be selected for deletion" : "Select session")
+
                         Button {
                             Task {
                                 await store.resumeHermesSession(session)
@@ -578,6 +616,15 @@ struct SessionManagerView: View {
                         .buttonStyle(.borderless)
                         .help("Move session to group folder")
 
+                        Button {
+                            renamingSession = session
+                            renameTitle = session.title
+                        } label: {
+                            Image(systemName: "pencil")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Rename session")
+
                         Button(role: .destructive) {
                             pendingDelete = session
                         } label: {
@@ -595,6 +642,22 @@ struct SessionManagerView: View {
         .frame(idealWidth: 520, idealHeight: 460)
         .task {
             await store.refreshHermesMetadata()
+        }
+        .alert("Rename session", isPresented: renameBinding) {
+            TextField("Session title", text: $renameTitle)
+            Button("Rename") {
+                let session = renamingSession
+                let title = renameTitle
+                renamingSession = nil
+                if let session {
+                    Task { await store.renameHermesSession(session, title: title) }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                renamingSession = nil
+            }
+        } message: {
+            Text(renamingSession?.id ?? "")
         }
         .confirmationDialog(
             "Delete this session?",
@@ -615,6 +678,75 @@ struct SessionManagerView: View {
             }
         } message: { session in
             Text("This deletes the saved session, not just the local row: \(session.title)")
+        }
+        .confirmationDialog(
+            "Delete selected sessions?",
+            isPresented: $pendingBulkDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(selectedVisibleSessions.count) sessions", role: .destructive) {
+                let sessions = selectedVisibleSessions
+                selectedSessionIds.subtract(sessions.map(\.id))
+                Task { await store.deleteHermesSessions(sessions) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes the selected saved sessions. The active session is never included.")
+        }
+        .confirmationDialog(
+            "Delete group folder?",
+            isPresented: Binding(
+                get: { pendingDeleteGroupFolder != nil },
+                set: { if !$0 { pendingDeleteGroupFolder = nil } }
+            ),
+            presenting: pendingDeleteGroupFolder
+        ) { folder in
+            Button("Delete folder only", role: .destructive) {
+                Task {
+                    await store.deleteConversationFolder(folder)
+                    pendingDeleteGroupFolder = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteGroupFolder = nil
+            }
+        } message: { folder in
+            Text("Sessions in \(folder.name) will be kept and moved out of the group.")
+        }
+        .onChange(of: store.filteredSessionsForSelectedHermesProject) {
+            selectedSessionIds.formIntersection(Set(store.filteredSessionsForSelectedHermesProject.map(\.id)))
+        }
+    }
+
+    private var renameBinding: Binding<Bool> {
+        Binding(
+            get: { renamingSession != nil },
+            set: { if !$0 { renamingSession = nil } }
+        )
+    }
+
+    private var visibleDeletableSessions: [HermesSessionSummary] {
+        store.filteredSessionsForSelectedHermesProject.filter { $0.id != store.liveSessionId }
+    }
+
+    private var visibleDeletableSessionIds: Set<String> {
+        Set(visibleDeletableSessions.map(\.id))
+    }
+
+    private var selectedVisibleSessions: [HermesSessionSummary] {
+        visibleDeletableSessions.filter { selectedSessionIds.contains($0.id) }
+    }
+
+    private var allVisibleSelected: Bool {
+        !visibleDeletableSessionIds.isEmpty && visibleDeletableSessionIds.isSubset(of: selectedSessionIds)
+    }
+
+    private func toggleSessionSelection(_ session: HermesSessionSummary) {
+        guard session.id != store.liveSessionId else { return }
+        if selectedSessionIds.contains(session.id) {
+            selectedSessionIds.remove(session.id)
+        } else {
+            selectedSessionIds.insert(session.id)
         }
     }
 }

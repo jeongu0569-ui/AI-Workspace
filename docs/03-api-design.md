@@ -237,7 +237,7 @@ workspace
 Policy:
 
 - `selection`, `current`, and short `note` context can include inline text.
-- `folder`, `pdf`, `tag`, `linked`, and `workspace` recommend RAG/docsearch.
+- `folder`, `pdf`, `tag`, `linked`, and `workspace` recommend RAG/Codmes Search.
 - All paths must be workspace-relative.
 
 ## Search
@@ -253,7 +253,7 @@ workspace-scan
 ```
 
 This is a dependency-free fallback that scans text files in the workspace. It is
-not a vector index and does not replace docsearch-mcp. It gives the client and
+not a vector index and does not replace codmes-search. It gives the client and
 server a stable search API while semantic search remains an optional external
 server-side integration.
 
@@ -290,7 +290,7 @@ Response:
 External provider:
 
 ```text
-docsearch-mcp / external search tool
+codmes-search / external search tool
 ```
 
 ### `GET /api/index/status`
@@ -328,10 +328,32 @@ commands, and required approval categories.
 ```text
 GET    /api/mcp
 POST   /api/mcp
+POST   /api/mcp/:name
+PATCH  /api/mcp/:name
 DELETE /api/mcp/:name
 POST   /api/mcp/:name/enable
 POST   /api/mcp/:name/disable
 ```
+
+`POST /api/mcp` and `POST/PATCH /api/mcp/:name` accept:
+
+```json
+{
+  "name": "example-tool",
+  "command": "example-mcp",
+  "args": ["start"],
+  "enabled": true,
+  "scopePath": "Notes",
+  "env": {
+    "EXAMPLE_MCP_MODE": "value"
+  }
+}
+```
+
+`env` and `args` are intentionally generic because each MCP server owns its
+own model, embedding, index, and source configuration. The Apple client exposes
+these fields in Settings > MCP so remote clients can edit server-side MCP
+configuration without SSH.
 
 ### Doctor
 
@@ -556,7 +578,7 @@ Returns the effective tool mode per surface:
     "surface": "notes",
     "enabledTools": [
       "workspace_search",
-      "docsearch_search",
+      "codmes_search",
       "read_note_file",
       "read_file_metadata"
     ]
@@ -608,13 +630,13 @@ Response:
 
 ```json
 {
-  "expandedToolsForThisTurn": ["docsearch_search"],
+  "expandedToolsForThisTurn": ["codmes_search"],
   "availableToolGroups": [
     {
       "group": "notes_search",
       "requiresApproval": false,
       "tools": [
-        { "name": "docsearch_search" }
+        { "name": "codmes_search" }
       ]
     }
   ]

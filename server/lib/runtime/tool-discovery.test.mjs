@@ -12,8 +12,8 @@ test("Tool Discovery: execute matching capabilities", async () => {
   assert.ok(res.availableToolGroups.length > 0);
   const notesGroup = res.availableToolGroups.find(g => g.group === "notes_search");
   assert.ok(notesGroup);
-  assert.ok(notesGroup.tools.some(t => t.name === "docsearch_search"));
-  assert.ok(res.recommendation.enableForThisTurn.includes("docsearch_search"));
+  assert.ok(notesGroup.tools.some(t => t.name === "codmes_search"));
+  assert.ok(res.recommendation.enableForThisTurn.includes("codmes_search"));
 });
 
 test("Tool Discovery: match case insensitive and return empty for unmatched", async () => {
@@ -43,12 +43,12 @@ test("Tool Discovery: disabled tools are discoverable but blocked from turn expa
     reason: "need indexed notes",
     desiredCapability: "search indexed pdf notes documents"
   }, {
-    disabledTools: ["docsearch_search"]
+    disabledTools: ["codmes_search"]
   });
 
   assert.ok(res.availableToolGroups.some((group) =>
-    group.tools.some((tool) => tool.name === "docsearch_search" && tool.disabledByUser === true)
+    group.tools.some((tool) => tool.name === "codmes_search" && tool.disabledByUser === true)
   ));
-  assert.equal(res.expandedToolsForThisTurn.includes("docsearch_search"), false);
-  assert.equal(res.blockedTools.some((tool) => tool.name === "docsearch_search" && tool.reason === "disabled_by_surface_mode"), true);
+  assert.equal(res.expandedToolsForThisTurn.includes("codmes_search"), false);
+  assert.equal(res.blockedTools.some((tool) => tool.name === "codmes_search" && tool.reason === "disabled_by_surface_mode"), true);
 });

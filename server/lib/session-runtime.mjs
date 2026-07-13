@@ -68,6 +68,15 @@ export class SessionRuntime {
           continue;
         }
 
+        const repairedTitle = repairedSessionTitle(s);
+        if (repairedTitle && repairedTitle !== s.title) {
+          s.title = repairedTitle;
+          try {
+            s.updatedAt = s.updatedAt || new Date().toISOString();
+            await this.stateStore.writeSession(s);
+          } catch {}
+        }
+
         merged.push({
           ...s,
           source: "workspace",
@@ -184,6 +193,10 @@ export class SessionRuntime {
       try {
         const session = await this.stateStore.readSession(sessionId);
         if (session) {
+          const existingMessages = Array.isArray(session.messages) ? session.messages : [];
+          if (message.role === "user" && shouldAutotitleSession(session, existingMessages)) {
+            session.title = titleFromFirstUserMessage(message.content || "");
+          }
           session.messages = session.messages || [];
           session.messages.push({
             role: message.role,
@@ -239,6 +252,44 @@ function definedFields(value) {
   );
 }
 
+function shouldAutotitleSession(session, messages) {
+  if (messages.some((message) => message.role === "user")) return false;
+  const title = String(session?.title || "").trim();
+  return isGeneratedSessionTitle(title, session?.id);
+}
+
+function repairedSessionTitle(session) {
+  const title = String(session?.title || "").trim();
+  if (!isGeneratedSessionTitle(title, session?.id)) return "";
+  const firstUser = (Array.isArray(session?.messages) ? session.messages : [])
+    .find((message) => message?.role === "user" && String(message?.content || "").trim());
+  return firstUser ? titleFromFirstUserMessage(firstUser.content || "") : "";
+}
+
+function isGeneratedSessionTitle(title, sessionId = "") {
+  if (!title) return true;
+  if (title === sessionId) return true;
+  return /^Session(?:\s+\d{1,2}\/\d{1,2}\/\d{2,4})?$/i.test(title)
+    || /^Session\s+\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?$/i.test(title)
+    || /^(CLI Chat|Codmes Chat|Codmes TUI)\s+(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?)(?:\s+(AM|PM)\s+\d{1,2}:\d{2}:\d{2})?$/i.test(title)
+    || /^New session$/i.test(title)
+    || /^Untitled(?: chat| session)?$/i.test(title)
+    || /^session-\d{4}-\d{2}-\d{2}T/i.test(title);
+}
+
+export function titleFromFirstUserMessage(content = "") {
+  const collapsed = String(content)
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/```[\s\S]*?```/g, " code ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!collapsed) return "New chat";
+  const withoutTrailing = collapsed.replace(/[.!?。！？]+$/g, "").trim() || collapsed;
+  const maxLength = 34;
+  if (Array.from(withoutTrailing).length <= maxLength) return withoutTrailing;
+  return `${Array.from(withoutTrailing).slice(0, maxLength).join("").trimEnd()}...`;
+}
+
 export function buildSessionSummary(session = {}) {
   const messages = Array.isArray(session.messages) ? session.messages : [];
   const visibleMessages = messages.filter((message) => message.role === "user" || message.role === "assistant");
@@ -286,7 +337,7 @@ function extractTopics(text) {
     ["ai workspace", "Codmes"],
     ["hermes", "Hermes"],
     ["codex", "Codex-style UX"],
-    ["docsearch", "docsearch MCP"],
+    ["codmes search", "Codmes Search"],
     ["rag", "RAG"],
     ["pdf", "PDF"],
     ["codeagentruntime", "CodeAgentRuntime"],
@@ -306,7 +357,7 @@ function extractEntities(text) {
   const entities = new Set();
   const matches = String(text || "").match(/\b[A-Z][A-Za-z0-9_-]{2,}\b/g) || [];
   for (const match of matches) entities.add(match);
-  for (const keyword of ["Codmes", "Hermes", "CodeAgentRuntime", "docsearch MCP", "Obsidian"]) {
+  for (const keyword of ["Codmes", "Hermes", "CodeAgentRuntime", "Codmes Search", "Obsidian"]) {
     if (String(text || "").includes(keyword)) entities.add(keyword);
   }
   return Array.from(entities).slice(0, 20);

@@ -610,9 +610,17 @@ struct RootView: View {
                 ChatHomeView(onOpenModelSettings: openModelSettings)
             }
         case .notes:
+            #if os(iOS)
+            FileSectionView(title: "Notes", root: "notes", showsBrowserOnIOS: false)
+            #else
             FileSectionView(title: "Notes", root: "notes")
+            #endif
         case .code:
+            #if os(iOS)
+            FileSectionView(title: "Code", root: "code", showsBrowserOnIOS: false)
+            #else
             FileSectionView(title: "Code", root: "code")
+            #endif
         }
     }
 
@@ -757,6 +765,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case connection = "Connection"
     case model = "Model"
     case modelConfig = "Model Config"
+    case search = "Search"
+    case mcp = "MCP"
     case surfaces = "Surfaces"
 
     var id: String { rawValue }
@@ -766,6 +776,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .connection: "network"
         case .model: "cube"
         case .modelConfig: "key"
+        case .search: "magnifyingglass"
+        case .mcp: "point.3.connected.trianglepath.dotted"
         case .surfaces: "square.grid.2x2"
         }
     }
@@ -775,6 +787,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .connection: "Server URL and token"
         case .model: "Choose provider and model"
         case .modelConfig: "Provider auth and endpoints"
+        case .search: "Indexing and document search"
+        case .mcp: "External MCP tools"
         case .surfaces: "Client modes and plugins"
         }
     }
@@ -868,6 +882,10 @@ struct WorkspaceSettingsView: View {
                     RuntimeModelSelectionSettingsView()
                 case .modelConfig:
                     RuntimeProviderConfigSettingsView()
+                case .search:
+                    SearchSettingsView()
+                case .mcp:
+                    MCPSettingsView()
                 case .surfaces:
                     SurfaceSettingsView()
                 }
@@ -898,6 +916,424 @@ struct WorkspaceSettingsView: View {
             .background(.quaternary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
         }
     }
+}
+
+private struct SearchSettingsView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @State private var rootsText = ""
+    @State private var embeddingBaseURL = "http://127.0.0.1:11434/v1"
+    @State private var embeddingApiKey = ""
+    @State private var embeddingModel = "bge-m3"
+    @State private var embeddingDim = "1024"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Search")
+                        .font(.headline)
+                    Text("Configure Codmes built-in search. External engines can be used internally, but the assistant sees one Codmes search tool.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    Task {
+                        await store.refreshSearchConfig()
+                        loadFields()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Indexing scope")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Choose the server folders Codmes should search across.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if store.searchConfig?.openaiApiKeyConfigured == true {
+                        Label("Embedding key saved", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Indexed folders")
+                        .font(.caption.weight(.semibold))
+                    TextField("/Users/user/CodmesWorkspace/Notes, /Users/user/CodmesWorkspace/Code", text: $rootsText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3...8)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                    Text("Use one absolute server folder per line, or separate folders with commas. Include Notes, Documents, Code, conversation index, and sessions when you want one search layer across everything.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Embedding backend")
+                        .font(.caption.weight(.semibold))
+                    HStack {
+                        TextField("OpenAI-compatible base URL", text: $embeddingBaseURL)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Model", text: $embeddingModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 180)
+                        TextField("Dim", text: $embeddingDim)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 80)
+                    }
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
+
+                    SecureField("API key or local placeholder, e.g. ollama", text: $embeddingApiKey)
+                        .textFieldStyle(.roundedBorder)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+
+                    Text("For local Ollama, use base URL http://127.0.0.1:11434/v1, model bge-m3, dim 1024, and API key placeholder ollama.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Button {
+                        Task {
+                            await store.saveSearchConfig(
+                                rootsText: rootsText,
+                                openaiBaseUrl: embeddingBaseURL,
+                                openaiApiKey: embeddingApiKey,
+                                openaiEmbedModel: embeddingModel,
+                                openaiEmbedDim: embeddingDim
+                            )
+                            loadFields()
+                        }
+                    } label: {
+                        Label("Save Search", systemImage: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        loadDefaultFields()
+                    } label: {
+                        Label("Use workspace defaults", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.borderless)
+                }
+
+                if let config = store.searchConfig {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Current backend")
+                            .font(.caption.weight(.semibold))
+                        Text("Index database: \(config.dbPath)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text("Config file: \(config.configPath)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.top, 4)
+                }
+
+                if !store.searchSetupMessage.isEmpty {
+                    Text(store.searchSetupMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .padding(14)
+        .background(.quaternary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .task {
+            await store.refreshSearchConfig()
+            loadFields()
+        }
+    }
+
+    private func loadFields() {
+        guard let config = store.searchConfig else {
+            loadDefaultFields()
+            return
+        }
+        rootsText = config.roots.joined(separator: "\n")
+        embeddingBaseURL = config.openaiBaseUrl
+        embeddingModel = config.openaiEmbedModel
+        embeddingDim = String(config.openaiEmbedDim)
+        if config.openaiApiKeyConfigured && embeddingApiKey.isEmpty {
+            embeddingApiKey = ""
+        }
+    }
+
+    private func loadDefaultFields() {
+        if let root = store.workspace?.workspaceRoot, !root.isEmpty {
+            rootsText = [
+                "\(root)/Notes",
+                "\(root)/Documents",
+                "\(root)/Code",
+                "\(root)/.codmes/conversation-index",
+                "\(root)/.codmes/sessions"
+            ].joined(separator: "\n")
+        }
+        embeddingBaseURL = "http://127.0.0.1:11434/v1"
+        embeddingApiKey = "ollama"
+        embeddingModel = "bge-m3"
+        embeddingDim = "1024"
+    }
+}
+
+private struct MCPSettingsView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @State private var name = "custom-tool"
+    @State private var command = ""
+    @State private var argsText = ""
+    @State private var scopePath = ""
+    @State private var envText = ""
+    @State private var enabled = true
+    @State private var editingName: String?
+    @State private var pendingDelete: MCPServerConfig?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("MCP")
+                        .font(.headline)
+                    Text("Connect optional server-side MCP tools. Codmes Search has its own settings page.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    Task { await store.refreshMCPServers() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+            }
+
+            if store.mcpServers.isEmpty {
+                ContentUnavailableView(
+                    "No MCP servers",
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    description: Text("Add optional stdio MCP servers here. Search setup lives in Settings > Search.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                ForEach(store.mcpServers) { server in
+                    mcpRow(server)
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(editingName == nil ? "Add MCP server" : "Edit MCP server")
+                        .font(.subheadline.weight(.semibold))
+                }
+
+                TextField("Name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(editingName != nil)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
+
+                TextField("Command", text: $command)
+                    .textFieldStyle(.roundedBorder)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Arguments")
+                        .font(.caption.weight(.semibold))
+                    TextField("start --file-roots Notes --openai-embed-model text-embedding-3-small", text: $argsText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...4)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                    Text("Arguments are passed directly to the MCP server process.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                TextField("Default search scope, for example Notes or Documents", text: $scopePath)
+                    .textFieldStyle(.roundedBorder)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    #endif
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Environment")
+                        .font(.caption.weight(.semibold))
+                    TextField("KEY=value, one per line", text: $envText, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...6)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                    Text("Use env for MCP-specific model/API settings when the server supports them. Secrets are stored in the server config, so do not commit .codmes/config.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Toggle("Enabled", isOn: $enabled)
+
+                HStack {
+                    Button {
+                        Task {
+                            await store.saveMCPServer(
+                                name: name,
+                                command: command,
+                                argsText: argsText,
+                                envText: envText,
+                                scopePath: scopePath,
+                                enabled: enabled,
+                                editingExisting: editingName != nil
+                            )
+                            if !store.mcpSetupMessage.lowercased().contains("error") {
+                                clearEditor()
+                            }
+                        }
+                    } label: {
+                        Label(editingName == nil ? "Add MCP" : "Save MCP", systemImage: "checkmark")
+                    }
+                    .buttonStyle(.bordered)
+
+                    if editingName != nil {
+                        Button("Cancel") {
+                            clearEditor()
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+
+            if !store.mcpSetupMessage.isEmpty {
+                Text(store.mcpSetupMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(.quaternary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .task {
+            await store.refreshMCPServers()
+        }
+        .confirmationDialog(
+            "Remove MCP server?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            presenting: pendingDelete
+        ) { server in
+            Button("Remove \(server.name)", role: .destructive) {
+                Task {
+                    await store.deleteMCPServer(server)
+                    pendingDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: { server in
+            Text("This removes the MCP configuration from Codmes. It does not delete indexes or files.")
+        }
+    }
+
+    private func mcpRow(_ server: MCPServerConfig) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: server.isEnabled ? "checkmark.circle.fill" : "pause.circle")
+                .foregroundStyle(server.isEnabled ? .green : .secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(server.name)
+                    .font(.callout.weight(.medium))
+                Text("\(server.command) \(server.argsText)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if let scope = server.scopePath, !scope.isEmpty {
+                    Text("Scope: \(scope)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { server.isEnabled },
+                set: { enabled in
+                    Task { await store.setMCPServerEnabled(server, enabled: enabled) }
+                }
+            ))
+            .labelsHidden()
+            Button {
+                edit(server)
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            Button(role: .destructive) {
+                pendingDelete = server
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func edit(_ server: MCPServerConfig) {
+        editingName = server.name
+        name = server.name
+        command = server.command
+        argsText = server.argsText
+        scopePath = server.scopePath ?? ""
+        envText = server.envText
+        enabled = server.isEnabled
+    }
+
+    private func clearEditor() {
+        editingName = nil
+        name = "custom-tool"
+        command = ""
+        argsText = ""
+        scopePath = ""
+        envText = ""
+        enabled = true
+    }
+
 }
 
 private struct SurfaceSettingsView: View {

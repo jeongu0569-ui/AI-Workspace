@@ -59,7 +59,7 @@ CodmesWorkspace/
 - AI 도구 실행과 승인 요청 저장
 - 코드 작업, 패치 제안, 적용, 검사, Git 명령 관리
 - 메모리와 과거 대화 검색
-- MCP 및 docsearch 연동 경로
+- MCP 및 Codmes Search 연동 경로
 
 ### 2. Chat
 
@@ -127,7 +127,7 @@ Code는 서버의 `Code/` 폴더 안 프로젝트를 다루는 화면입니다.
 - 채팅 세션 제목, 요약, 메시지 검색
 - 사용자, 프로젝트, 폴더, 세션 메모리 검색
 
-docsearch MCP가 설정된 경우 문서와 PDF 질문에서 docsearch를 우선 사용하고, 사용할 수 없으면 기본 Workspace 검색으로 돌아갑니다. Codmes 자체에 OCR 엔진이나 네이티브 임베딩/벡터 DB를 중복 구현하지 않습니다. 스캔 PDF OCR이나 semantic RAG가 필요하면 서버 쪽에 docsearch-mcp 같은 외부 검색 도구를 연결하는 방향입니다.
+LLM에는 `codmes_search`라는 내장 검색 도구가 노출됩니다. 이 도구는 Codmes Search Runtime을 통해 파일, 노트, 코드, PDF 추출 텍스트, 대화 기록을 검색하는 공식 경로입니다. 현재 semantic RAG 백엔드는 codmes-search 같은 외부 검색 엔진을 서버 내부 구현으로 사용할 수 있지만, 사용자와 모델에게는 MCP 도구가 아니라 Codmes의 기본 검색 기능처럼 보이도록 정리하는 방향입니다. 스캔 PDF OCR은 아직 계획 단계입니다.
 
 ### 6. Approvals와 Tasks
 
@@ -175,7 +175,7 @@ npm link
 npm run runtime:bootstrap
 ```
 
-`npm link` 이후 `codmes`를 기본 명령으로 사용합니다. 기존 `aiw`와 `ai-workspace`는 deprecated 호환 alias 명령을 사용할 수 있습니다.
+`npm link` 이후 `codmes`를 기본 명령으로 사용합니다.
 
 ## 모델 설정
 
@@ -194,8 +194,7 @@ codmes model
 설치된 채팅 모델을 불러옵니다.
 
 처음 실행하기 전 `npm run runtime:bootstrap`은 저장소의 `.codmes-runtime`에
-프로젝트 전용 Python 환경을 만듭니다. 기존 Hermes 가상환경은 이전 설치에서
-옮겨오는 사용자를 위한 fallback일 뿐이며, 정상 설치 후에는 사용하지 않습니다.
+프로젝트 전용 Python 환경을 만듭니다.
 
 ```bash
 codmes provider list
@@ -233,10 +232,7 @@ Ollama 0.31.2의 `ollama launch` 통합 목록은 Ollama 자체에 고정되어 
 프로젝트에 Codmes 통합이 추가되어야 합니다. `codmes ollama`는 같은 목적을
 Codmes가 직접 제공하는 명령입니다.
 
-설정은 기본적으로 `<Workspace>/.codmes/config/` 아래에 저장됩니다. 이전 버전의
-`<Workspace>/.ai-workspace/`가 있고 `.codmes/`가 없다면 서버와 CLI가 시작될 때
-안전하게 `.codmes/`로 마이그레이션합니다. 두 디렉터리가 모두 있으면 자동으로
-덮어쓰지 않고 충돌 상태를 보고합니다.
+설정은 기본적으로 `<Workspace>/.codmes/config/` 아래에 저장됩니다.
 
 Mac/iPhone/iPad 앱의 `Settings > Model & Provider`에서도 같은 서버 설정을
 관리할 수 있습니다. 화면은 provider를 `Accounts`, `API Keys`, `Local`로 나누고,
@@ -388,7 +384,7 @@ WebSocket과 raw 파일 URL은 token query를 사용할 수 있습니다. Apple 
 
 ## 현재 한계와 앞으로의 작업
 
-- 앱 내부 네이티브 벡터 DB, 임베딩 인덱싱, 자체 OCR은 제품 범위에서 제외했습니다. 필요한 경우 서버에 외부 docsearch/OCR 파이프라인을 연결합니다.
+- 앱 내부 네이티브 벡터 DB, 임베딩 인덱싱, 자체 OCR은 제품 범위에서 제외했습니다. 필요한 경우 서버에 외부 Codmes Search/OCR 파이프라인을 연결합니다.
 - 텍스트 레이어가 있는 PDF와 Markdown/텍스트 파일은 기존 추출 및 Workspace 검색 경로로 처리합니다.
 - PDF 필기와 Apple Pencil 주석 저장은 완성되지 않았습니다.
 - Code 화면은 아직 VS Code 수준의 LSP, 디버거, 확장 기능을 제공하지 않습니다.
@@ -410,7 +406,7 @@ WebSocket과 raw 파일 URL은 token query를 사용할 수 있습니다. Apple 
 - [실행 명령어](docs/08-run-commands.md)
 - [API 계약](docs/api-contract.md)
 - [RAG 백엔드 설계](docs/rag-backend-design.md)
-- [docsearch MCP 연동](docs/docsearch-mcp-integration.md)
+- [Codmes Search 연동](docs/codmes-search-integration.md)
 
 ## 프로젝트 방향
 

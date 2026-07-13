@@ -15,7 +15,7 @@ export const DEFAULT_TOOL_MODES = {
     mode: "default",
     enabledTools: [
       "workspace_search",
-      "docsearch_search",
+      "codmes_search",
       "read_note_file",
       "read_file_metadata",
       "conversation_search",

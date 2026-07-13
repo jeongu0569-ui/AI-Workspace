@@ -8,12 +8,12 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
-        .executable(name: "Codmes", targets: ["AIWorkspace"])
+        .executable(name: "Codmes", targets: ["Codmes"])
     ],
     targets: [
         .executableTarget(
-            name: "AIWorkspace",
-            path: "Sources/AIWorkspace"
+            name: "Codmes",
+            path: "Sources/Codmes"
         )
     ]
 )

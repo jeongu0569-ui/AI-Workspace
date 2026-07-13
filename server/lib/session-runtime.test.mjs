@@ -8,7 +8,7 @@ test("SessionRuntime summary captures topics, decisions, preferences, entities, 
     id: "session-summary",
     messages: [
       { id: "u1", role: "user", content: "Codmes 방향은 Hermes wrapper가 아니라 독립 런타임으로 가기로 결정했어." },
-      { id: "a1", role: "assistant", content: "좋아요. docsearch MCP와 RAG를 내부 경로로 정리하겠습니다." },
+      { id: "a1", role: "assistant", content: "좋아요. Codmes Search와 RAG를 내부 경로로 정리하겠습니다." },
       { id: "u2", role: "user", content: "나는 Codex 스타일 UI를 좋아하고 Obsidian처럼 보여주길 원해." }
     ]
   });

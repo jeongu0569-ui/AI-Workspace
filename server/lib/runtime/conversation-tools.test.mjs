@@ -8,7 +8,7 @@ import { indexSession, searchConversationIndex, readConversationMessages } from 
 import { executeConversationSearch, executeConversationRead } from "./conversation-tools.mjs";
 
 test("Conversation Tools: index, search and read", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-tools-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-conversation-tools-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   const mockSession = {
@@ -60,7 +60,7 @@ test("Conversation Tools: index, search and read", async () => {
 });
 
 test("Conversation Tools: fuzzy keyword recall does not require exact phrase match", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-fuzzy-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-conversation-fuzzy-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const session = {
@@ -98,7 +98,7 @@ test("Conversation Tools: fuzzy keyword recall does not require exact phrase mat
 });
 
 test("Conversation Tools: last_week is previous calendar week and last_7_days is rolling", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-time-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-conversation-time-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const sessions = [
@@ -163,7 +163,7 @@ test("Conversation Tools: last_week is previous calendar week and last_7_days is
 });
 
 test("Conversation Tools: read surrounding messages preserves message ids and removes overlap duplicates", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-read-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-conversation-read-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const session = {
@@ -193,7 +193,7 @@ test("Conversation Tools: read surrounding messages preserves message ids and re
 });
 
 test("Conversation Tools: archived sessions are hidden unless includeArchived is true", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conversation-archived-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-conversation-archived-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
 
   const session = {

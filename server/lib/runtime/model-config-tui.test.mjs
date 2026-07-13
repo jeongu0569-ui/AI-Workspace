@@ -11,7 +11,7 @@ import {
 } from "./model-config-tui.mjs";
 
 test("vendored model TUI is scoped to Codmes runtime state", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-model-tui-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-model-tui-"));
   const workspaceRoot = path.join(root, "workspace");
   await fs.mkdir(workspaceRoot, { recursive: true });
   const fakePython = path.join(root, "python");

@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "AIWorkspace"
+    private static let service = "Codmes"
     private static let serverAuthTokenAccount = "workspace.serverAuthToken"
 
     static func readServerAuthToken() -> String? {

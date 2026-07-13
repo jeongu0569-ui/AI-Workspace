@@ -21,7 +21,7 @@ const DEFAULT_SURFACES = [
     enabled: true,
     removable: false,
     order: 20,
-    description: "Notes, documents, PDF text, workspace search, and optional docsearch MCP."
+    description: "Notes, documents, PDF text, and Codmes built-in search."
   },
   {
     id: "code",

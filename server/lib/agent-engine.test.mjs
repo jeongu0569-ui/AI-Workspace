@@ -198,8 +198,8 @@ test("workspace agent engine stores approval_required task and resumes approved 
 test("MCP dangerous tool call creates approval_required task and approved inbox response resumes only that tool call", async () => {
   const root = await fixtureWorkspace();
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
   await writeSecurityConfig(root, {
     approvalMode: "auto",
     allowShell: true,
@@ -224,7 +224,7 @@ test("MCP dangerous tool call creates approval_required task and approved inbox 
         ok: true,
         headers: { get: () => "text/event-stream" },
         body: streamChunks([
-          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_delete","type":"function","function":{"name":"mcp_files_delete_file","arguments":"{\\"path\\":\\"Notes/a.md\\"}"}}]}}]}\n\n',
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_delete","type":"function","function":{"name":"mcp__files__delete_file","arguments":"{\\"path\\":\\"Notes/a.md\\"}"}}]}}]}\n\n',
           "data: [DONE]\n\n"
         ])
       };
@@ -272,8 +272,8 @@ test("MCP dangerous tool call creates approval_required task and approved inbox 
 test("approval.inbox.respond rejected marks MCP approval task failed", async () => {
   const root = await fixtureWorkspace();
   await setDefaultModel(root, "custom", "demo-model");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_BASE_URL", "http://model.test/v1");
-  await setCredentialValue(root, "custom", "AIW_CUSTOM_API_KEY", "test-key");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_BASE_URL", "http://model.test/v1");
+  await setCredentialValue(root, "custom", "CODMES_CUSTOM_API_KEY", "test-key");
   await writeSecurityConfig(root, {
     approvalMode: "auto",
     allowShell: true,
@@ -295,7 +295,7 @@ test("approval.inbox.respond rejected marks MCP approval task failed", async () 
       ok: true,
       headers: { get: () => "text/event-stream" },
       body: streamChunks([
-        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_delete","type":"function","function":{"name":"mcp_files_delete_file","arguments":"{\\"path\\":\\"Notes/a.md\\"}"}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_delete","type":"function","function":{"name":"mcp__files__delete_file","arguments":"{\\"path\\":\\"Notes/a.md\\"}"}}]}}]}\n\n',
         "data: [DONE]\n\n"
       ])
     })
@@ -505,7 +505,7 @@ class ApprovalRequiredRuntime extends EventEmitter {
       arguments: { value: 1 },
       toolCall: {
         id: "call-danger",
-        name: "mcp_mock_danger",
+        name: "mcp__mock__danger",
         arguments: "{\"value\":1}"
       }
     };

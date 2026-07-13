@@ -180,6 +180,65 @@ struct SurfaceUpdateBody: Encodable {
     let remove: Bool?
 }
 
+struct MCPServersResponse: Codable {
+    let servers: [MCPServerConfig]
+}
+
+struct MCPServerConfig: Codable, Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    let command: String
+    let args: [String]?
+    let enabled: Bool?
+    let env: [String: String]?
+    let scopePath: String?
+
+    var isEnabled: Bool { enabled ?? true }
+    var argsText: String { (args ?? []).joined(separator: " ") }
+    var envText: String {
+        (env ?? [:])
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "\n")
+    }
+}
+
+struct MCPServerUpdateBody: Encodable {
+    let name: String?
+    let command: String
+    let args: [String]
+    let enabled: Bool
+    let env: [String: String]
+    let scopePath: String
+}
+
+struct SearchConfigResponse: Codable {
+    let ok: Bool?
+    let configPath: String
+    let roots: [String]
+    let includeGlobs: [String]
+    let excludeGlobs: [String]
+    let embeddingsProvider: String
+    let openaiBaseUrl: String
+    let openaiApiKeyConfigured: Bool
+    let openaiEmbedModel: String
+    let openaiEmbedDim: Int
+    let dbPath: String
+    let backend: String?
+}
+
+struct SearchConfigUpdateBody: Encodable {
+    let roots: [String]
+    let embeddingsProvider: String
+    let openaiBaseUrl: String
+    let openaiApiKey: String?
+    let openaiEmbedModel: String
+    let openaiEmbedDim: Int
+    let includeGlobs: [String]?
+    let excludeGlobs: [String]?
+    let dbPath: String?
+}
+
 struct AgentTasksResponse: Codable {
     let tasks: [AgentTaskSummary]
 }

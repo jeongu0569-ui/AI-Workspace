@@ -7,7 +7,7 @@ import path from "node:path";
 import { executeWorkspaceTool } from "./workspace-tools.mjs";
 
 test("Workspace tools route code surface operations through CodeAgentRuntime", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-workspace-tools-code-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-workspace-tools-code-"));
   const calls = [];
   const codeRuntime = {
     resolveCodeScope(scopePath = "Code") {
@@ -48,7 +48,7 @@ test("Workspace tools route code surface operations through CodeAgentRuntime", a
 });
 
 test("Workspace tools reject code surface operations without CodeAgentRuntime", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-workspace-tools-no-code-runtime-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-workspace-tools-no-code-runtime-"));
   await assert.rejects(
     () => executeWorkspaceTool(root, "search_project", { query: "hello" }),
     /requires CodeAgentRuntime/
@@ -56,7 +56,7 @@ test("Workspace tools reject code surface operations without CodeAgentRuntime", 
 });
 
 test("Workspace tools read project files only under Code", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-workspace-tools-read-code-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-workspace-tools-read-code-"));
   await fs.mkdir(path.join(root, "Code"), { recursive: true });
   await fs.mkdir(path.join(root, "Notes"), { recursive: true });
   await fs.writeFile(path.join(root, "Code", "a.js"), "console.log('ok');", "utf8");
@@ -77,7 +77,7 @@ test("Workspace tools read project files only under Code", async () => {
 });
 
 test("Workspace tools use current code scope and task id defaults", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-workspace-tools-code-scope-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-workspace-tools-code-scope-"));
   await fs.mkdir(path.join(root, "Projects", "demo"), { recursive: true });
   await fs.mkdir(path.join(root, "Projects", "other"), { recursive: true });
   await fs.writeFile(path.join(root, "Projects", "demo", "a.js"), "console.log('demo');", "utf8");

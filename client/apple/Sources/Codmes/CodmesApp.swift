@@ -4,12 +4,12 @@ import AppKit
 #endif
 
 @main
-struct AIWorkspaceApp: App {
+struct CodmesApp: App {
     @StateObject private var store = WorkspaceStore()
 
     var body: some Scene {
         #if os(macOS)
-        WindowGroup(id: "ai-workspace-main-window-v2") {
+        WindowGroup(id: "codmes-main-window-v2") {
             rootView
         }
         .windowStyle(.titleBar)

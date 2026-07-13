@@ -410,7 +410,7 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       ...reasoningOptions(params.reasoningEffort)
     };
 
-    if (this.env.CODMES_DEBUG_LLM_REQUEST === "1" || this.env.AIW_DEBUG_LLM_REQUEST === "1") {
+    if (this.env.CODMES_DEBUG_LLM_REQUEST === "1") {
       console.error("[codmes] LLM request", JSON.stringify({
         provider: selection.provider.id,
         model: selection.model,
@@ -879,8 +879,8 @@ export class OpenAICompatibleRuntime extends EventEmitter {
           })
         };
       } else {
-        if (call.name === "docsearch_search") {
-          result = await this.executeDocsearchSearch(args, params);
+        if (call.name === "codmes_search") {
+          result = await this.executeCodmesSearch(args, params);
         } else {
           result = await executeWorkspaceTool(this.workspaceRoot, call.name, call.arguments, {
             codeRuntime: params.codeRuntime,
@@ -976,7 +976,8 @@ export class OpenAICompatibleRuntime extends EventEmitter {
     if (!client) {
       const { McpClient } = await import("./mcp-client.mjs");
       client = new McpClient(mcpConfig.name, mcpConfig.command, mcpConfig.args || [], {
-        workspaceRoot: this.workspaceRoot
+        workspaceRoot: this.workspaceRoot,
+        env: mcpConfig.env || {}
       });
       this.mcpClients.set(mcpConfig.name, client);
     }
@@ -1010,70 +1011,21 @@ export class OpenAICompatibleRuntime extends EventEmitter {
       return null;
     }
 
-    // Backward-compatible legacy fallback: mcp_<server>_<tool>. This is only
-    // reliable when the server name has no underscores.
-    if (publicToolName.startsWith("mcp_")) {
-      const parts = publicToolName.split("_");
-      if (parts.length >= 3) {
-        return {
-          serverName: parts[1],
-          originalToolName: parts.slice(2).join("_")
-        };
-      }
-    }
     return null;
   }
 
-  async executeDocsearchSearch(args = {}, params = {}) {
-    const config = await readRuntimeConfig(this.workspaceRoot);
-    const docsearchServers = (config.mcpServers || [])
-      .filter((server) => server.enabled !== false)
-      .filter((server) => /docsearch|doc-search|document|rag|search/i.test(`${server.name} ${server.command || ""} ${(server.args || []).join(" ")}`));
-
-    for (const server of docsearchServers) {
-      try {
-        const client = await this.getOrStartMcpClient(server);
-        const tools = await client.listTools();
-        const searchTool = tools.find((tool) => isDocsearchTool(tool));
-        if (!searchTool) continue;
-        const mcpResult = await client.callTool(searchTool.name, {
-          query: args.query || "",
-          scopePath: args.scopePath || "",
-          maxResults: clampNumber(args.maxResults, 1, 20, 8)
-        });
-        return {
-          ok: true,
-          source: "docsearch-mcp",
-          serverName: server.name,
-          toolName: searchTool.name,
-          results: normalizeDocsearchResults(mcpResult),
-          fallbackUsed: false
-        };
-      } catch (error) {
-        this.emit("event", {
-          type: "mcp.error",
-          sessionId: params.sessionId,
-          taskId: params.taskId,
-          serverName: server.name,
-          error: error?.message || "docsearch MCP call failed."
-        });
-      }
-    }
-
+  async executeCodmesSearch(args = {}) {
     const { searchWorkspace } = await import("../search-service.mjs");
-    const fallback = await searchWorkspace(this.workspaceRoot, {
+    const search = await searchWorkspace(this.workspaceRoot, {
       query: args.query || "",
       scopePath: args.scopePath || "",
       maxResults: clampNumber(args.maxResults, 1, 20, 8)
     });
     return {
       ok: true,
-      source: "workspace-search-fallback",
-      results: normalizeWorkspaceSearchResults(fallback),
-      fallbackUsed: true,
-      warning: docsearchServers.length
-        ? "docsearch MCP did not return usable results; workspace search fallback was used."
-        : "docsearch MCP is not configured."
+      source: "codmes-search",
+      results: normalizeWorkspaceSearchResults(search),
+      fallbackUsed: false
     };
   }
 
@@ -1894,7 +1846,7 @@ function surfacePolicyLines(surface) {
     case "notes":
       return [
         "Surface mode: Notes.",
-        "Prefer note/document/PDF text search, file metadata, docsearch MCP when configured, and concise citations to workspace-relative paths.",
+        "Prefer Codmes built-in note/document/PDF/code/conversation search, file metadata, and concise citations to workspace-relative paths.",
         "For broad folder or document questions, search before answering instead of guessing from filenames alone."
       ];
     case "chat":
@@ -1904,44 +1856,6 @@ function surfacePolicyLines(surface) {
         "Use recall and tool discovery when the latest request appears to need a more specialized surface capability such as notes search or code tools."
       ];
   }
-}
-
-function isDocsearchTool(tool = {}) {
-  const text = `${tool.name || ""} ${tool.description || ""}`.toLowerCase();
-  return /\b(search|query|retrieve|lookup|find)\b/.test(text)
-    && /(doc|document|pdf|note|rag|chunk|semantic|index)/.test(text);
-}
-
-function normalizeDocsearchResults(mcpResult) {
-  const raw = Array.isArray(mcpResult?.results)
-    ? mcpResult.results
-    : Array.isArray(mcpResult?.content)
-      ? mcpResult.content
-      : Array.isArray(mcpResult)
-        ? mcpResult
-        : [];
-  return raw.map((item, index) => {
-    const parsed = parseMcpTextResult(item);
-    return {
-      path: parsed.path || item.path || item.uri || item.file || "",
-      title: parsed.title || item.title || item.name || "",
-      snippet: parsed.snippet || parsed.text || item.snippet || item.text || item.content || "",
-      score: Number.isFinite(Number(item.score)) ? Number(item.score) : undefined,
-      page: item.page ?? parsed.page,
-      chunkId: item.chunkId || item.chunk_id || parsed.chunkId || `${index + 1}`
-    };
-  }).filter((item) => item.path || item.snippet || item.title);
-}
-
-function parseMcpTextResult(item) {
-  if (!item || typeof item !== "object") return {};
-  if (item.type !== "text" || typeof item.text !== "string") return {};
-  const text = item.text.trim();
-  try {
-    const json = JSON.parse(text);
-    if (json && typeof json === "object") return json;
-  } catch {}
-  return { snippet: text };
 }
 
 function normalizeWorkspaceSearchResults(result = {}) {

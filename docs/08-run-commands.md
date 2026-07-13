@@ -108,8 +108,7 @@ Runtime config is stored under:
 <workspace>/.codmes/config/config.yaml
 ```
 
-Environment variables with the `CODMES_` prefix are preferred. Existing `AIW_`
-variables are still detected as a deprecated fallback:
+Codmes uses the `CODMES_` environment variable prefix:
 
 ```bash
 export CODMES_OPENAI_API_KEY="sk-..."
@@ -152,8 +151,8 @@ model APIs.
 
 The normal user-facing provider list intentionally exposes only OpenAI Codex,
 Ollama Cloud, and Ollama Local until the other provider transports are complete.
-Legacy custom endpoint config is still read for compatibility, but it is not
-shown as a primary setup path.
+Custom endpoint config is supported through the Codmes provider settings, but it
+is not shown as a primary setup path.
 
 The literal `ollama launch codmes` integration must be added by Ollama upstream;
 the local `codmes ollama` command performs the equivalent Codmes setup.
@@ -170,7 +169,7 @@ chat:
 
 notes:
   workspace_search
-  docsearch_search
+  codmes_search
   read_note_file
   read_file_metadata
 

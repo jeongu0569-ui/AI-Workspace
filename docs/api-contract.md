@@ -94,7 +94,7 @@ filename hits, scope filtering, `kind`/`kinds`, modified date filters, and
 first-pass PDF text extraction through `.codmes/index/pdf-text/`.
 
 External search/RAG direction is tracked in `docs/rag-backend-design.md`.
-docsearch MCP integration is tracked in `docs/docsearch-mcp-integration.md`.
+Codmes Search integration is tracked in `docs/codmes-search-integration.md`.
 
 ## Provider, Auth, And Models
 
@@ -211,7 +211,7 @@ Tool modes are surface-scoped:
 
 ```text
 chat  -> conversation_search, conversation_read, memory_search, tool_discovery
-notes -> workspace/docsearch/read-note/file-metadata tools plus conversation/memory tools
+notes -> workspace/Codmes Search/read-note/file-metadata tools plus conversation/memory tools
 code  -> CodeAgentRuntime search/read/git/patch/check tools plus conversation/memory tools
 ```
 
@@ -356,7 +356,7 @@ exists.
 
 - OAuth provider flow is not complete.
 - Built-in search is a text/PDF scan fallback. Codmes does not include an
-  internal OCR engine or native vector database; docsearch MCP is the
+  internal OCR engine or native vector database; Codmes Search is the
   recommended external semantic search path.
 - Audit log exists for security policy decisions. More runtime subsystems should
   write explicit approved/rejected records as they become first-class actions.

@@ -94,7 +94,7 @@ Remaining:
 
 - Stronger semantic memory ranking.
 - Richer folder/project conversation management UI.
-- Better use of external docsearch/MCP results for broad workspace recall.
+- Better use of external Codmes Search results for broad workspace recall.
 
 ## Phase 4: Apple Client
 
@@ -126,7 +126,7 @@ Status: in progress.
 - Markdown reading mode and edit mode: first pass done.
 - PDF metadata and text extraction cache: first pass done.
 - Workspace metadata search: done.
-- docsearch MCP integration path and fallback: done.
+- Codmes Search integration path and fallback: done.
 - External search/RAG direction documented: done.
 
 Remaining:
@@ -134,4 +134,4 @@ Remaining:
 - PDF annotation and Apple Pencil storage/sync.
 - Server-side thumbnails and page previews.
 - Search/index status UI.
-- More polished docsearch MCP setup/status UX.
+- More polished Codmes Search setup/status UX.

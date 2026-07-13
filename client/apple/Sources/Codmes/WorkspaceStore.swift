@@ -51,6 +51,10 @@ final class WorkspaceStore: ObservableObject {
     @Published var runtimeModelSetupMessage = ""
     @Published var workspaceSurfaces: [WorkspaceSurface] = []
     @Published var surfaceSetupMessage = ""
+    @Published var mcpServers: [MCPServerConfig] = []
+    @Published var mcpSetupMessage = ""
+    @Published var searchConfig: SearchConfigResponse?
+    @Published var searchSetupMessage = ""
     @Published var hiddenModelProviderIds = WorkspaceStore.loadStringSet("codmes.hiddenModelProviderIds")
     @Published var hiddenModelIds = WorkspaceStore.loadStringSet("codmes.hiddenModelIds")
 
@@ -140,6 +144,9 @@ final class WorkspaceStore: ObservableObject {
             code = codeTree.children
             connectionStep = "Loading surfaces"
             await refreshSurfaces()
+            connectionStep = "Loading MCP servers"
+            await refreshMCPServers()
+            await refreshSearchConfig()
             connectionStep = "Loading runtime metadata"
             await refreshHermesMetadata()
             connectionStep = "Loading pending approvals"
@@ -235,6 +242,118 @@ final class WorkspaceStore: ObservableObject {
             surfaceSetupMessage = ""
         } catch {
             surfaceSetupMessage = error.localizedDescription
+        }
+    }
+
+    func refreshMCPServers() async {
+        guard let api else { return }
+        do {
+            mcpServers = try await api.mcpServers()
+            if mcpServers.isEmpty {
+                mcpSetupMessage = "No optional MCP servers configured."
+            } else {
+                mcpSetupMessage = "Loaded \(mcpServers.count) optional MCP server(s)."
+            }
+        } catch {
+            mcpSetupMessage = error.localizedDescription
+        }
+    }
+
+    func refreshSearchConfig() async {
+        guard let api else { return }
+        do {
+            searchConfig = try await api.searchConfig()
+            searchSetupMessage = "Search settings loaded."
+        } catch {
+            searchSetupMessage = error.localizedDescription
+        }
+    }
+
+    func saveSearchConfig(rootsText: String, openaiBaseUrl: String, openaiApiKey: String, openaiEmbedModel: String, openaiEmbedDim: String) async {
+        guard let api else { return }
+        let roots = rootsText
+            .split(whereSeparator: { $0.isNewline || $0 == "," })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !roots.isEmpty else {
+            searchSetupMessage = "At least one indexing root is required."
+            return
+        }
+        guard let dim = Int(openaiEmbedDim.trimmingCharacters(in: .whitespacesAndNewlines)), dim > 0 else {
+            searchSetupMessage = "Embedding dimension must be a positive number."
+            return
+        }
+        do {
+            let body = SearchConfigUpdateBody(
+                roots: roots,
+                embeddingsProvider: "openai",
+                openaiBaseUrl: openaiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+                openaiApiKey: openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+                openaiEmbedModel: openaiEmbedModel.trimmingCharacters(in: .whitespacesAndNewlines),
+                openaiEmbedDim: dim,
+                includeGlobs: nil,
+                excludeGlobs: nil,
+                dbPath: nil
+            )
+            searchConfig = try await api.updateSearchConfig(body: body)
+            searchSetupMessage = "Saved Search settings."
+        } catch {
+            searchSetupMessage = error.localizedDescription
+        }
+    }
+
+    func saveMCPServer(name: String, command: String, argsText: String, envText: String, scopePath: String, enabled: Bool, editingExisting: Bool) async {
+        guard let api else { return }
+        let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedCommand = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedName.isEmpty else {
+            mcpSetupMessage = "MCP name is required."
+            return
+        }
+        guard !cleanedCommand.isEmpty else {
+            mcpSetupMessage = "MCP command is required."
+            return
+        }
+        do {
+            let updatesExistingServer = editingExisting || mcpServers.contains(where: { $0.name == cleanedName })
+            let body = MCPServerUpdateBody(
+                name: updatesExistingServer ? nil : cleanedName,
+                command: cleanedCommand,
+                args: splitShellLikeArgs(argsText),
+                enabled: enabled,
+                env: parseEnvLines(envText),
+                scopePath: scopePath.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            if updatesExistingServer {
+                _ = try await api.updateMCPServer(name: cleanedName, body: body)
+            } else {
+                _ = try await api.addMCPServer(body: body)
+            }
+            mcpSetupMessage = "Saved MCP server \(cleanedName)."
+            await refreshMCPServers()
+        } catch {
+            mcpSetupMessage = error.localizedDescription
+        }
+    }
+
+    func setMCPServerEnabled(_ server: MCPServerConfig, enabled: Bool) async {
+        guard let api else { return }
+        do {
+            _ = try await api.setMCPServerEnabled(name: server.name, enabled: enabled)
+            await refreshMCPServers()
+        } catch {
+            mcpSetupMessage = error.localizedDescription
+        }
+    }
+
+    func deleteMCPServer(_ server: MCPServerConfig) async {
+        guard let api else { return }
+        do {
+            try await api.deleteMCPServer(name: server.name)
+            mcpSetupMessage = "Removed MCP server \(server.name)."
+            await refreshMCPServers()
+        } catch {
+            mcpSetupMessage = error.localizedDescription
         }
     }
 
@@ -1259,6 +1378,9 @@ final class WorkspaceStore: ObservableObject {
             await startNewHermesSession()
         }
         guard let liveSessionId else { return }
+        if activeHermesSessionTitle == "No session" || activeHermesSessionTitle == "New session" || activeHermesSessionTitle.hasPrefix("Session ") {
+            activeHermesSessionTitle = localSessionTitle(from: trimmed)
+        }
         chatLines.append(ChatLine(role: "user", text: trimmed))
         activeActivityLineId = nil
         isChatTurnOpen = true
@@ -1273,6 +1395,38 @@ final class WorkspaceStore: ObservableObject {
         } catch {
             statusMessage = error.localizedDescription
             chatLines.append(ChatLine(role: "system", text: error.localizedDescription))
+        }
+    }
+
+    func renameHermesSession(_ session: HermesSessionSummary, title: String) async {
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            statusMessage = "Session title is required"
+            return
+        }
+        guard let api else { return }
+        do {
+            try await api.renameHermesSession(sessionId: session.id, title: cleaned)
+            hermesSessions = hermesSessions.map {
+                $0.id == session.id
+                    ? HermesSessionSummary(
+                        id: $0.id,
+                        title: cleaned,
+                        updatedAt: $0.updatedAt,
+                        folderId: $0.folderId,
+                        folderTitle: $0.folderTitle,
+                        projectId: $0.projectId,
+                        projectTitle: $0.projectTitle
+                    )
+                    : $0
+            }
+            if session.id == liveSessionId {
+                activeHermesSessionTitle = cleaned
+            }
+            statusMessage = "Renamed \(cleaned)"
+            await refreshHermesMetadata()
+        } catch {
+            statusMessage = error.localizedDescription
         }
     }
 
@@ -1291,6 +1445,34 @@ final class WorkspaceStore: ObservableObject {
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    func deleteHermesSessions(_ sessions: [HermesSessionSummary]) async {
+        guard let api else { return }
+        let deletable = sessions.filter { $0.id != liveSessionId }
+        guard !deletable.isEmpty else {
+            statusMessage = "No deletable sessions selected"
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        var deletedIds = Set<String>()
+        var failureCount = 0
+        for session in deletable {
+            do {
+                try await api.deleteHermesSession(sessionId: session.id)
+                deletedIds.insert(session.id)
+            } catch {
+                failureCount += 1
+            }
+        }
+
+        hermesSessions.removeAll { deletedIds.contains($0.id) }
+        statusMessage = failureCount == 0
+            ? "Deleted \(deletedIds.count) sessions"
+            : "Deleted \(deletedIds.count), failed \(failureCount)"
+        await refreshHermesMetadata()
     }
 
     func applyAccessModeToLiveSession() async {
@@ -1373,6 +1555,74 @@ final class WorkspaceStore: ObservableObject {
     private func shortProjectTitle(_ value: String) -> String {
         let normalized = value.replacingOccurrences(of: "\\", with: "/")
         return normalized.split(separator: "/").last.map(String.init) ?? value
+    }
+
+    private func localSessionTitle(from message: String) -> String {
+        let collapsed = message
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?。！？"))
+        guard !collapsed.isEmpty else { return "New chat" }
+        let limit = 34
+        if collapsed.count <= limit { return collapsed }
+        let index = collapsed.index(collapsed.startIndex, offsetBy: limit)
+        return "\(collapsed[..<index].trimmingCharacters(in: .whitespacesAndNewlines))..."
+    }
+
+    private func splitShellLikeArgs(_ value: String) -> [String] {
+        var args: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaping = false
+        for char in value {
+            if escaping {
+                current.append(char)
+                escaping = false
+                continue
+            }
+            if char == "\\" {
+                escaping = true
+                continue
+            }
+            if let activeQuote = quote {
+                if char == activeQuote {
+                    quote = nil
+                } else {
+                    current.append(char)
+                }
+                continue
+            }
+            if char == "\"" || char == "'" {
+                quote = char
+                continue
+            }
+            if char.isWhitespace {
+                if !current.isEmpty {
+                    args.append(current)
+                    current = ""
+                }
+            } else {
+                current.append(char)
+            }
+        }
+        if !current.isEmpty {
+            args.append(current)
+        }
+        return args
+    }
+
+    private func parseEnvLines(_ value: String) -> [String: String] {
+        var result: [String: String] = [:]
+        for line in value.split(whereSeparator: \.isNewline) {
+            let raw = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty, let equals = raw.firstIndex(of: "=") else { continue }
+            let key = raw[..<equals].trimmingCharacters(in: .whitespacesAndNewlines)
+            let val = raw[raw.index(after: equals)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty && !val.isEmpty {
+                result[String(key)] = String(val)
+            }
+        }
+        return result
     }
 
     func respondToApproval(lineId: UUID, approved: Bool) async {

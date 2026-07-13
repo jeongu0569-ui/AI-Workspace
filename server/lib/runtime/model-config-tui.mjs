@@ -18,11 +18,8 @@ export function vendoredModelEntry(repoRoot) {
 export function resolveModelRuntimePython(repoRoot, env = process.env) {
   const candidates = [
     env.CODMES_RUNTIME_PYTHON,
-    env.AIW_RUNTIME_PYTHON,
     path.join(repoRoot, ".codmes-runtime", "bin", "python"),
     path.join(repoRoot, ".codmes-runtime", "Scripts", "python.exe"),
-    path.join(repoRoot, ".aiw-runtime", "bin", "python"),
-    path.join(repoRoot, ".aiw-runtime", "Scripts", "python.exe"),
     path.join(repoRoot, ".venv", "bin", "python"),
     path.join(repoRoot, ".venv", "Scripts", "python.exe"),
     path.join(repoRoot, "vendor", "hermes-agent", ".venv", "bin", "python"),
@@ -59,8 +56,7 @@ export function createModelTuiLaunch({ repoRoot, workspaceRoot, args = [], env =
       HERMES_HOME: modelConfigHome(workspaceRoot),
       PYTHONPATH: [vendorRoot, existingPythonPath].filter(Boolean).join(path.delimiter),
       PYTHONNOUSERSITE: "1",
-      CODMES_VENDOR_RUNTIME: "1",
-      AIW_VENDOR_RUNTIME: "1"
+      CODMES_VENDOR_RUNTIME: "1"
     }
   };
 }

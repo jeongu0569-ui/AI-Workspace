@@ -133,18 +133,17 @@ test("appended provider credential becomes the active account", async () => {
   assert.equal(entries[0].email, "new@example.com");
 });
 
-test("CODMES env aliases are preferred while AIW env aliases remain compatible", async () => {
-  assert.deepEqual(envAliases("AIW_OPENAI_API_KEY"), ["CODMES_OPENAI_API_KEY", "AIW_OPENAI_API_KEY"]);
-  assert.deepEqual(envAliases("CODMES_CUSTOM_API_KEY"), ["CODMES_CUSTOM_API_KEY", "AIW_CUSTOM_API_KEY"]);
+test("CODMES env keys are used directly without legacy aliases", async () => {
+  assert.deepEqual(envAliases("CODMES_OPENAI_API_KEY"), ["CODMES_OPENAI_API_KEY"]);
+  assert.deepEqual(envAliases("CODMES_CUSTOM_API_KEY"), ["CODMES_CUSTOM_API_KEY"]);
 
-  const keys = providerEnvKeys({ env: ["AIW_OPENAI_API_KEY", "OPENAI_API_KEY"] });
-  assert.deepEqual(keys, ["CODMES_OPENAI_API_KEY", "AIW_OPENAI_API_KEY", "OPENAI_API_KEY"]);
+  const keys = providerEnvKeys({ env: ["CODMES_OPENAI_API_KEY", "OPENAI_API_KEY"] });
+  assert.deepEqual(keys, ["CODMES_OPENAI_API_KEY", "OPENAI_API_KEY"]);
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-env-status-"));
   await ensureRuntimeConfig(root);
   const status = await listCredentialStatus(root, {
-    CODMES_OPENAI_API_KEY: "new-key",
-    AIW_OPENAI_API_KEY: "legacy-key"
+    CODMES_OPENAI_API_KEY: "new-key"
   });
   const openai = status.find((item) => item.provider === "openai-api");
   assert.equal(openai.configured, true);

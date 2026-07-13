@@ -17,7 +17,7 @@
 
 		43FBD23C9D0E4947AA3E9A42 /* LiveChatClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73779B0EDE9A4F3B9DFC6517 /* LiveChatClient.swift */; };
 		48FB524AFD6743849FBE6AFC /* WorkspaceAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14787F32F0304A32B7916672 /* WorkspaceAPI.swift */; };
-		767D4168CD28417085839C03 /* AIWorkspaceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B976F60DF13B494FABD55609 /* AIWorkspaceApp.swift */; };
+		767D4168CD28417085839C03 /* CodmesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B976F60DF13B494FABD55609 /* CodmesApp.swift */; };
 		79EA66C9DB23470A813D2399 /* ChatHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8708198D47F24EFCA25FA2FF /* ChatHomeView.swift */; };
 		7B972FFE56D7499B83ACAAEE /* FileSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F506A7A90DC499192582AC9 /* FileSectionView.swift */; };
 		82D33833400243A1BA45C06B /* LiveChatClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73779B0EDE9A4F3B9DFC6517 /* LiveChatClient.swift */; };
@@ -25,7 +25,7 @@
 		C053B1D066564AAF9EB163CF /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC742CBD01884A2190D55DA2 /* RootView.swift */; };
 		DC869511E1264A16B71CDAFA /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC742CBD01884A2190D55DA2 /* RootView.swift */; };
 		E879AE0FECD14F2A802E6117 /* HeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5241C0E1854D4E939201DB3F /* HeaderView.swift */; };
-		ED59859B6FF64593824B30A9 /* AIWorkspaceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B976F60DF13B494FABD55609 /* AIWorkspaceApp.swift */; };
+		ED59859B6FF64593824B30A9 /* CodmesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B976F60DF13B494FABD55609 /* CodmesApp.swift */; };
 		EE28A7064EBA4B50AFDDD034 /* ChatHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8708198D47F24EFCA25FA2FF /* ChatHomeView.swift */; };
 		F29F27586DE64EA98831454D /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CB2E54F6EF47EEA71CC126 /* WorkspaceStore.swift */; };
 		3FA1A002A0B14A6F9B99C001 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA1A000A0B14A6F9B99C001 /* KeychainStore.swift */; };
@@ -50,7 +50,7 @@
 		92BE9EF47DFF4ADF85510D52 /* Codmes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codmes.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		93AF95165A8A426592CD258C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		98E55E8ED6A747FAA233CC3D /* Codmes iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codmes iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		B976F60DF13B494FABD55609 /* AIWorkspaceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIWorkspaceApp.swift; sourceTree = "<group>"; };
+		B976F60DF13B494FABD55609 /* CodmesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodmesApp.swift; sourceTree = "<group>"; };
 		CC742CBD01884A2190D55DA2 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		CEC5F343050B4BFFA665B914 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -73,10 +73,10 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		942FCD05B4354DE1A639EB4B /* Sources/AIWorkspace */ = {
+		942FCD05B4354DE1A639EB4B /* Sources/Codmes */ = {
 			isa = PBXGroup;
 			children = (
-				B976F60DF13B494FABD55609 /* AIWorkspaceApp.swift */,
+				B976F60DF13B494FABD55609 /* CodmesApp.swift */,
 				99A0E6B3E90E492CBD0DD600 /* ApprovalsInboxView.swift */,
 				8708198D47F24EFCA25FA2FF /* ChatHomeView.swift */,
 				4F506A7A90DC499192582AC9 /* FileSectionView.swift */,
@@ -89,7 +89,7 @@
 				14787F32F0304A32B7916672 /* WorkspaceAPI.swift */,
 				29CB2E54F6EF47EEA71CC126 /* WorkspaceStore.swift */,
 			);
-			path = Sources/AIWorkspace;
+			path = Sources/Codmes;
 			sourceTree = "<group>";
 		};
 		B79BF811975F4639B2201F03 /* Products */ = {
@@ -114,7 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				C28DE4E4D68A44FE969FA614 /* App */,
-				942FCD05B4354DE1A639EB4B /* Sources/AIWorkspace */,
+				942FCD05B4354DE1A639EB4B /* Sources/Codmes */,
 				B79BF811975F4639B2201F03 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -122,7 +122,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		17EC45DFCB1349F793E8B926 /* AIWorkspace */ = {
+		17EC45DFCB1349F793E8B926 /* Codmes */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A147E9AE16C0417786C98A67 /* Build configuration list for PBXNativeTarget "Codmes" */;
 			buildPhases = (
@@ -186,7 +186,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				17EC45DFCB1349F793E8B926 /* AIWorkspace */,
+				17EC45DFCB1349F793E8B926 /* Codmes */,
 				32297155EC3C4ED885C414E7 /* Codmes iOS */,
 			);
 		};
@@ -197,7 +197,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				767D4168CD28417085839C03 /* AIWorkspaceApp.swift in Sources */,
+				767D4168CD28417085839C03 /* CodmesApp.swift in Sources */,
 				EE28A7064EBA4B50AFDDD034 /* ChatHomeView.swift in Sources */,
 				7B972FFE56D7499B83ACAAEE /* FileSectionView.swift in Sources */,
 				0A45D103ADE640998C377118 /* HeaderView.swift in Sources */,
@@ -216,7 +216,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ED59859B6FF64593824B30A9 /* AIWorkspaceApp.swift in Sources */,
+				ED59859B6FF64593824B30A9 /* CodmesApp.swift in Sources */,
 				79EA66C9DB23470A813D2399 /* ChatHomeView.swift in Sources */,
 				366FEBDCA8B64981A2D1586B /* FileSectionView.swift in Sources */,
 				E879AE0FECD14F2A802E6117 /* HeaderView.swift in Sources */,
@@ -250,7 +250,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hermesworkspace.aiworkspace;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codmes.app;
 				PRODUCT_NAME = "Codmes";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
@@ -335,7 +335,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hermesworkspace.aiworkspace.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codmes.app.ios;
 				PRODUCT_NAME = "Codmes iOS";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -416,7 +416,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hermesworkspace.aiworkspace.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codmes.app.ios;
 				PRODUCT_NAME = "Codmes iOS";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -443,7 +443,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hermesworkspace.aiworkspace;
+				PRODUCT_BUNDLE_IDENTIFIER = com.codmes.app;
 				PRODUCT_NAME = "Codmes";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;

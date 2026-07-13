@@ -24,7 +24,7 @@ import {
 import { readAuditSummary } from "./audit-log.mjs";
 
 test("Skills registry basic operations, validation, and path traversal protection", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-skills-test-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-skills-test-"));
   try {
     // 1. Validation checks
     assert.throws(() => validateSkillName("../bad"), /traversal/);
@@ -70,7 +70,7 @@ test("Skills registry basic operations, validation, and path traversal protectio
 });
 
 test("Security policy evaluator allowed/denied commands and boundaries", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-security-test-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-security-test-"));
   try {
     const secConfig = {
       approvalMode: "suggest",
@@ -123,7 +123,7 @@ test("Security policy evaluator allowed/denied commands and boundaries", async (
 });
 
 test("Security policy requires approval for risky shell syntax", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-security-risky-shell-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-security-risky-shell-"));
   try {
     await writeSecurityConfig(root, {
       approvalMode: "auto",
@@ -143,7 +143,7 @@ test("Security policy requires approval for risky shell syntax", async () => {
 });
 
 test("System prompt dynamically includes enabled and relevant skills", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-prompt-skills-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-prompt-skills-"));
   try {
     const runtime = new OpenAICompatibleRuntime({ workspaceRoot: root });
 

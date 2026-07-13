@@ -578,10 +578,10 @@ function extractTags(text) {
   const tags = [];
   const lower = String(text || "").toLowerCase();
   for (const [needle, tag] of [
-    ["ai workspace", "ai-workspace"],
+    ["codmes", "codmes"],
     ["hermes", "hermes"],
     ["codex", "code-agent"],
-    ["docsearch", "rag"],
+    ["Codmes Search", "rag"],
     ["pdf", "pdf"],
     ["옵시디언", "obsidian"],
     ["음악", "music"]

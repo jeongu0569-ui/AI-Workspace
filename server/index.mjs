@@ -50,11 +50,11 @@ import {
   startCodexOAuthLogin
 } from "./lib/runtime/codex-oauth.mjs";
 
-const DEFAULT_PORT = Number.parseInt(process.env.CODMES_PORT || process.env.AIW_PORT || process.env.PORT || "8787", 10);
-const WORKSPACE_HOST = process.env.CODMES_HOST || process.env.AIW_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
+const DEFAULT_PORT = Number.parseInt(process.env.CODMES_PORT || process.env.PORT || "8787", 10);
+const WORKSPACE_HOST = process.env.CODMES_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
 const DEFAULT_WORKSPACE_ROOT = path.join(process.env.HOME || process.cwd(), "CodmesWorkspace");
-const WORKSPACE_ROOT = path.resolve(process.env.CODMES_WORKSPACE_ROOT || process.env.AIW_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
-const SERVER_TOKEN = process.env.CODMES_SERVER_TOKEN || process.env.AIW_SERVER_TOKEN || "";
+const WORKSPACE_ROOT = path.resolve(process.env.CODMES_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT);
+const SERVER_TOKEN = process.env.CODMES_SERVER_TOKEN || "";
 
 const TEXT_FILE_LIMIT = 5 * 1024 * 1024;
 
@@ -142,7 +142,7 @@ function isAuthorized(req, url) {
   const authorization = String(req.headers.authorization || "");
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   const queryToken = url.searchParams.get("token") || "";
-  const headerToken = String(req.headers["x-codmes-token"] || req.headers["x-aiw-token"] || "").trim();
+  const headerToken = String(req.headers["x-codmes-token"] || "").trim();
   return bearer === SERVER_TOKEN || queryToken === SERVER_TOKEN || headerToken === SERVER_TOKEN;
 }
 
@@ -314,6 +314,12 @@ async function handleRequest(req, res) {
     if (req.method === "POST" && url.pathname === "/api/search") {
       return sendJson(res, await runSearch(req));
     }
+    if (req.method === "GET" && url.pathname === "/api/search/config") {
+      return sendJson(res, await readSearchConfig());
+    }
+    if (req.method === "POST" && url.pathname === "/api/search/config") {
+      return sendJson(res, await updateSearchConfig(req));
+    }
     if (req.method === "GET" && url.pathname === "/api/skills") {
       return sendJson(res, await skillsList());
     }
@@ -339,7 +345,11 @@ async function handleRequest(req, res) {
       return sendJson(res, await listMcpServers());
     }
     if (req.method === "POST" && url.pathname === "/api/mcp") {
-      return sendJson(res, await addMcpServer(req), 201);
+      return sendJson(res, await addMcpServer(req));
+    }
+    const mcpUpdateMatch = url.pathname.match(/^\/api\/mcp\/([^/]+)$/);
+    if (mcpUpdateMatch && (req.method === "POST" || req.method === "PATCH")) {
+      return sendJson(res, await updateMcpServer(mcpUpdateMatch[1], req));
     }
     const mcpEnableMatch = url.pathname.match(/^\/api\/mcp\/([^/]+)\/enable$/);
     if (mcpEnableMatch && req.method === "POST") {
@@ -792,7 +802,7 @@ async function readTree(url) {
   const children = await Promise.all(entries
     .filter((entry) => !entry.name.startsWith(".DS_Store"))
     .filter((entry) => !(relativePath === "" && entry.name === ".hermes-workspace"))
-    .filter((entry) => !(relativePath === "" && (entry.name === ".codmes" || entry.name === ".ai-workspace")))
+    .filter((entry) => !(relativePath === "" && entry.name === ".codmes"))
     .map(async (entry) => {
       const childRelativePath = joinWorkspacePath(relativePath, entry.name);
       const childAbsolutePath = path.join(absolutePath, entry.name);
@@ -1073,7 +1083,7 @@ async function updateSecurity(req) {
 
 async function listMcpServers() {
   const config = await readRuntimeConfig(WORKSPACE_ROOT);
-  return { servers: config.mcpServers || [] };
+  return { servers: (config.mcpServers || []).map(normalizeMcpServer) };
 }
 
 async function addMcpServer(req) {
@@ -1083,17 +1093,51 @@ async function addMcpServer(req) {
   if (!command) throw Object.assign(new Error("Missing MCP command."), { status: 400 });
   const config = await readRuntimeConfig(WORKSPACE_ROOT);
   const servers = config.mcpServers || [];
-  if (servers.some((server) => server.name === name)) {
-    throw Object.assign(new Error(`MCP server already exists: ${name}`), { status: 409 });
-  }
-  servers.push({
+  const next = {
     name,
     command,
     args: Array.isArray(body.args) ? body.args.map(String) : [],
-    enabled: body.enabled !== false
-  });
+    enabled: body.enabled !== false,
+    env: sanitizeStringMap(body.env),
+    scopePath: String(body.scopePath || body.scope_path || "").trim()
+  };
+  const existingIndex = servers.findIndex((server) => server.name === name);
+  if (existingIndex !== -1) {
+    servers[existingIndex] = {
+      ...servers[existingIndex],
+      ...next
+    };
+    await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: servers });
+    return { ok: true, created: false, server: normalizeMcpServer(servers[existingIndex]) };
+  }
+  servers.push(next);
   await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: servers });
-  return { ok: true, server: servers.at(-1) };
+  return { ok: true, created: true, server: normalizeMcpServer(servers.at(-1)) };
+}
+
+async function updateMcpServer(name, req) {
+  const target = safeMcpName(decodeURIComponent(name));
+  const body = await readJsonBody(req);
+  const config = await readRuntimeConfig(WORKSPACE_ROOT);
+  const servers = config.mcpServers || [];
+  const index = servers.findIndex((item) => item.name === target);
+  if (index === -1) throw Object.assign(new Error(`MCP server not found: ${target}`), { status: 404 });
+
+  const current = servers[index];
+  const next = {
+    ...current,
+    command: body.command !== undefined ? String(body.command || "").trim() : current.command,
+    args: body.args !== undefined ? (Array.isArray(body.args) ? body.args.map(String) : []) : (current.args || []),
+    enabled: body.enabled !== undefined ? body.enabled !== false : current.enabled !== false,
+    env: body.env !== undefined ? sanitizeStringMap(body.env) : sanitizeStringMap(current.env),
+    scopePath: body.scopePath !== undefined || body.scope_path !== undefined
+      ? String(body.scopePath || body.scope_path || "").trim()
+      : String(current.scopePath || current.scope_path || "").trim()
+  };
+  if (!next.command) throw Object.assign(new Error("Missing MCP command."), { status: 400 });
+  servers[index] = next;
+  await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: servers });
+  return { ok: true, server: normalizeMcpServer(next) };
 }
 
 async function setMcpEnabled(name, enabled) {
@@ -1104,7 +1148,7 @@ async function setMcpEnabled(name, enabled) {
   if (!server) throw Object.assign(new Error(`MCP server not found: ${target}`), { status: 404 });
   server.enabled = enabled;
   await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: servers });
-  return { ok: true, server };
+  return { ok: true, server: normalizeMcpServer(server) };
 }
 
 async function removeMcpServer(name) {
@@ -1117,6 +1161,82 @@ async function removeMcpServer(name) {
   }
   await writeRuntimeConfig(WORKSPACE_ROOT, { ...config, mcpServers: next });
   return { ok: true, removed: target };
+}
+
+async function readSearchConfig() {
+  const envPath = codmesSearchEnvPath();
+  const env = await readEnvFile(envPath);
+  return {
+    configPath: envPath,
+    roots: splitCsv(env.FILE_ROOTS || defaultSearchRoots()),
+    includeGlobs: splitCsv(env.FILE_INCLUDE_GLOBS || defaultSearchIncludeGlobs()),
+    excludeGlobs: splitCsv(env.FILE_EXCLUDE_GLOBS || defaultSearchExcludeGlobs()),
+    embeddingsProvider: env.EMBEDDINGS_PROVIDER || "openai",
+    openaiBaseUrl: env.OPENAI_BASE_URL || "http://127.0.0.1:11434/v1",
+    openaiApiKeyConfigured: Boolean(env.OPENAI_API_KEY),
+    openaiEmbedModel: env.OPENAI_EMBED_MODEL || "bge-m3",
+    openaiEmbedDim: Number.parseInt(env.OPENAI_EMBED_DIM || "1024", 10),
+    dbPath: env.DB_PATH || path.join(WORKSPACE_ROOT, ".codmes", "index", "search.sqlite"),
+    backend: env.SEARCH_BACKEND || "codmes"
+  };
+}
+
+async function updateSearchConfig(req) {
+  const body = await readJsonBody(req);
+  const envPath = codmesSearchEnvPath();
+  const previousEnv = await readEnvFile(envPath);
+  const current = await readSearchConfig();
+  const roots = sanitizeStringList(body.roots, current.roots.length ? current.roots : splitCsv(defaultSearchRoots()));
+  const includeGlobs = sanitizeStringList(body.includeGlobs, current.includeGlobs.length ? current.includeGlobs : splitCsv(defaultSearchIncludeGlobs()));
+  const excludeGlobs = sanitizeStringList(body.excludeGlobs, current.excludeGlobs.length ? current.excludeGlobs : splitCsv(defaultSearchExcludeGlobs()));
+  const nextEnv = {
+    FILE_ROOTS: roots.join(","),
+    FILE_INCLUDE_GLOBS: includeGlobs.join(","),
+    FILE_EXCLUDE_GLOBS: excludeGlobs.join(","),
+    SEARCH_BACKEND: "codmes",
+    EMBEDDINGS_PROVIDER: String(body.embeddingsProvider || current.embeddingsProvider || "openai").trim(),
+    OPENAI_BASE_URL: String(body.openaiBaseUrl || current.openaiBaseUrl || "http://127.0.0.1:11434/v1").trim(),
+    OPENAI_API_KEY: body.openaiApiKey !== undefined
+      ? String(body.openaiApiKey || "").trim()
+      : previousEnv.OPENAI_API_KEY || "",
+    OPENAI_EMBED_MODEL: String(body.openaiEmbedModel || current.openaiEmbedModel || "bge-m3").trim(),
+    OPENAI_EMBED_DIM: String(body.openaiEmbedDim || current.openaiEmbedDim || "1024").trim(),
+    DB_PATH: String(body.dbPath || current.dbPath || path.join(WORKSPACE_ROOT, ".codmes", "index", "search.sqlite")).trim()
+  };
+  await fs.mkdir(path.dirname(envPath), { recursive: true });
+  await fs.mkdir(path.dirname(nextEnv.DB_PATH), { recursive: true });
+  await writeEnvFile(envPath, nextEnv);
+
+  return { ok: true, ...(await readSearchConfig()) };
+}
+
+function codmesSearchEnvPath() {
+  return path.join(WORKSPACE_ROOT, ".codmes", "config", "search.env");
+}
+
+function defaultSearchRoots() {
+  return [
+    path.join(WORKSPACE_ROOT, "Notes"),
+    path.join(WORKSPACE_ROOT, "Documents"),
+    path.join(WORKSPACE_ROOT, "Code"),
+    path.join(WORKSPACE_ROOT, ".codmes", "conversation-index"),
+    path.join(WORKSPACE_ROOT, ".codmes", "sessions")
+  ].join(",");
+}
+
+function defaultSearchIncludeGlobs() {
+  return [
+    "**/*.md", "**/*.mdx", "**/*.txt", "**/*.json", "**/*.jsonl", "**/*.yaml", "**/*.yml",
+    "**/*.js", "**/*.mjs", "**/*.ts", "**/*.tsx", "**/*.py", "**/*.swift", "**/*.java",
+    "**/*.c", "**/*.cpp", "**/*.h", "**/*.hpp", "**/*.rs", "**/*.go", "**/*.pdf"
+  ].join(",");
+}
+
+function defaultSearchExcludeGlobs() {
+  return [
+    "**/.git/**", "**/node_modules/**", "**/dist/**", "**/build/**", "**/target/**",
+    "**/DerivedData/**", "**/.next/**", "**/.venv/**", "**/venv/**", "**/__pycache__/**"
+  ].join(",");
 }
 
 async function doctorStatus() {
@@ -1401,6 +1521,74 @@ function safeMcpName(value) {
     throw Object.assign(new Error("MCP server name must contain only letters, numbers, dashes, and underscores."), { status: 400 });
   }
   return name;
+}
+
+function normalizeMcpServer(server = {}) {
+  return {
+    ...server,
+    name: String(server.name || ""),
+    command: String(server.command || ""),
+    args: Array.isArray(server.args) ? server.args.map(String) : [],
+    enabled: parseLooseBoolean(server.enabled, true),
+    env: sanitizeStringMap(server.env),
+    scopePath: String(server.scopePath || server.scope_path || "").trim()
+  };
+}
+
+function parseLooseBoolean(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function sanitizeStringMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, val]) => [String(key).trim(), String(val ?? "").trim()])
+      .filter(([key, val]) => key && val)
+  );
+}
+
+async function readEnvFile(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    const result = {};
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const index = trimmed.indexOf("=");
+      if (index === -1) continue;
+      result[trimmed.slice(0, index)] = trimmed.slice(index + 1);
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+async function writeEnvFile(filePath, values) {
+  const lines = Object.entries(values)
+    .filter(([key, value]) => key && value !== undefined && value !== null && String(value).trim())
+    .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, " ")}`);
+  await fs.writeFile(filePath, `${lines.join("\n")}\n`, "utf8");
+}
+
+function splitCsv(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function sanitizeStringList(value, fallback = []) {
+  if (!Array.isArray(value)) return fallback;
+  const result = value.map((item) => String(item || "").trim()).filter(Boolean);
+  return result.length ? result : fallback;
 }
 
 async function createCodeTask(req) {

@@ -33,7 +33,7 @@ code-agent workflows. Those ideas are being moved into Codmes modules.
 - Streaming model output through Codmes event format.
 - Tool registry and tool execution.
 - Approval-aware tool calls.
-- MCP/docsearch connection ownership.
+- Codmes Search connection ownership.
 - Sandbox policy.
 - OAuth account flows for providers that are not API-key based.
 

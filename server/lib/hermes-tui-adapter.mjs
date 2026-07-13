@@ -615,7 +615,7 @@ async function runSlashCommand(engine, memorySessions, params, config, workspace
     return {
       output: [
         "workspace_search",
-        "docsearch_search",
+        "codmes_search",
         "workspace_read_file",
         "read_note_file",
         "workspace_list_tree",

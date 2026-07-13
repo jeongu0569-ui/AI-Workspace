@@ -14,7 +14,7 @@ import {
 } from "./memory-retrieval.mjs";
 
 test("Memory Retrieval: search across memory pools", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-memory-retrieval-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-memory-retrieval-"));
   await fs.mkdir(path.join(root, ".codmes", "memory", "user"), { recursive: true });
   await fs.mkdir(path.join(root, ".codmes", "memory", "folders"), { recursive: true });
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
@@ -49,14 +49,14 @@ test("Memory Retrieval: search across memory pools", async () => {
 });
 
 test("Memory Retrieval: update pipeline saves scoped memories and reviews user memory by default", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-memory-update-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-memory-update-"));
   const session = {
     id: "session-memory",
     projectId: "project-alpha",
     folderId: "folder-notes",
     createdAt: "2026-07-08T10:00:00+09:00",
     summary: {
-      content: "주제: Codmes, RAG\n결정: docsearch MCP를 공식 검색 경로로 사용한다\n선호: 사용자는 다크 모드 UI를 좋아한다",
+      content: "주제: Codmes, RAG\n결정: Codmes Search를 공식 검색 경로로 사용한다\n선호: 사용자는 다크 모드 UI를 좋아한다",
       coveredMessageIds: ["u1", "a1"],
       updatedAt: "2026-07-08T10:05:00+09:00"
     },
@@ -80,7 +80,7 @@ test("Memory Retrieval: update pipeline saves scoped memories and reviews user m
   const loaded = await readMemoryById(root, approved.memory.id);
   assert.equal(loaded.id, approved.memory.id);
 
-  const projectSearch = await searchMemory(root, "docsearch", {
+  const projectSearch = await searchMemory(root, "Codmes Search", {
     currentProjectId: "project-alpha",
     maxResults: 10
   });
@@ -94,7 +94,7 @@ test("Memory Retrieval: update pipeline saves scoped memories and reviews user m
 });
 
 test("Memory Retrieval: duplicate content merges sources and deleted memories are not regenerated", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-memory-merge-delete-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-memory-merge-delete-"));
   const first = {
     id: "s1",
     createdAt: "2026-07-08T10:00:00+09:00",

@@ -21,7 +21,7 @@ test("Session Archive: exemption check", () => {
 });
 
 test("Session Archive: automatic archive and manual restore", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-session-archive-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-session-archive-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   const oldDate = new Date(Date.now() - 32 * 24 * 3600 * 1000).toISOString();
@@ -67,7 +67,7 @@ test("Session Archive: automatic archive and manual restore", async () => {
 });
 
 test("Session Archive: general chat overflow keeps latest 30 visible and exempts scoped chats", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-session-overflow-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-session-overflow-"));
   const sessionsDir = path.join(root, ".codmes", "sessions");
   const approvalsDir = path.join(root, ".codmes", "approvals");
   await fs.mkdir(sessionsDir, { recursive: true });

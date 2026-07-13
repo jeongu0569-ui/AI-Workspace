@@ -76,7 +76,7 @@ index_entries
 - chunk_count
 ```
 
-`docsearch-mcp` should be treated as a server-side index/search capability, not
+`codmes-search` should be treated as a server-side index/search capability, not
 as a client plugin detail.
 
 ## Session Associations
@@ -289,7 +289,7 @@ Default modes are code-defined and surface-scoped:
 
 ```text
 chat  -> conversation/memory/discovery tools
-notes -> workspace/docsearch/read-note/file-metadata tools
+notes -> workspace/Codmes Search/read-note/file-metadata tools
 code  -> CodeAgentRuntime search/read/git/patch/check tools
 ```
 

@@ -57,13 +57,58 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     const addedMcp = await fetchJson(`${baseUrl}/api/mcp`, {
       token,
       method: "POST",
-      body: { name: "test_mcp", command: "node", args: ["server.js"] }
+      body: { name: "test_mcp", command: "node", args: ["server.js"], scopePath: "Notes" }
     });
     assert.equal(addedMcp.server.name, "test_mcp");
+    assert.equal(addedMcp.server.scopePath, "Notes");
+    const upsertedMcp = await fetchJson(`${baseUrl}/api/mcp`, {
+      token,
+      method: "POST",
+      body: { name: "test_mcp", command: "node", args: ["updated.js"], enabled: true, scopePath: "Code" }
+    });
+    assert.equal(upsertedMcp.created, false);
+    assert.equal(upsertedMcp.server.scopePath, "Code");
+    assert.deepEqual(upsertedMcp.server.args, ["updated.js"]);
+    assert.equal(upsertedMcp.server.enabled, true);
+    const updatedMcp = await fetchJson(`${baseUrl}/api/mcp/test_mcp`, {
+      token,
+      method: "POST",
+      body: {
+        command: "example-mcp",
+        args: ["start", "--scope", "Notes"],
+        enabled: true,
+        env: { EXAMPLE_MCP_MODE: "demo" },
+        scopePath: "Notes/Research"
+      }
+    });
+    assert.equal(updatedMcp.server.command, "example-mcp");
+    assert.equal(updatedMcp.server.scopePath, "Notes/Research");
+    assert.equal(updatedMcp.server.env.EXAMPLE_MCP_MODE, "demo");
+    assert.deepEqual(updatedMcp.server.args, ["start", "--scope", "Notes"]);
+    const listedMcp = await fetchJson(`${baseUrl}/api/mcp`, { token });
+    assert.equal(typeof listedMcp.servers.find((server) => server.name === "test_mcp").enabled, "boolean");
     const disabled = await fetchJson(`${baseUrl}/api/mcp/test_mcp/disable`, { token, method: "POST" });
     assert.equal(disabled.server.enabled, false);
     const removed = await fetchJson(`${baseUrl}/api/mcp/test_mcp`, { token, method: "DELETE" });
     assert.equal(removed.removed, "test_mcp");
+
+    const searchConfig = await fetchJson(`${baseUrl}/api/search/config`, {
+      token,
+      method: "POST",
+      body: {
+        roots: ["Notes", "Code"],
+        embeddingsProvider: "openai",
+        openaiBaseUrl: "http://127.0.0.1:11434/v1",
+        openaiApiKey: "ollama",
+        openaiEmbedModel: "bge-m3",
+        openaiEmbedDim: 1024
+      }
+    });
+    assert.equal(searchConfig.ok, true);
+    assert.equal(searchConfig.openaiEmbedModel, "bge-m3");
+    assert.equal(searchConfig.openaiApiKeyConfigured, true);
+    assert.equal(searchConfig.backend, "codmes");
+    assert.match(searchConfig.configPath, /search\.env$/);
 
     const doctor = await fetchJson(`${baseUrl}/api/doctor`, { token });
     assert.equal(doctor.ok, true);

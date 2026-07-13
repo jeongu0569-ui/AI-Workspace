@@ -33,10 +33,7 @@ npm run runtime:bootstrap
 2. 저장소의 `.codmes-runtime`
 3. 저장소의 일반 `.venv`
 4. 벤더 디렉터리의 `.venv`
-5. 이전 Hermes 설치의 Python 환경 (migration fallback)
-6. 의존성이 이미 설치된 `python3` 또는 `python`
-
-기존 `AIW_RUNTIME_PYTHON`은 호환 fallback으로만 읽습니다.
+5. 의존성이 이미 설치된 `python3` 또는 `python`
 
 ## 설정 사용
 
@@ -55,7 +52,7 @@ codmes model set-default ollama-local gemma4:e2b-mlx
 ```
 
 TUI가 `provider`, `model.base_url`, `api_mode` 형식으로 저장한 endpoint를
-Codmes 런타임이 직접 읽는다. 이전 custom endpoint 설정도 호환한다.
+Codmes 런타임이 직접 읽는다. Custom endpoint 설정도 Codmes 설정으로 저장한다.
 다만 사용자-facing provider 목록은 현재 OpenAI Codex와 Ollama 계열만 노출한다.
 Anthropic, Bedrock, Copilot ACP 등은 transport 이식이 완료되기 전까지 앱/설정
 화면에서 숨긴다.

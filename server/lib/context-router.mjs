@@ -16,7 +16,7 @@ export async function buildWorkspaceContext(workspaceRoot, request = {}) {
       scopePath: "",
       activePath: cleanOptionalPath(workspaceRoot, request.activePath),
       ragRecommended: false,
-      ragSearchProvider: "docsearch-mcp",
+      ragSearchProvider: "codmes-search",
       fallbackSearchProvider: "workspace-scan",
       searchEndpoint: "/api/search",
       generatedAt: new Date().toISOString()
@@ -126,7 +126,7 @@ async function addMentionContexts(workspaceRoot, context, mentions, maxInlineCha
         kind: "folder",
         path: mentionPath,
         ragRecommended: true,
-        ragSearchProvider: "docsearch-mcp"
+        ragSearchProvider: "codmes-search"
       });
     }
   }
@@ -140,7 +140,7 @@ async function attachSmallFile(workspaceRoot, context, relativePath, options) {
       kind: "folder",
       path: resolved.relativePath,
       ragRecommended: true,
-      ragSearchProvider: "docsearch-mcp"
+      ragSearchProvider: "codmes-search"
     });
     context.workspace.ragRecommended = true;
     return;
@@ -176,7 +176,7 @@ async function fileResource(workspaceRoot, relativePath, forcedKind) {
     size: stat.size,
     modifiedAt: stat.mtime.toISOString(),
     ragRecommended: true,
-    ragSearchProvider: "docsearch-mcp"
+    ragSearchProvider: "codmes-search"
   };
 }
 

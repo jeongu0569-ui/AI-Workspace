@@ -29,8 +29,8 @@ export const TOOL_REGISTRY = [
     surfaces: ["notes"]
   },
   {
-    name: "docsearch_search",
-    description: "Search indexed notes, documents, and PDFs.",
+    name: "codmes_search",
+    description: "Search indexed notes, documents, PDFs, code, and conversation text through Codmes built-in search.",
     group: "notes_search",
     surfaces: ["notes"]
   },

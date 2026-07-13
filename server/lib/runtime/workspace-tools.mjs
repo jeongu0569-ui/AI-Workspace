@@ -39,8 +39,8 @@ export const WORKSPACE_TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "docsearch_search",
-      description: "Search indexed notes, documents, and PDFs. Uses native workspace search as the fallback when docsearch MCP is not configured.",
+      name: "codmes_search",
+      description: "Search indexed notes, documents, PDFs, code, and conversation text through Codmes built-in search. Use this for broad workspace/RAG questions.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -277,7 +277,7 @@ export const WORKSPACE_TOOL_DEFINITIONS = [
 
 export async function executeWorkspaceTool(workspaceRoot, toolName, rawArgs = {}, options = {}) {
   const args = typeof rawArgs === "string" ? parseToolArgs(rawArgs) : rawArgs;
-  if (toolName === "workspace_search" || toolName === "docsearch_search") {
+  if (toolName === "workspace_search" || toolName === "codmes_search") {
     return await searchWorkspace(workspaceRoot, {
       query: args.query,
       scopePath: args.scopePath || "",
@@ -350,7 +350,7 @@ async function listWorkspaceTree(workspaceRoot, args) {
     dirEntries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
     for (const entry of dirEntries) {
       if (entries.length >= maxEntries) return;
-      if (entry.name === ".DS_Store" || entry.name === ".codmes" || entry.name === ".ai-workspace" || entry.name === ".hermes-workspace") continue;
+      if (entry.name === ".DS_Store" || entry.name === ".codmes" || entry.name === ".hermes-workspace") continue;
       const absolutePath = path.join(directory, entry.name);
       const rel = path.relative(workspaceRoot, absolutePath).replace(/\\/g, "/");
       const itemStat = await fs.stat(absolutePath);

@@ -15,7 +15,7 @@ import {
 } from "./conversation-folders.mjs";
 
 test("Conversation Folders: CRUD and memory settings", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "aiw-conv-folders-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-conv-folders-"));
   await fs.mkdir(path.join(root, ".codmes", "sessions"), { recursive: true });
   
   // 1. Create

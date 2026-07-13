@@ -4,14 +4,12 @@
   "private": true,
   "type": "module",
   "bin": {
-    "codmes": "./bin/codmes.mjs",
-    "aiw": "./bin/aiw.mjs",
-    "ai-workspace": "./bin/codmes.mjs"
+    "codmes": "./bin/codmes.mjs"
   },
   "scripts": {
     "start": "node server/index.mjs",
     "runtime:bootstrap": "node scripts/bootstrap-runtime.mjs",
-    "check": "node --check bin/codmes.mjs && node --check bin/aiw.mjs && node --check server/index.mjs && node --check server/lib/path-utils.mjs && node --test server/*.test.mjs server/lib/*.test.mjs server/lib/runtime/*.test.mjs"
+    "check": "node --check bin/codmes.mjs && node --check server/index.mjs && node --check server/lib/path-utils.mjs && node --test server/*.test.mjs server/lib/*.test.mjs server/lib/runtime/*.test.mjs"
   },
   "engines": {
     "node": ">=22"

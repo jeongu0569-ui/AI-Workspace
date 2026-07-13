@@ -364,6 +364,54 @@ struct WorkspaceAPI {
         return try await request(components, method: "POST", body: body)
     }
 
+    func mcpServers() async throws -> [MCPServerConfig] {
+        let response: MCPServersResponse = try await get("/api/mcp")
+        return response.servers
+    }
+
+    func searchConfig() async throws -> SearchConfigResponse {
+        try await get("/api/search/config")
+    }
+
+    func updateSearchConfig(body: SearchConfigUpdateBody) async throws -> SearchConfigResponse {
+        try await post("/api/search/config", body: body)
+    }
+
+    func addMCPServer(body: MCPServerUpdateBody) async throws -> MCPServerConfig {
+        struct Response: Decodable {
+            let server: MCPServerConfig
+        }
+        let response: Response = try await post("/api/mcp", body: body)
+        return response.server
+    }
+
+    func updateMCPServer(name: String, body: MCPServerUpdateBody) async throws -> MCPServerConfig {
+        struct Response: Decodable {
+            let server: MCPServerConfig
+        }
+        var components = try components("/api/mcp/\(name)")
+        components.percentEncodedPath = "/api/mcp/\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name)"
+        let response: Response = try await request(components, method: "POST", body: body)
+        return response.server
+    }
+
+    func setMCPServerEnabled(name: String, enabled: Bool) async throws -> MCPServerConfig {
+        struct Response: Decodable {
+            let server: MCPServerConfig
+        }
+        let action = enabled ? "enable" : "disable"
+        var components = try components("/api/mcp/\(name)/\(action)")
+        components.percentEncodedPath = "/api/mcp/\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name)/\(action)"
+        let response: Response = try await request(components, method: "POST", body: EmptyBody())
+        return response.server
+    }
+
+    func deleteMCPServer(name: String) async throws {
+        var components = try components("/api/mcp/\(name)")
+        components.percentEncodedPath = "/api/mcp/\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name)"
+        let _: EmptyResponse = try await request(components, method: "DELETE")
+    }
+
     func hermesSessions() async throws -> [HermesSessionSummary] {
         let data = try await dataRequest(try components("/api/sessions"))
         let object = try JSONSerialization.jsonObject(with: data)
@@ -381,6 +429,12 @@ struct WorkspaceAPI {
         var components = try components("/api/sessions/\(sessionId)")
         components.percentEncodedPath = "/api/sessions/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)"
         let _: EmptyResponse = try await request(components, method: "DELETE")
+    }
+
+    func renameHermesSession(sessionId: String, title: String) async throws {
+        var components = try components("/api/sessions/\(sessionId)/rename")
+        components.percentEncodedPath = "/api/sessions/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)/rename"
+        let _: EmptyResponse = try await request(components, method: "POST", body: ["title": title])
     }
 
     private func get<T: Decodable>(_ path: String) async throws -> T {

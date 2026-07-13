@@ -25,7 +25,6 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const SERVER_ENTRY = path.join(REPO_ROOT, "server", "index.mjs");
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "CodmesWorkspace");
-const LEGACY_COMMAND = process.env.CODMES_LEGACY_COMMAND || "";
 const UI = {
   reset: "\x1b[0m",
   bold: "\x1b[1m",
@@ -44,9 +43,6 @@ main(process.argv.slice(2)).catch((error) => {
 });
 
 async function main(argv) {
-  if (LEGACY_COMMAND && !process.env.CODMES_SUPPRESS_LEGACY_WARNING) {
-    console.error(`\`${LEGACY_COMMAND}\` is a legacy command. Use \`codmes\` instead.`);
-  }
   const [command, ...args] = argv;
   if (!command) {
     if (process.stdin.isTTY) {
@@ -171,15 +167,11 @@ Quick start:
   codmes model list
   codmes auth list
 
-Aliases:
-  aiw and ai-workspace are deprecated compatibility aliases.
-
 Environment:
   CODMES_SERVER_URL          Workspace Server URL for API commands
   CODMES_WORKSPACE_ROOT      Workspace root used by codmes serve/tasks
   CODMES_HOST                Workspace Server bind host
   CODMES_PORT                Workspace Server port
-  AIW_* legacy variables are still read as fallback.
 `);
 }
 
@@ -610,8 +602,8 @@ async function runIndex(args) {
   codmes index search <query...> [--scope PATH] [--limit 10] [--url URL]
 
 Current MVP index backend is the Workspace Server file metadata index plus the
-workspace scan search API. docsearch/vector index providers will attach behind
-this command later.
+workspace scan search API. Codmes Search Runtime indexing providers will attach
+behind this command later.
 `);
     return;
   }
@@ -796,8 +788,6 @@ async function requestJson(baseUrl, pathname, options = {}) {
   if (options.body) headers["content-type"] = "application/json";
   const token = process.env.CODMES_SERVER_TOKEN
     || process.env.CODMES_AUTH_TOKEN
-    || process.env.AIW_SERVER_TOKEN
-    || process.env.AIW_AUTH_TOKEN
     || "";
   if (token) headers.authorization = `Bearer ${token}`;
   const response = await fetch(`${trimTrailingSlash(baseUrl)}${pathname}`, {
@@ -856,7 +846,6 @@ function workspaceUrl(options) {
   return trimTrailingSlash(
     stringOption(options.url)
     || process.env.CODMES_SERVER_URL
-    || process.env.AIW_SERVER_URL
     || process.env.WORKSPACE_SERVER_URL
     || DEFAULT_SERVER_URL
   );
@@ -867,7 +856,6 @@ function workspaceRoot(options) {
     stringOption(options.root)
     || stringOption(options["workspace-root"])
     || process.env.CODMES_WORKSPACE_ROOT
-    || process.env.AIW_WORKSPACE_ROOT
     || DEFAULT_WORKSPACE_ROOT
   ));
   migrateWorkspaceStateSync(root);
@@ -1657,7 +1645,10 @@ async function runDoctor(args) {
             continue;
           }
           console.log(`   - Testing MCP Server \x1b[36m${mcp.name}\x1b[0m...`);
-          const client = new McpClient(mcp.name, mcp.command, mcp.args || [], { workspaceRoot: root });
+          const client = new McpClient(mcp.name, mcp.command, mcp.args || [], {
+            workspaceRoot: root,
+            env: mcp.env || {}
+          });
           try {
             await client.start();
             const toolsList = await client.listTools();
@@ -2103,11 +2094,8 @@ async function runPromptToolkitChat(root) {
 function resolvePromptToolkitPython() {
   const candidates = [
     process.env.CODMES_RUNTIME_PYTHON,
-    process.env.AIW_RUNTIME_PYTHON,
     path.join(REPO_ROOT, ".codmes-runtime", "bin", "python"),
     path.join(REPO_ROOT, ".codmes-runtime", "Scripts", "python.exe"),
-    path.join(REPO_ROOT, ".aiw-runtime", "bin", "python"),
-    path.join(REPO_ROOT, ".aiw-runtime", "Scripts", "python.exe"),
     "python3",
     "python"
   ].filter(Boolean);

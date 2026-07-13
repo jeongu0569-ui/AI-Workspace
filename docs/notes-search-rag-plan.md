@@ -59,7 +59,7 @@ POST /api/index/rebuild
 
 This is a metadata and text-scan index. It is intentionally not a native vector
 index; semantic retrieval should come from an external server tool such as
-docsearch-mcp.
+codmes-search.
 
 ## Current Search
 
@@ -142,13 +142,13 @@ user message
 For whole-folder, whole-workspace, or PDF-heavy questions, the runtime should
 prefer server-side search tools rather than attaching many raw files.
 
-## docsearch MCP Integration
+## Codmes Search Integration
 
-docsearch should be treated as a server capability:
+Codmes Search should be treated as a server capability:
 
 ```text
-codmes mcp add docsearch <command> [args...]
-codmes mcp enable docsearch
+codmes mcp add Codmes Search <command> [args...]
+codmes mcp enable Codmes Search
 ```
 
 Expected path:
@@ -156,7 +156,7 @@ Expected path:
 ```text
 question
   -> model decides search is needed
-  -> MCP/docsearch tool call
+  -> Codmes Search tool call
   -> approval policy if required
   -> retrieved chunks
   -> model answer
@@ -203,8 +203,8 @@ Next:
 
 Next:
 
-- support docsearch MCP as first external RAG backend
-- add `/api/index/rebuild` handoff to docsearch when configured
+- support Codmes Search as first external RAG backend
+- add `/api/index/rebuild` handoff to Codmes Search when configured
 - add top-k chunk retrieval API for server-internal use
 
 ### Step 5: Client UX
