@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileKind, resolveWorkspacePath } from "./path-utils.mjs";
 import { getPdfTextMetadata } from "./pdf-text.mjs";
+import { getDocumentIngestMetadata, isDocumentIngestFile } from "./document-ingest.mjs";
 
 const MAX_HASH_BYTES = 20 * 1024 * 1024;
 
@@ -108,6 +109,16 @@ async function metadataForPath(workspaceRoot, absolutePath, stat) {
       textLength: 0,
       error: error?.message || "PDF metadata unavailable.",
       ocr: "planned"
+    }));
+  }
+  if (isDocumentIngestFile(relativePath)) {
+    metadata.documentIngest = await getDocumentIngestMetadata(workspaceRoot, absolutePath, relativePath, stat).catch((error) => ({
+      type: "document-ingest",
+      cached: false,
+      textLength: 0,
+      blockCount: 0,
+      supported: true,
+      error: error?.message || "Document ingest metadata unavailable."
     }));
   }
   return metadata;

@@ -2,15 +2,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileKind, resolveWorkspacePath } from "./path-utils.mjs";
-import { extractAndCachePdfText } from "./pdf-text.mjs";
+import { extractAndCacheDocument, isDocumentIngestFile } from "./document-ingest.mjs";
 
 const DEFAULT_MAX_RESULTS = 20;
 const DEFAULT_MAX_SCAN_FILES = 1000;
-const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_CHUNK_CHARS = 1800;
 const DEFAULT_CHUNK_OVERLAP = 220;
 
-const SEARCHABLE_KINDS = new Set(["markdown", "code", "file", "pdf"]);
+const SEARCHABLE_KINDS = new Set(["markdown", "code", "file", "pdf", "image", "document", "spreadsheet"]);
 const SEARCHABLE_EXTENSIONS = new Set([
   ".md",
   ".markdown",
@@ -37,7 +37,27 @@ const SEARCHABLE_EXTENSIONS = new Set([
   ".css",
   ".sh",
   ".ps1",
-  ".pdf"
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
+  ".heic",
+  ".doc",
+  ".docx",
+  ".ppt",
+  ".pptx",
+  ".hwp",
+  ".hwpx",
+  ".odt",
+  ".odp",
+  ".xlsx",
+  ".xls",
+  ".zip"
 ]);
 
 export function searchStatus(workspaceRoot) {
@@ -249,7 +269,10 @@ async function searchBuiltIndex(workspaceRoot, request) {
       score: match.score,
       snippet: match.snippet,
       chunkId: chunk.id,
-      chunkIndex: chunk.chunkIndex
+      chunkIndex: chunk.chunkIndex,
+      page: chunk.page ?? null,
+      source: chunk.source || null,
+      bbox: chunk.bbox || null
     });
   }
   const deduped = [];
@@ -273,35 +296,50 @@ async function searchBuiltIndex(workspaceRoot, request) {
 }
 
 async function indexFile(workspaceRoot, file, options = {}) {
-  const text = await readSearchableText(workspaceRoot, file).catch(() => "");
-  const content = String(text || "");
+  const document = await readSearchableDocument(workspaceRoot, file).catch(() => ({ text: "", blocks: [] }));
+  const content = String(document.text || "");
   const item = {
     path: file.path,
     kind: file.kind,
     size: file.size,
     modifiedAt: file.modifiedAt,
     textLength: content.length,
-    chunkCount: 0
+    chunkCount: 0,
+    blockCount: Array.isArray(document.blocks) ? document.blocks.length : 0
   };
   const chunks = [];
-  if (content) {
+  const blocks = Array.isArray(document.blocks) && document.blocks.length
+    ? document.blocks
+    : content
+      ? [{ text: content, source: file.kind, page: null, bbox: null, kind: file.kind, path: file.path }]
+      : [];
+  for (const block of blocks) {
+    const blockText = String(block.text || "").trim();
+    if (!blockText) continue;
     const fileChunks = chunkText(content, {
+      ...options,
+      text: blockText,
       chunkChars: clampNumber(options.chunkChars, 400, 8000, DEFAULT_CHUNK_CHARS),
       overlap: clampNumber(options.chunkOverlap, 0, 2000, DEFAULT_CHUNK_OVERLAP)
     });
-    item.chunkCount = fileChunks.length;
     fileChunks.forEach((chunk, index) => {
+      const chunkIndex = chunks.length;
       chunks.push({
-        id: stableChunkId(file.path, index, chunk.start, chunk.text),
+        id: stableChunkId(file.path, chunkIndex, block.source || "", block.page || "", chunk.start, chunk.text),
         path: file.path,
-        kind: file.kind,
-        chunkIndex: index,
+        kind: block.kind || file.kind,
+        chunkIndex,
+        blockIndex: blocks.indexOf(block),
         start: chunk.start,
         end: chunk.end,
-        text: chunk.text
+        text: chunk.text,
+        source: block.source || file.kind,
+        page: Number.isFinite(Number(block.page)) ? Number(block.page) : null,
+        bbox: block.bbox || null
       });
     });
   }
+  item.chunkCount = chunks.length;
   return { item, chunks };
 }
 
@@ -424,11 +462,20 @@ function filterCandidates(candidates, request) {
   });
 }
 
-async function readSearchableText(workspaceRoot, file) {
-  if (file.kind === "pdf") {
-    return await extractAndCachePdfText(workspaceRoot, file.absolutePath, file.path);
+async function readSearchableDocument(workspaceRoot, file) {
+  if (isDocumentIngestFile(file.path)) {
+    return await extractAndCacheDocument(workspaceRoot, file.absolutePath, file.path);
   }
-  return await fs.readFile(file.absolutePath, "utf8");
+  const text = await fs.readFile(file.absolutePath, "utf8");
+  return {
+    text,
+    blocks: [{ path: file.path, kind: file.kind, source: file.kind, page: null, bbox: null, text }]
+  };
+}
+
+async function readSearchableText(workspaceRoot, file) {
+  const document = await readSearchableDocument(workspaceRoot, file);
+  return document.text || "";
 }
 
 function requestedKinds(request) {
@@ -464,6 +511,7 @@ function snippet(text, index, length) {
 
 function chunkText(text, options) {
   const chunks = [];
+  text = String(options.text ?? text ?? "");
   const chunkChars = options.chunkChars;
   const overlap = Math.min(options.overlap, Math.max(0, chunkChars - 1));
   let start = 0;

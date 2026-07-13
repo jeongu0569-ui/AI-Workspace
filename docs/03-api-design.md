@@ -252,9 +252,9 @@ Current MVP provider:
 codmes-search-index
 ```
 
-This is Codmes' built-in chunk index for notes, documents, code, extracted PDF
-text, and conversation index files. If the index has not been built yet, the
-server falls back to `workspace-scan` so search still works.
+This is Codmes' built-in chunk index for notes, documents, code, extracted
+PDF/Office/image text, and conversation index files. If the index has not been
+built yet, the server falls back to `workspace-scan` so search still works.
 
 ### `POST /api/search`
 
@@ -280,7 +280,10 @@ Response:
     {
       "path": "Notes/Operating Systems/os.md",
       "kind": "markdown",
-      "snippet": "... scheduler chooses a process ..."
+      "snippet": "... scheduler chooses a process ...",
+      "page": null,
+      "source": "markdown",
+      "bbox": null
     }
   ]
 }
@@ -300,7 +303,8 @@ Returns the current metadata index summary from `.codmes/index/files.json`.
 
 Rebuilds the current workspace file metadata index and Codmes native search
 index. The search index stores chunk metadata and text snippets under
-`.codmes/index/search.json`. Embedding provider/model settings are persisted in
+`.codmes/index/search.json`. Document extraction results are cached under
+`.codmes/index/documents`. Embedding provider/model settings are persisted in
 the index metadata; actual vector embedding generation is a future layer.
 
 ## Runtime Management

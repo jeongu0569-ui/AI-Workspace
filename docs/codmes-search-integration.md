@@ -15,8 +15,7 @@ User question
 
 The current implementation uses a native Codmes chunk index backed by JSON
 state under `.codmes/index/search.json`, with workspace scan as the fallback
-when no index exists yet. PDF files with a text layer are extracted into the
-server PDF text cache before indexing. Search configuration is exposed through:
+when no index exists yet. Search configuration is exposed through:
 
 ```text
 GET  /api/search/config
@@ -60,6 +59,51 @@ file create/update/delete
 This keeps normal note/code edits from requiring a full rebuild. If the
 platform cannot provide recursive file watching for a root, Codmes logs the
 watcher failure and users can still run a manual rebuild.
+
+## Document Extraction
+
+Codmes includes a server-side document ingestion worker inspired by the KNU AI
+Assistant attachment pipeline. Node owns scheduling, caching, and indexing; the
+Python worker extracts text from one file and returns normalized JSON.
+
+```text
+server/lib/document-ingest.mjs
+server/workers/document-ingest/extract_document.py
+```
+
+Supported first-pass inputs:
+
+- PDF text layers
+- scanned PDF OCR when `pdftoppm` and `tesseract` are installed
+- image OCR when `tesseract` is installed
+- HWPX XML text
+- HWP/DOC/DOCX/PPT/PPTX/ODT/ODP through LibreOffice/`soffice` conversion when available
+- XLSX/XLS tables through `openpyxl`/`xlrd` when available
+- ZIP files containing supported document/image formats
+
+Extraction cache:
+
+```text
+<Workspace>/.codmes/index/documents/*.json
+```
+
+The worker returns blocks with:
+
+```json
+{
+  "path": "Documents/example.pdf",
+  "kind": "pdf",
+  "source": "pdf-text",
+  "page": 3,
+  "text": "extracted text",
+  "bbox": null
+}
+```
+
+`page` and `bbox` are already part of the schema so future PDF viewer work can
+open a search result at the matching page and highlight/copy OCR text. Current
+OCR paths may not yet fill `bbox`; coordinate-accurate OCR selection is the next
+client/PDF-viewer layer.
 
 ## Direction
 

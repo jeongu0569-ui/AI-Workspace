@@ -123,14 +123,21 @@ Code는 서버의 `Code/` 폴더 안 프로젝트를 다루는 화면입니다.
 - 파일명과 본문 검색
 - Notes, Code, Documents 범위 검색
 - 파일 메타데이터 인덱스
-- PDF 추출 텍스트 검색 경로
+- PDF, 이미지, HWP/HWPX, PPT/PPTX, DOC/DOCX, XLS/XLSX, ZIP 추출 텍스트 검색 경로
 - 채팅 세션 제목, 요약, 메시지 검색
 - 사용자, 프로젝트, 폴더, 세션 메모리 검색
 - 설정된 범위만 인덱싱
 - 서버 실행 중 파일 변경 감지 후 부분 인덱싱
 - 임베딩 프로바이더와 모델 설정 저장
 
-LLM에는 `codmes_search`라는 내장 검색 도구가 노출됩니다. 이 도구는 외부 `docsearch-mcp` 의존 없이 Codmes Search Runtime을 통해 파일, 노트, 코드, PDF 추출 텍스트, 대화 기록을 검색하는 공식 경로입니다. 현재는 `.codmes/index/search.json` chunk index와 scan fallback을 사용하고, 임베딩 모델 선택값은 Search 설정과 인덱스 메타데이터에 저장됩니다. 실제 벡터 유사도 저장소는 다음 단계입니다. 스캔 PDF OCR은 제품 범위에서 제외했습니다.
+LLM에는 `codmes_search`라는 내장 검색 도구가 노출됩니다. 이 도구는 외부 `docsearch-mcp` 의존 없이 Codmes Search Runtime을 통해 파일, 노트, 코드, PDF/Office/이미지 추출 텍스트, 대화 기록을 검색하는 공식 경로입니다. 현재는 `.codmes/index/search.json` chunk index와 scan fallback을 사용하고, 임베딩 모델 선택값은 Search 설정과 인덱스 메타데이터에 저장됩니다. 실제 벡터 유사도 저장소는 다음 단계입니다.
+
+문서 추출은 KNU AI Assistant에서 사용했던 통합 첨부파일 파이프라인을 Codmes용 worker로 흡수하는 방향입니다. Codmes는 기본 Python worker로 PDF 텍스트 레이어, HWPX XML, XLSX/XLS 표, ZIP 내부 파일, 일반 텍스트를 처리하고, 시스템에 다음 도구가 설치되어 있으면 더 넓은 문서와 OCR을 처리합니다.
+
+- LibreOffice/`soffice`: HWP, DOC, PPT 등을 PDF로 변환한 뒤 추출
+- `tesseract`: 이미지 OCR
+- `pdftoppm`: 스캔 PDF 페이지 렌더링
+- `openpyxl`, `xlrd`: Excel 표 추출 품질 향상
 
 ### 6. Approvals와 Tasks
 
@@ -387,8 +394,8 @@ WebSocket과 raw 파일 URL은 token query를 사용할 수 있습니다. Apple 
 
 ## 현재 한계와 앞으로의 작업
 
-- 내장 검색은 chunk index와 PDF 텍스트 추출 캐시까지 지원합니다. 실제 임베딩 벡터 저장소와 semantic reranking은 다음 단계입니다.
-- 스캔 PDF용 자체 OCR은 제품 범위에서 제외했습니다.
+- 내장 검색은 chunk index와 통합 문서 추출 캐시까지 지원합니다. 실제 임베딩 벡터 저장소와 semantic reranking은 다음 단계입니다.
+- 스캔 PDF/이미지 OCR은 `pdftoppm`/`tesseract`가 설치된 서버에서 처리됩니다. 좌표 기반 OCR 텍스트 선택/복사는 다음 단계입니다.
 - 텍스트 레이어가 있는 PDF와 Markdown/텍스트 파일은 기존 추출 및 Workspace 검색 경로로 처리합니다.
 - PDF 필기와 Apple Pencil 주석 저장은 완성되지 않았습니다.
 - Code 화면은 아직 VS Code 수준의 LSP, 디버거, 확장 기능을 제공하지 않습니다.

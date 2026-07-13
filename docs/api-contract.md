@@ -92,7 +92,8 @@ The server resolves context requests for `none`, `current`, `note`, `folder`,
 Current search provider is `codmes-search-index` after the first rebuild, with
 `workspace-scan` as the fallback when no index exists. It supports content
 search, filename hits, scope filtering, `kind`/`kinds`, modified date filters,
-and first-pass PDF text extraction through `.codmes/index/pdf-text/`.
+and first-pass PDF/Office/HWP/Excel/image/ZIP extraction through
+`.codmes/index/documents/`.
 
 Codmes Search ownership and incremental indexing are tracked in
 `docs/codmes-search-integration.md`.
@@ -356,8 +357,8 @@ exists.
 ## Known Gaps
 
 - OAuth provider flow is not complete.
-- Built-in search is a server-owned text/PDF chunk index with scan fallback.
-  Codmes does not include an OCR engine for scanned PDFs. Native vector
+- Built-in search is a server-owned text/document chunk index with scan
+  fallback. OCR runs when server-side OCR tools are installed. Native vector
   embeddings are planned as a later Codmes Search Runtime layer.
 - Audit log exists for security policy decisions. More runtime subsystems should
   write explicit approved/rejected records as they become first-class actions.

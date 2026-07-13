@@ -51,9 +51,10 @@ export function fileKind(name, isDirectory = false) {
   if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
   if (lower.endsWith(".pdf")) return "pdf";
   if (/\.(png|jpe?g|gif|webp|heic|svg)$/.test(lower)) return "image";
+  if (/\.(xlsx|xls)$/.test(lower)) return "spreadsheet";
+  if (/\.(docx?|pptx?|hwp|hwpx|odt|odp|zip)$/.test(lower)) return "document";
   if (/\.(js|jsx|ts|tsx|py|swift|go|rs|java|c|cc|cpp|h|hpp|cs|rb|php|html|css|json|yaml|yml|toml|sh|ps1)$/.test(lower)) {
     return "code";
   }
   return "file";
 }
-

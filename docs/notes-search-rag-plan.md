@@ -80,6 +80,7 @@ Capabilities:
 - native chunk index under `.codmes/index/search.json`
 - scope-limited indexing roots
 - partial indexing when watched files change
+- PDF/Office/HWP/Excel/image/ZIP extraction through the document ingest worker
 - scope search
 - content search
 - filename search
@@ -111,10 +112,10 @@ Phase 2 target is not full GoodNotes-level annotation yet. The stable order is:
 
 1. Serve PDFs as raw files for client preview.
 2. Store file metadata in `.codmes/index/files.json`.
-3. Add PDF text extraction where possible.
-4. Add extracted text chunks to the search layer.
+3. Add PDF/Office/HWP/Excel/image text extraction where possible.
+4. Add extracted text blocks to the search layer.
 5. Add server-side annotation storage.
-6. Keep scanned PDF OCR out of Codmes unless this product decision changes.
+6. Add coordinate-accurate OCR overlays for PDF/image selection.
 
 PDF annotations should not be stored only inside a client-local app cache. They
 should be workspace-owned so iPhone, iPad, and Mac see the same annotation
@@ -207,6 +208,7 @@ Next:
 - generate embeddings with the selected embedding provider/model
 - add a local vector or FTS-backed retrieval store
 - add top-k chunk retrieval API for server-internal use
+- preserve page/source/bbox metadata in retrieval responses
 
 ### Step 5: Client UX
 
@@ -215,6 +217,7 @@ Next:
 - show file metadata panel
 - show indexed/not indexed badges
 - show PDF text extraction state
+- show document extraction/OCR tool availability
 - show search provider status
 - let users rebuild index from Settings/Diagnostics
 
@@ -222,6 +225,6 @@ Next:
 
 - Full multi-user permission model
 - Handwritten PDF annotation sync
-- Built-in OCR for scanned PDFs
+- Client-only OCR
 - Client-owned vector indexing
 - Client-side direct indexing

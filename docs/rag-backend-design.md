@@ -16,10 +16,10 @@ or use scan fallback before answering.
 
 ## Scope Decisions
 
-- No built-in OCR engine for scanned PDFs.
+- Scanned PDF/image OCR is available when server-side OCR tools are installed.
 - No built-in embedding model runner.
 - Native vector storage is planned but not complete.
-- Text-layer PDFs, Markdown, code, and text documents are searchable through the built-in chunk index.
+- Text-layer PDFs, OCR text, Office/HWP/Excel/PPT extraction output, Markdown, code, and text documents are searchable through the built-in chunk index.
 - External tools may still exist for unrelated capabilities, but document search is no longer a required MCP dependency.
 
 ## Runtime Context Injection
@@ -43,11 +43,12 @@ These are rendered into the system/context message as compact “Search results 
 First pass implemented:
 
 - PDF metadata appears under `GET /api/file/metadata`.
-- Text-layer extraction utility caches text under `.codmes/index/pdf-text/`.
-- Codmes Search can index and search extracted PDF text.
+- Text-layer and OCR/Office extraction utility caches text under `.codmes/index/documents/`.
+- Codmes Search can index and search extracted PDF, image, Office, HWP, spreadsheet, and ZIP text.
 
 Planned:
 
 - More robust PDF parsing for compressed streams.
-- Per-page chunking and page-level citation metadata.
-- Better UI for search/index status, watched roots, and embedding model selection.
+- Coordinate-accurate OCR blocks for PDF/image text selection.
+- PDF viewer page navigation and search result highlight.
+- Better UI for search/index status, watched roots, OCR tools, and embedding model selection.
