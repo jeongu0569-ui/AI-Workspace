@@ -14,6 +14,7 @@ from typing import Any
 
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
@@ -73,8 +74,19 @@ def main() -> int:
     state.session_id = str(ready.get("sessionId") or "")
 
     _render_welcome(state)
+    key_bindings = KeyBindings()
+
+    @key_bindings.add("enter")
+    def _(event: Any) -> None:
+        # Force Enter to submit the current buffer. The default prompt_toolkit
+        # binding can be intercepted by completion/composition states in some
+        # terminals, which made Korean IME users press Enter twice.
+        event.app.current_buffer.validate_and_handle()
+
     session = PromptSession(
         message=ANSI(f"{PURPLE}❯ {RESET}"),
+        multiline=False,
+        key_bindings=key_bindings,
         style=Style.from_dict({
             "": "",
         }),
@@ -185,7 +197,9 @@ def _handle_runtime_event(event: dict[str, Any], state: RuntimeState) -> None:
     if event_type == "turn.start":
         state.prompt_tokens = _as_int(event.get("promptTokenEstimate"))
         state.context_window = _as_int(event.get("contextWindow"))
-        state.reasoning_started = False
+        if not state.reasoning_started:
+            state.reasoning_started = True
+            print_formatted_text(ANSI(f"{DIM}thinking...{RESET}"))
         return
     if event_type in {"reasoning.delta", "thinking.delta", "assistant.reasoning.delta", "assistant.thinking.delta"} and text:
         if not state.reasoning_started:
