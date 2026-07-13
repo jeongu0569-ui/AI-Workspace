@@ -79,11 +79,10 @@ def extract_bytes(data: bytes, name: str, args: argparse.Namespace, depth: int) 
         blocks.extend(pdf_blocks)
         warnings.extend(pdf_warnings)
     elif ext in IMAGE_EXTS:
-        text, warning = image_to_text(data, ext)
+        text, ocr_blocks, warning = image_to_blocks(data, ext, name=name, page=None, kind="image")
         if warning:
             warnings.append(warning)
-        if text:
-            blocks.append(block(name, text, source="ocr", page=None, kind="image"))
+        blocks.extend(ocr_blocks)
     elif ext == ".hwpx":
         text = hwpx_to_text(data)
         if text:
@@ -154,12 +153,10 @@ def extract_pdf(data: bytes, name: str) -> tuple[str, list[dict[str, Any]], list
         blocks.append(block(name, text, source="pdf-text", page=None, kind="pdf", metadata={"pageCount": page_count}))
         return text, blocks, warnings
 
-    ocr_text, ocr_warnings = ocr_pdf_bytes(data)
+    ocr_text, ocr_blocks, ocr_warnings = ocr_pdf_bytes(data, name)
     warnings.extend(ocr_warnings)
     if ocr_text:
-        for page_number, page_text in enumerate(ocr_text, start=1):
-            if page_text.strip():
-                blocks.append(block(name, page_text, source="ocr", page=page_number, kind="pdf"))
+        blocks.extend(ocr_blocks)
         return "\n\n".join(ocr_text).strip(), blocks, warnings
 
     return "", blocks, warnings or ["No text layer found and OCR tools were unavailable or returned no text."]
@@ -194,12 +191,13 @@ def estimate_pdf_pages(data: bytes) -> int | None:
     return len(matches) if matches else None
 
 
-def ocr_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
+def ocr_pdf_bytes(data: bytes, name: str) -> tuple[list[str], list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
+    blocks: list[dict[str, Any]] = []
     pdftoppm = shutil.which("pdftoppm")
     tesseract = shutil.which("tesseract")
     if not pdftoppm or not tesseract:
-        return [], ["OCR skipped: pdftoppm and/or tesseract not found."]
+        return [], [], ["OCR skipped: pdftoppm and/or tesseract not found."]
     with tempfile.TemporaryDirectory(prefix="codmes-pdf-ocr-") as tmp:
         tmp_path = Path(tmp)
         pdf_path = tmp_path / "input.pdf"
@@ -214,30 +212,31 @@ def ocr_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
             check=False,
         )
         if result.returncode != 0:
-            return [], [f"pdftoppm failed: {result.stderr.strip() or result.stdout.strip()}"]
+            return [], [], [f"pdftoppm failed: {result.stderr.strip() or result.stdout.strip()}"]
         texts: list[str] = []
-        for image in sorted(tmp_path.glob("page-*.png")):
-            page_text, warning = image_path_to_text(image)
+        for page_number, image in enumerate(sorted(tmp_path.glob("page-*.png")), start=1):
+            page_text, page_blocks, warning = image_path_to_blocks(image, name=name, page=page_number, kind="pdf")
             if warning:
                 warnings.append(warning)
             texts.append(page_text)
-        return texts, warnings
+            blocks.extend(page_blocks)
+        return texts, blocks, warnings
 
 
-def image_to_text(data: bytes, ext: str) -> tuple[str, str | None]:
+def image_to_blocks(data: bytes, ext: str, *, name: str, page: int | None, kind: str) -> tuple[str, list[dict[str, Any]], str | None]:
     tesseract = shutil.which("tesseract")
     if not tesseract:
-        return "", "OCR skipped: tesseract not found."
+        return "", [], "OCR skipped: tesseract not found."
     with tempfile.TemporaryDirectory(prefix="codmes-image-ocr-") as tmp:
         image_path = Path(tmp) / f"image{ext if ext != '.heic' else '.png'}"
         image_path.write_bytes(data)
-        return image_path_to_text(image_path)
+        return image_path_to_blocks(image_path, name=name, page=page, kind=kind)
 
 
-def image_path_to_text(image_path: Path) -> tuple[str, str | None]:
+def image_path_to_blocks(image_path: Path, *, name: str, page: int | None, kind: str) -> tuple[str, list[dict[str, Any]], str | None]:
     langs = os.getenv("CODMES_OCR_LANGS", "kor+eng")
     result = subprocess.run(
-        [shutil.which("tesseract") or "tesseract", str(image_path), "stdout", "-l", langs],
+        [shutil.which("tesseract") or "tesseract", str(image_path), "stdout", "-l", langs, "tsv"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -245,8 +244,140 @@ def image_path_to_text(image_path: Path) -> tuple[str, str | None]:
         check=False,
     )
     if result.returncode != 0:
-        return "", f"tesseract failed for {image_path.name}: {result.stderr.strip()}"
-    return normalize_text(result.stdout), None
+        return "", [], f"tesseract failed for {image_path.name}: {result.stderr.strip()}"
+    image_width, image_height = image_size(image_path)
+    ocr_blocks = parse_tesseract_tsv(
+        result.stdout,
+        path=name,
+        page=page,
+        kind=kind,
+        image_width=image_width,
+        image_height=image_height,
+    )
+    text = normalize_text("\n".join(item["text"] for item in ocr_blocks))
+    return text, ocr_blocks, None
+
+
+def parse_tesseract_tsv(
+    tsv: str,
+    *,
+    path: str,
+    page: int | None,
+    kind: str,
+    image_width: int | None = None,
+    image_height: int | None = None,
+) -> list[dict[str, Any]]:
+    lines = [line for line in str(tsv or "").splitlines() if line.strip()]
+    if not lines:
+        return []
+    header = lines[0].split("\t")
+    rows: list[dict[str, str]] = []
+    for line in lines[1:]:
+        values = line.split("\t")
+        if len(values) < len(header):
+            values.extend([""] * (len(header) - len(values)))
+        rows.append(dict(zip(header, values)))
+
+    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        if row.get("level") != "5":
+            continue
+        text = (row.get("text") or "").strip()
+        if not text:
+            continue
+        try:
+            conf = float(row.get("conf") or "-1")
+            left = int(float(row.get("left") or "0"))
+            top = int(float(row.get("top") or "0"))
+            width = int(float(row.get("width") or "0"))
+            height = int(float(row.get("height") or "0"))
+        except ValueError:
+            continue
+        if conf < 0 or width <= 0 or height <= 0:
+            continue
+        key = (
+            row.get("page_num") or "1",
+            row.get("block_num") or "0",
+            row.get("par_num") or "0",
+            row.get("line_num") or "0",
+            row.get("word_num") or "0",
+        )
+        line_key = key[:-1]
+        groups.setdefault(line_key, []).append({
+            "text": text,
+            "conf": conf,
+            "left": left,
+            "top": top,
+            "right": left + width,
+            "bottom": top + height,
+        })
+
+    blocks: list[dict[str, Any]] = []
+    for index, (_key, words) in enumerate(groups.items(), start=1):
+        words.sort(key=lambda item: (item["top"], item["left"]))
+        text = normalize_text(" ".join(word["text"] for word in words))
+        if not text:
+            continue
+        left = min(word["left"] for word in words)
+        top = min(word["top"] for word in words)
+        right = max(word["right"] for word in words)
+        bottom = max(word["bottom"] for word in words)
+        bbox = {
+            "unit": "pixel",
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+        }
+        if image_width and image_height:
+            bbox["imageWidth"] = image_width
+            bbox["imageHeight"] = image_height
+            bbox["normalized"] = {
+                "x": left / image_width,
+                "y": top / image_height,
+                "width": (right - left) / image_width,
+                "height": (bottom - top) / image_height,
+            }
+        blocks.append(block(
+            path,
+            text,
+            source="ocr",
+            page=page,
+            kind=kind,
+            metadata={
+                "ocrEngine": "tesseract",
+                "lineIndex": index,
+                "averageConfidence": round(sum(word["conf"] for word in words) / len(words), 2),
+                "imageWidth": image_width,
+                "imageHeight": image_height,
+            },
+            bbox=bbox,
+            confidence=round(sum(word["conf"] for word in words) / len(words), 2),
+        ))
+    return blocks
+
+
+def image_size(image_path: Path) -> tuple[int | None, int | None]:
+    data = image_path.read_bytes()
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if data.startswith(b"\xff\xd8"):
+        index = 2
+        while index + 9 < len(data):
+            if data[index] != 0xFF:
+                index += 1
+                continue
+            marker = data[index + 1]
+            index += 2
+            if marker in (0xD8, 0xD9):
+                continue
+            length = int.from_bytes(data[index:index + 2], "big")
+            if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+                height = int.from_bytes(data[index + 3:index + 5], "big")
+                width = int.from_bytes(data[index + 5:index + 7], "big")
+                return width, height
+            index += max(length, 2)
+    return None, None
 
 
 def hwpx_to_text(data: bytes) -> str:
@@ -490,15 +621,25 @@ def zip_to_text(data: bytes, name: str, args: argparse.Namespace, depth: int) ->
     return normalize_text("\n\n".join(texts)), blocks, warnings
 
 
-def block(path: str, text: str, *, source: str, page: int | None, kind: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+def block(
+    path: str,
+    text: str,
+    *,
+    source: str,
+    page: int | None,
+    kind: str,
+    metadata: dict[str, Any] | None = None,
+    bbox: dict[str, Any] | None = None,
+    confidence: float | None = None,
+) -> dict[str, Any]:
     return {
         "path": path,
         "kind": kind,
         "source": source,
         "page": page,
         "text": normalize_text(text),
-        "bbox": None,
-        "confidence": None,
+        "bbox": bbox,
+        "confidence": confidence,
         "metadata": metadata or {},
     }
 

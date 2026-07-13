@@ -49,6 +49,7 @@ First pass implemented:
 Planned:
 
 - More robust PDF parsing for compressed streams.
-- Coordinate-accurate OCR blocks for PDF/image text selection.
+- PDF/image OCR blocks now preserve Tesseract TSV line boxes when available.
 - PDF viewer page navigation and search result highlight.
+- Selectable transparent text overlay in the Apple PDF viewer.
 - Better UI for search/index status, watched roots, OCR tools, and embedding model selection.

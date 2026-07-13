@@ -101,9 +101,10 @@ The worker returns blocks with:
 ```
 
 `page` and `bbox` are already part of the schema so future PDF viewer work can
-open a search result at the matching page and highlight/copy OCR text. Current
-OCR paths may not yet fill `bbox`; coordinate-accurate OCR selection is the next
-client/PDF-viewer layer.
+open a search result at the matching page and highlight/copy OCR text. When
+Tesseract OCR is available, Codmes requests TSV output and stores line-level
+pixel bounding boxes plus normalized coordinates. The next client/PDF-viewer
+layer is to render those boxes as a selectable transparent text overlay.
 
 ## Direction
 
