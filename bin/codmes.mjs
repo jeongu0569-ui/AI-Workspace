@@ -26,6 +26,17 @@ const SERVER_ENTRY = path.join(REPO_ROOT, "server", "index.mjs");
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const DEFAULT_WORKSPACE_ROOT = path.join(os.homedir(), "CodmesWorkspace");
 const LEGACY_COMMAND = process.env.CODMES_LEGACY_COMMAND || "";
+const UI = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  cyan: "\x1b[36m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  red: "\x1b[31m",
+  purple: "\x1b[38;5;141m",
+  border: "\x1b[38;5;245m"
+};
 
 main(process.argv.slice(2)).catch((error) => {
   console.error(`codmes: ${error.message}`);
@@ -1699,17 +1710,15 @@ async function runChatInteractive(root) {
   const { createWorkspaceAgentEngine } = await import("../server/lib/agent-engine.mjs");
   const engine = createWorkspaceAgentEngine({ workspaceRoot: root });
 
-  console.log(`\x1b[36mConnecting to Codmes Runtime...\x1b[0m`);
+  process.stdout.write(`${UI.cyan}Connecting to Codmes Runtime...${UI.reset}\r`);
   try {
     await engine.connect();
   } catch (error) {
-    console.error(`Failed to connect to runtime: ${error.message}`);
+    process.stdout.write("\n");
+    console.error(`${UI.red}Failed to connect to runtime:${UI.reset} ${error.message}`);
     engine.close();
     return;
   }
-
-  console.log(`\x1b[32mChat session started with ${config.defaultModel.provider}/${config.defaultModel.model}.\x1b[0m`);
-  console.log(`Type your message and press Enter. Type 'exit' or 'quit' to end the session.\n`);
 
   const sessionResult = await engine.createSession({
     provider: config.defaultModel.provider,
@@ -1718,10 +1727,17 @@ async function runChatInteractive(root) {
   });
   const sessionId = sessionResult.sessionId;
 
+  renderChatWelcome({
+    provider: config.defaultModel.provider,
+    model: config.defaultModel.model,
+    workspaceRoot: root,
+    sessionId
+  });
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: "\x1b[36mYou: \x1b[0m"
+    prompt: `${UI.purple}❯ ${UI.reset}`
   });
 
   rl.prompt();
@@ -1739,11 +1755,17 @@ async function runChatInteractive(root) {
       rl.prompt();
       continue;
     }
-    if (input.toLowerCase() === "exit" || input.toLowerCase() === "quit") {
+    if (input.toLowerCase() === "exit" || input.toLowerCase() === "quit" || input.toLowerCase() === "/exit") {
       break;
     }
+    if (input === "/help") {
+      printChatHelp();
+      rl.prompt();
+      continue;
+    }
 
-    process.stdout.write("\x1b[33mAgent:\x1b[0m ");
+    process.stdout.write(`${UI.border}${"─".repeat(chatTerminalWidth())}${UI.reset}\n`);
+    process.stdout.write(`${UI.green}✦ Agent${UI.reset}\n`);
     try {
       await engine.submitPrompt({
         sessionId,
@@ -1753,7 +1775,7 @@ async function runChatInteractive(root) {
         wait: true
       });
     } catch (error) {
-      console.error(`\n\x1b[31mError: ${error.message}\x1b[0m`);
+      console.error(`\n${UI.red}Error:${UI.reset} ${error.message}`);
     }
     process.stdout.write("\n\n");
     rl.prompt();
@@ -1762,7 +1784,89 @@ async function runChatInteractive(root) {
   rl.close();
   engine.off("event", onEvent);
   engine.close();
-  console.log("\nChat session closed.");
+  console.log(`\n${UI.dim}Chat session closed.${UI.reset}`);
+}
+
+function renderChatWelcome({ provider, model, workspaceRoot, sessionId }) {
+  if (process.stdout.isTTY && !process.env.CODMES_NO_CLEAR) {
+    process.stdout.write("\x1b[2J\x1b[H");
+  } else {
+    process.stdout.write("\n");
+  }
+
+  const logo = [
+    " ██████╗ ██████╗ ██████╗ ███╗   ███╗███████╗███████╗",
+    "██╔════╝██╔═══██╗██╔══██╗████╗ ████║██╔════╝██╔════╝",
+    "██║     ██║   ██║██║  ██║██╔████╔██║█████╗  ███████╗",
+    "██║     ██║   ██║██║  ██║██║╚██╔╝██║██╔══╝  ╚════██║",
+    "╚██████╗╚██████╔╝██████╔╝██║ ╚═╝ ██║███████╗███████║",
+    " ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝"
+  ];
+  for (const line of logo) {
+    console.log(`${UI.purple}${fitText(line, chatTerminalWidth())}${UI.reset}`);
+  }
+  console.log("");
+
+  const rows = [
+    [`Runtime`, "Codmes Runtime"],
+    [`Model`, `${model} · ${provider}`],
+    [`Workspace`, workspaceRoot],
+    [`Session`, sessionId],
+    [`Commands`, "/help · /exit · quit"]
+  ];
+  printChatBox(`Codmes`, rows);
+  console.log(`${UI.dim}Welcome to Codmes. Type your message, or /help for commands.${UI.reset}`);
+  printChatStatus({ model });
+}
+
+function printChatHelp() {
+  console.log("");
+  printChatBox("Commands", [
+    ["/help", "Show this help"],
+    ["/exit", "Close the chat session"],
+    ["quit", "Close the chat session"]
+  ]);
+}
+
+function printChatStatus({ model }) {
+  const width = chatTerminalWidth();
+  const left = ` ${model || "no-model"} `;
+  const bar = "░".repeat(10);
+  const text = `${UI.border}${"─".repeat(width)}${UI.reset}\n${UI.purple}⚕${UI.reset}${UI.dim}${left}│ ctx -- │ [${bar}] -- │ ready${UI.reset}\n${UI.border}${"─".repeat(width)}${UI.reset}`;
+  console.log(text);
+}
+
+function printChatBox(title, rows) {
+  const width = Math.min(chatTerminalWidth(), 120);
+  const innerWidth = Math.max(42, width - 2);
+  const titleText = ` ${title} `;
+  const topFill = Math.max(0, innerWidth - visibleLength(titleText));
+  console.log(`${UI.border}╭${titleText}${"─".repeat(topFill)}╮${UI.reset}`);
+  for (const [label, value] of rows) {
+    const labelText = String(label || "");
+    const valueText = String(value || "");
+    const prefix = ` ${labelText.padEnd(10)} `;
+    const available = Math.max(8, innerWidth - visibleLength(prefix) - 1);
+    const content = `${prefix}${fitText(valueText, available)}`;
+    console.log(`${UI.border}│${UI.reset}${content}${" ".repeat(Math.max(0, innerWidth - visibleLength(content)))}${UI.border}│${UI.reset}`);
+  }
+  console.log(`${UI.border}╰${"─".repeat(innerWidth)}╯${UI.reset}`);
+  console.log("");
+}
+
+function chatTerminalWidth() {
+  return Math.max(56, Math.min(process.stdout.columns || 88, 140));
+}
+
+function fitText(value, maxWidth) {
+  const text = String(value || "");
+  if (visibleLength(text) <= maxWidth) return text;
+  if (maxWidth <= 1) return "…";
+  return `${text.slice(0, Math.max(0, maxWidth - 1))}…`;
+}
+
+function visibleLength(value) {
+  return String(value || "").replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 
 async function runAuthInteractive(root) {
