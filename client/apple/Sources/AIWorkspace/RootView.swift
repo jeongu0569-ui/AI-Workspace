@@ -1136,10 +1136,13 @@ private struct RuntimeModelSelectionSettingsView: View {
 
 private struct RuntimeProviderConfigSettingsView: View {
     @EnvironmentObject private var store: WorkspaceStore
+    @Environment(\.openURL) private var openURL
     @State private var selectedProviderId = ""
     @State private var apiKey = ""
     @State private var baseUrl = ""
     @State private var isSaving = false
+    @State private var isStartingOAuth = false
+    @State private var activeOAuthSessionId = ""
 
     private var provider: RuntimeProviderOption? {
         store.runtimeProviders.first { $0.id == selectedProviderId }
@@ -1147,6 +1150,10 @@ private struct RuntimeProviderConfigSettingsView: View {
 
     private var providerCredentials: [RuntimeCredentialEntry] {
         store.runtimeProviderCredentials[selectedProviderId] ?? []
+    }
+
+    private var activeOAuthSession: RuntimeOAuthLoginSession? {
+        activeOAuthSessionId.isEmpty ? nil : store.runtimeOAuthSessions[activeOAuthSessionId]
     }
 
     var body: some View {
@@ -1217,6 +1224,7 @@ private struct RuntimeProviderConfigSettingsView: View {
 
                 providerCredentialFields(provider)
                 providerCredentialManagement(provider)
+                providerOAuthLoginView(provider)
 
                 HStack {
                     Button {
@@ -1375,6 +1383,69 @@ private struct RuntimeProviderConfigSettingsView: View {
     }
 
     @ViewBuilder
+    private func providerOAuthLoginView(_ provider: RuntimeProviderOption) -> some View {
+        if provider.id == "openai-codex" {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await startOpenAICodexLogin() }
+                    } label: {
+                        if isStartingOAuth {
+                            ProgressView()
+                        } else {
+                            Label(providerCredentials.isEmpty ? "Connect OpenAI Codex" : "Connect Another Account", systemImage: "person.crop.circle.badge.plus")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isStartingOAuth)
+
+                    if let session = activeOAuthSession, !session.isTerminal {
+                        Button("Cancel") {
+                            Task {
+                                await store.cancelRuntimeOAuthLogin(providerId: "openai-codex", sessionId: session.id)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                if let session = activeOAuthSession {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Status: \(session.status)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if session.status == "pending" {
+                                ProgressView()
+                                    .scaleEffect(0.65)
+                            }
+                        }
+                        if let userCode = session.userCode, !userCode.isEmpty {
+                            Text(userCode)
+                                .font(.system(.title3, design: .monospaced).weight(.semibold))
+                                .textSelection(.enabled)
+                        }
+                        if let verificationUrl = session.verificationUrl, !verificationUrl.isEmpty {
+                            Text(verificationUrl)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        if let error = session.error, !error.isEmpty {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .padding(10)
+                    .background(.quaternary.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func providerCredentialFields(_ provider: RuntimeProviderOption) -> some View {
         if provider.isLocalOllama {
             TextField("http://127.0.0.1:11434/v1", text: $baseUrl)
@@ -1420,5 +1491,30 @@ private struct RuntimeProviderConfigSettingsView: View {
                 || !baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         return false
+    }
+
+    private func startOpenAICodexLogin() async {
+        isStartingOAuth = true
+        guard let session = await store.startOpenAICodexLogin() else {
+            isStartingOAuth = false
+            return
+        }
+        isStartingOAuth = false
+        activeOAuthSessionId = session.id
+        if let value = session.verificationUrl, let url = URL(string: value) {
+            openURL(url)
+        }
+        await pollOpenAICodexLogin(sessionId: session.id, intervalSeconds: session.intervalSeconds ?? 5)
+    }
+
+    private func pollOpenAICodexLogin(sessionId: String, intervalSeconds: Int) async {
+        let interval = UInt64(max(3, intervalSeconds)) * 1_000_000_000
+        for _ in 0..<120 {
+            try? await Task.sleep(nanoseconds: interval)
+            await store.refreshRuntimeOAuthLogin(providerId: "openai-codex", sessionId: sessionId)
+            if store.runtimeOAuthSessions[sessionId]?.isTerminal == true {
+                break
+            }
+        }
     }
 }

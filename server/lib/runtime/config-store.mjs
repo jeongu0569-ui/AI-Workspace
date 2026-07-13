@@ -349,6 +349,34 @@ export async function listProviderCredentialEntries(workspaceRoot, providerId) {
   return entries.map((entry, index) => sanitizeCredentialEntry(entry, index));
 }
 
+export async function appendProviderCredentialEntry(workspaceRoot, providerId, entry) {
+  await ensureRuntimeConfig(workspaceRoot);
+  const authPath = path.join(runtimeConfigDir(workspaceRoot), "auth.json");
+  let authObj = { version: 1, credential_pool: {} };
+  try {
+    authObj = JSON.parse(await fs.readFile(authPath, "utf8"));
+  } catch {}
+  if (!authObj.credential_pool) authObj.credential_pool = {};
+  if (!Array.isArray(authObj.credential_pool[providerId])) {
+    authObj.credential_pool[providerId] = [];
+  }
+  const entries = authObj.credential_pool[providerId];
+  const nextEntry = {
+    id: entry.id || crypto.randomBytes(6).toString("hex"),
+    label: entry.label || `${providerId}-credential-${entries.length + 1}`,
+    auth_type: entry.auth_type || entry.authType || "oauth",
+    priority: 0,
+    source: entry.source || "manual",
+    ...entry
+  };
+  authObj.credential_pool[providerId] = [
+    nextEntry,
+    ...entries.map((item, index) => ({ ...item, priority: index + 1 }))
+  ];
+  await fs.writeFile(authPath, JSON.stringify(authObj, null, 2) + "\n", "utf8");
+  return sanitizeCredentialEntry(nextEntry, 0);
+}
+
 export async function selectProviderCredentialEntry(workspaceRoot, providerId, credentialId) {
   await ensureRuntimeConfig(workspaceRoot);
   const authPath = path.join(runtimeConfigDir(workspaceRoot), "auth.json");

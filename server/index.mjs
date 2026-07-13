@@ -43,6 +43,11 @@ import {
 } from "./lib/runtime/config-store.mjs";
 import { readSecurityConfig, writeSecurityConfig } from "./lib/runtime/security-policy.mjs";
 import { enableSkill, listSkills, readSkill } from "./lib/runtime/skill-registry.mjs";
+import {
+  cancelCodexOAuthLogin,
+  readCodexOAuthLogin,
+  startCodexOAuthLogin
+} from "./lib/runtime/codex-oauth.mjs";
 
 const DEFAULT_PORT = Number.parseInt(process.env.CODMES_PORT || process.env.AIW_PORT || process.env.PORT || "8787", 10);
 const WORKSPACE_HOST = process.env.CODMES_HOST || process.env.AIW_HOST || process.env.WORKSPACE_HOST || process.env.HOST || "127.0.0.1";
@@ -366,6 +371,17 @@ async function handleRequest(req, res) {
     }
     if (req.method === "GET" && url.pathname === "/api/auth") {
       return sendJson(res, await listRuntimeAuth());
+    }
+    if (req.method === "POST" && url.pathname === "/api/auth/openai-codex/login/start") {
+      return sendJson(res, await startProviderOAuthLogin("openai-codex"), 201);
+    }
+    const codexLoginMatch = url.pathname.match(/^\/api\/auth\/openai-codex\/login\/([^/]+)$/);
+    if (codexLoginMatch && req.method === "GET") {
+      return sendJson(res, readCodexOAuthLogin(decodeURIComponent(codexLoginMatch[1])));
+    }
+    const codexLoginCancelMatch = url.pathname.match(/^\/api\/auth\/openai-codex\/login\/([^/]+)\/cancel$/);
+    if (codexLoginCancelMatch && req.method === "POST") {
+      return sendJson(res, cancelCodexOAuthLogin(decodeURIComponent(codexLoginCancelMatch[1])));
     }
     const authSelectMatch = url.pathname.match(/^\/api\/auth\/([^/]+)\/select$/);
     if (authSelectMatch && req.method === "POST") {
@@ -1202,6 +1218,13 @@ async function listRuntimeAuth() {
   return {
     providers: await listCredentialStatus(WORKSPACE_ROOT)
   };
+}
+
+async function startProviderOAuthLogin(providerId) {
+  if (providerId !== "openai-codex") {
+    throw Object.assign(new Error(`OAuth login is not implemented for provider: ${providerId}`), { status: 400 });
+  }
+  return await startCodexOAuthLogin({ workspaceRoot: WORKSPACE_ROOT });
 }
 
 async function readProviderAuth(providerParam) {

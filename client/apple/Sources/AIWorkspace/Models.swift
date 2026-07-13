@@ -481,6 +481,23 @@ struct RuntimeCredentialEntry: Codable, Identifiable, Hashable {
     }
 }
 
+struct RuntimeOAuthLoginSession: Codable, Identifiable, Hashable {
+    let id: String
+    let provider: String
+    let status: String
+    let userCode: String?
+    let verificationUrl: String?
+    let intervalSeconds: Int?
+    let createdAt: String?
+    let expiresAt: String?
+    let credential: RuntimeCredentialEntry?
+    let error: String?
+
+    var isTerminal: Bool {
+        ["approved", "expired", "error", "canceled"].contains(status)
+    }
+}
+
 struct RuntimeDefaultModelResponse: Codable {
     let defaultModel: RuntimeDefaultModel?
 }

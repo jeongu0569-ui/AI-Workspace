@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  appendProviderCredentialEntry,
   ensureRuntimeConfig,
   envAliases,
   listProviderCredentialEntries,
@@ -109,6 +110,27 @@ test("provider credential entries are listed, selected, and removed without expo
   assert.equal(removed.removed, true);
   const remaining = await listProviderCredentialEntries(root, "openai-codex");
   assert.deepEqual(remaining.map((entry) => entry.id), ["first"]);
+});
+
+test("appended provider credential becomes the active account", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-credential-append-"));
+  await ensureRuntimeConfig(root);
+  await appendProviderCredentialEntry(root, "openai-codex", {
+    id: "old",
+    label: "Old",
+    auth_type: "oauth",
+    access_token: fakeJwt({ email: "old@example.com" })
+  });
+  await appendProviderCredentialEntry(root, "openai-codex", {
+    id: "new",
+    label: "New",
+    auth_type: "oauth",
+    access_token: fakeJwt({ email: "new@example.com" })
+  });
+  const entries = await listProviderCredentialEntries(root, "openai-codex");
+  assert.deepEqual(entries.map((entry) => entry.id), ["new", "old"]);
+  assert.equal(entries[0].active, true);
+  assert.equal(entries[0].email, "new@example.com");
 });
 
 test("CODMES env aliases are preferred while AIW env aliases remain compatible", async () => {

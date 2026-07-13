@@ -305,6 +305,22 @@ struct WorkspaceAPI {
         let _: EmptyResponse = try await request(components, method: "DELETE")
     }
 
+    func startOpenAICodexLogin() async throws -> RuntimeOAuthLoginSession {
+        try await post("/api/auth/openai-codex/login/start", body: EmptyBody())
+    }
+
+    func runtimeOAuthLogin(providerId: String, sessionId: String) async throws -> RuntimeOAuthLoginSession {
+        var components = try components("/api/auth/\(providerId)/login/\(sessionId)")
+        components.percentEncodedPath = "/api/auth/\(providerId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? providerId)/login/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)"
+        return try await request(components)
+    }
+
+    func cancelRuntimeOAuthLogin(providerId: String, sessionId: String) async throws {
+        var components = try components("/api/auth/\(providerId)/login/\(sessionId)/cancel")
+        components.percentEncodedPath = "/api/auth/\(providerId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? providerId)/login/\(sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId)/cancel"
+        let _: EmptyResponse = try await request(components, method: "POST")
+    }
+
     func runtimeDefaultModel() async throws -> RuntimeDefaultModel? {
         let response: RuntimeDefaultModelResponse = try await get("/api/model/default")
         return response.defaultModel

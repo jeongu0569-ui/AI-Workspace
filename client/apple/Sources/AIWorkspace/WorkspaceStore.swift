@@ -47,6 +47,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var runtimeProviders: [RuntimeProviderOption] = []
     @Published var runtimeProviderModels: [String: [String]] = [:]
     @Published var runtimeProviderCredentials: [String: [RuntimeCredentialEntry]] = [:]
+    @Published var runtimeOAuthSessions: [String: RuntimeOAuthLoginSession] = [:]
     @Published var runtimeModelSetupMessage = ""
     @Published var workspaceSurfaces: [WorkspaceSurface] = []
     @Published var surfaceSetupMessage = ""
@@ -391,6 +392,47 @@ final class WorkspaceStore: ObservableObject {
             runtimeModelSetupMessage = "Provider disconnected."
             await refreshRuntimeProviders()
             await refreshHermesMetadata()
+        } catch {
+            runtimeModelSetupMessage = error.localizedDescription
+        }
+    }
+
+    func startOpenAICodexLogin() async -> RuntimeOAuthLoginSession? {
+        guard let api else { return nil }
+        do {
+            let session = try await api.startOpenAICodexLogin()
+            runtimeOAuthSessions[session.id] = session
+            runtimeModelSetupMessage = "OpenAI Codex sign-in started."
+            return session
+        } catch {
+            runtimeModelSetupMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func refreshRuntimeOAuthLogin(providerId: String, sessionId: String) async {
+        guard let api else { return }
+        do {
+            let session = try await api.runtimeOAuthLogin(providerId: providerId, sessionId: sessionId)
+            runtimeOAuthSessions[session.id] = session
+            if session.status == "approved" {
+                runtimeModelSetupMessage = "OpenAI Codex account connected."
+                await refreshRuntimeProviderCredentials(providerId: providerId)
+                await refreshRuntimeProviders()
+                await refreshHermesMetadata()
+            } else if let error = session.error, !error.isEmpty {
+                runtimeModelSetupMessage = error
+            }
+        } catch {
+            runtimeModelSetupMessage = error.localizedDescription
+        }
+    }
+
+    func cancelRuntimeOAuthLogin(providerId: String, sessionId: String) async {
+        guard let api else { return }
+        do {
+            try await api.cancelRuntimeOAuthLogin(providerId: providerId, sessionId: sessionId)
+            await refreshRuntimeOAuthLogin(providerId: providerId, sessionId: sessionId)
         } catch {
             runtimeModelSetupMessage = error.localizedDescription
         }
