@@ -1767,20 +1767,27 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         private func applyPDFScrollTouchPolicy() {
             guard let pdfView else { return }
+            let directTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+            let readingTouchTypes = [
+                NSNumber(value: UITouch.TouchType.direct.rawValue),
+                NSNumber(value: UITouch.TouchType.pencil.rawValue)
+            ]
             let shouldReservePencilForDrawing = UIDevice.current.userInterfaceIdiom == .pad
                 && isWritingMode
                 && (tool == .pen || tool == .eraser)
             if shouldReservePencilForDrawing {
                 drawingGesture?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
                 for scrollView in pdfView.descendantScrollViews {
-                    scrollView.panGestureRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-                    scrollView.pinchGestureRecognizer?.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+                    scrollView.isScrollEnabled = true
+                    scrollView.panGestureRecognizer.allowedTouchTypes = directTouchTypes
+                    scrollView.pinchGestureRecognizer?.allowedTouchTypes = directTouchTypes
                 }
             } else {
-                drawingGesture?.allowedTouchTypes = []
+                drawingGesture?.allowedTouchTypes = readingTouchTypes
                 for scrollView in pdfView.descendantScrollViews {
-                    scrollView.panGestureRecognizer.allowedTouchTypes = []
-                    scrollView.pinchGestureRecognizer?.allowedTouchTypes = []
+                    scrollView.isScrollEnabled = true
+                    scrollView.panGestureRecognizer.allowedTouchTypes = readingTouchTypes
+                    scrollView.pinchGestureRecognizer?.allowedTouchTypes = readingTouchTypes
                 }
             }
         }
