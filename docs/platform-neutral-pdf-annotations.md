@@ -76,10 +76,21 @@ Important fields:
 Current Apple support:
 
 - iOS/iPadOS: PencilKit pen, eraser, lasso, text boxes, image objects,
-  move/resize/delete, export/import.
+  move/resize/delete, pen color selection, export/import.
 - macOS: PDFKit preview, pen input, stroke erasing, text/image object
-  selection, object move/resize, text editing, inspector controls, and
-  Delete-key object removal.
+  selection, object move/resize, text editing, inspector controls, pen color
+  selection, colored ink preview, and Delete-key object removal.
+- iOS/iPadOS also renders non-PencilKit `inkStrokes` in a separate preview
+  layer. This makes macOS-created strokes visible on iPhone/iPad even when a
+  page does not have PencilKit `inkDataBase64`.
+- Text boxes are placed by selecting the text tool and tapping the target page
+  location. The first tap selects an existing text box and shows an inline
+  delete affordance; tapping the selected text box again opens text editing.
+- On compact iPhone layouts, the PDF screen starts in Read mode so finger
+  gestures scroll and zoom the PDF normally. Edit mode explicitly enables the
+  annotation overlay for pen, lasso, object selection, text placement, and image
+  attachment. Regular-width iPad layouts start in Edit mode because Pencil input
+  is the expected primary workflow.
 
 Still planned:
 

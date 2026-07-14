@@ -66,8 +66,16 @@ final class WorkspaceStore: ObservableObject {
     private let uploadChunkSize = 1024 * 1024
 
     var api: WorkspaceAPI? {
-        guard let url = URL(string: serverURLText) else { return nil }
+        guard let url = currentServerURL else { return nil }
         return WorkspaceAPI(baseURL: url, authToken: serverAuthToken)
+    }
+
+    var effectiveServerURLText: String {
+        normalizedServerURL(serverURLText)
+    }
+
+    private var currentServerURL: URL? {
+        URL(string: effectiveServerURLText)
     }
 
     var serverURLUsesLocalhost: Bool {
@@ -97,9 +105,13 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func saveServerURL() {
+        let previous = UserDefaults.standard.string(forKey: "workspace.serverURL") ?? ""
         let cleaned = normalizedServerURL(serverURLText)
         serverURLText = cleaned
         UserDefaults.standard.set(cleaned, forKey: "workspace.serverURL")
+        if !previous.isEmpty, previous != cleaned {
+            resetLiveConnectionForServerSettingsChange("Server URL changed")
+        }
     }
 
     func persistServerURLText() {
@@ -107,16 +119,31 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func persistServerAuthToken() {
+        let previous = WorkspaceStore.initialServerAuthToken()
         if KeychainStore.writeServerAuthToken(serverAuthToken) {
             UserDefaults.standard.removeObject(forKey: "workspace.serverAuthToken")
         } else {
             UserDefaults.standard.set(serverAuthToken, forKey: "workspace.serverAuthToken")
+        }
+        if previous != serverAuthToken {
+            resetLiveConnectionForServerSettingsChange("Server token changed")
         }
     }
 
     func useMacTailscaleServerURL() {
         serverURLText = macTailscaleServerURL
         saveServerURL()
+    }
+
+    private func resetLiveConnectionForServerSettingsChange(_ reason: String) {
+        liveSessionId = nil
+        activeHermesSessionTitle = "No session"
+        activeActivityLineId = nil
+        isChatTurnOpen = false
+        chatLines = [ChatLine(role: "system", text: "\(reason). Connect again to use \(effectiveServerURLText).")]
+        Task {
+            await liveClient.disconnect()
+        }
     }
 
     func refreshWorkspace() async {
@@ -133,6 +160,7 @@ final class WorkspaceStore: ObservableObject {
         defer { isLoading = false }
         do {
             connectionStep = "Checking /api/health"
+            connectionDetail = "Trying \(effectiveServerURLText)/api/health"
             let health = try await api.health()
             connectionDetail = "Health OK: \(health.service) at \(serverURLText)"
             connectionStep = "Loading /api/workspace"
@@ -1372,7 +1400,7 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func startNewHermesSession() async {
-        guard let url = URL(string: serverURLText) else {
+        guard let url = currentServerURL else {
             statusMessage = "Invalid server URL"
             return
         }
@@ -1414,7 +1442,7 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func resumeHermesSession(_ session: HermesSessionSummary) async {
-        guard let url = URL(string: serverURLText) else {
+        guard let url = currentServerURL else {
             statusMessage = "Invalid server URL"
             return
         }

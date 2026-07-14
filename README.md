@@ -438,14 +438,21 @@ macOS, Windows, Android/Galaxy Tab 클라이언트가 PencilKit 없이도 같은
 마우스/트랙패드 입력을 같은 `inkStrokes` 포맷으로 저장합니다. 선택 모드는
 텍스트/이미지 annotation object를 선택하고 이동/리사이즈하거나 inspector에서
 텍스트와 글자 크기, 프레임을 편집하고 Delete 키로 삭제하는 1차 편집 흐름을
-제공합니다.
+제공합니다. iOS/iPadOS와 macOS 모두 같은 색상 선택 메뉴를 사용하며,
+macOS preview는 저장된 stroke 색상과 텍스트 object의 실제 내용을 렌더링합니다.
+iOS/iPadOS는 macOS에서 생성한 공통 `inkStrokes`도 별도 preview layer로
+렌더링하므로 macOS 필기가 모바일에서도 보입니다. iPhone처럼 화면이 좁은
+환경에서는 기본값이 읽기 모드라 손가락 스크롤/확대가 먼저 동작하고, 편집
+모드로 전환했을 때만 필기와 오브젝트 조작 overlay가 터치를 받습니다.
+iPad처럼 넓은 화면에서는 Pencil 작업을 기본 흐름으로 보고 편집 모드로
+시작합니다.
 
 ## 현재 한계와 앞으로의 작업
 
 - 내장 검색은 chunk index와 통합 문서 추출 캐시까지 지원합니다. 실제 임베딩 벡터 저장소와 semantic reranking은 다음 단계입니다.
 - 스캔 PDF/이미지 텍스트 추출은 MarkItDown 기본 로컬 converter가 처리할 수 있는 범위로 제한됩니다. KNU처럼 VLM 보조 추출을 붙이는 방향은 가능하지만, 기본 경로에 유료 provider나 무거운 네이티브 앱을 넣지는 않습니다.
 - 텍스트 레이어가 있는 PDF와 Markdown/텍스트 파일은 기존 추출 및 Workspace 검색 경로로 처리합니다.
-- PDF는 Apple PDFKit 기반으로 열고, iOS/iPadOS에서는 PencilKit 페이지 오버레이 필기를 문서 폴더의 `.codmes/annotations`에 저장합니다. 현재 PDF 필기 UX는 펜, 지우개, 올가미, 텍스트 박스 추가/편집, 이미지 첨부, 텍스트/이미지 오브젝트 이동, 핀치 크기조절, 길게 눌러 삭제, 범위 export, Codmes state export, 현재 페이지 뒤 PDF/state 삽입을 지원합니다. 선택한 텍스트/이미지 오브젝트는 inspector에서 글자 크기 조절, 복제, 삭제, 앞/뒤 레이어 이동을 할 수 있습니다. 손필기는 PencilKit 올가미 도구를 통해 stroke 선택/이동을 맡기되, 저장 시 Codmes 공통 `inkStrokes`도 함께 기록합니다. macOS는 공통 `inkStrokes` preview, 마우스/트랙패드 기반 펜 입력, stroke 지우개, 텍스트/이미지 object 선택/이동/리사이즈/Delete 삭제, inspector 기반 텍스트 편집과 프레임 편집을 시작했고, 텍스트/이미지 오브젝트는 Codmes annotation bbox로 저장되어 검색 인덱스와 연결됩니다. 남은 고급 작업은 Windows/Android용 공통 stroke 렌더러, 정교한 레이어 패널, 도형/스티커 도구, PDF 표준 annotation round-trip, 페이지별 크기가 다른 PDF의 export 품질 보강, 페이지 단위 OCR/임베딩 캐시입니다.
+- PDF는 Apple PDFKit 기반으로 열고, iOS/iPadOS에서는 PencilKit 페이지 오버레이 필기를 문서 폴더의 `.codmes/annotations`에 저장합니다. 현재 PDF 필기 UX는 펜, 펜 색상 선택, 지우개, 올가미, 텍스트 박스 위치 탭 배치/즉시 편집, 이미지 첨부, 텍스트/이미지 오브젝트 이동, 핀치 크기조절, 선택된 오브젝트의 inline 삭제, 범위 export, Codmes state export, 현재 페이지 뒤 PDF/state 삽입을 지원합니다. 선택한 텍스트/이미지 오브젝트는 inspector에서 글자 크기 조절, 배경/테두리/텍스트 색상 조절, 복제, 삭제, 앞/뒤 레이어 이동을 할 수 있습니다. 손필기는 PencilKit 올가미 도구를 통해 stroke 선택/이동을 맡기되, 저장 시 Codmes 공통 `inkStrokes`도 함께 기록합니다. macOS는 공통 `inkStrokes` preview, 마우스/트랙패드 기반 펜 입력, 색상별 stroke preview, stroke 지우개, 텍스트/이미지 object 선택/이동/리사이즈/Delete 삭제, inspector 기반 텍스트 편집과 프레임 편집을 시작했고, iOS/iPadOS는 macOS에서 생성한 공통 `inkStrokes`도 별도 preview layer로 렌더링합니다. 텍스트/이미지 오브젝트는 Codmes annotation bbox로 저장되어 검색 인덱스와 연결됩니다. 남은 고급 작업은 Windows/Android용 공통 stroke 렌더러, 정교한 레이어 패널, 도형/스티커 도구, PDF 표준 annotation round-trip, 페이지별 크기가 다른 PDF의 export 품질 보강, 페이지 단위 OCR/임베딩 캐시입니다.
 - Code 화면은 아직 VS Code 수준의 LSP, 디버거, 확장 기능을 제공하지 않습니다.
 - 모델별 OAuth 흐름은 프로바이더마다 구현 수준이 다릅니다.
 - 도구 sandbox와 세밀한 파일 권한 정책은 추가 강화가 필요합니다.

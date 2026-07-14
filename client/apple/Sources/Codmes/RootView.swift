@@ -721,6 +721,11 @@ struct ServerStatusView: View {
                 .font(.caption2)
                 .foregroundStyle(store.serverURLUsesLocalhost ? .orange : .secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("Effective URL: \(store.effectiveServerURLText)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .textSelection(.enabled)
             #if os(iOS)
             Button {
                 store.useMacTailscaleServerURL()

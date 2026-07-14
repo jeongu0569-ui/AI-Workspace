@@ -154,6 +154,15 @@ Done for first pass:
 - macOS text/image annotation objects can be resized with a corner handle and
   edited through the inspector. Text objects expose text and font-size editing;
   all objects expose normalized frame controls and delete.
+- iOS/iPadOS and macOS expose a shared pen color picker. macOS renders
+  platform-neutral ink strokes with their stored colors and shows text object
+  content instead of internal preview ids.
+- iOS/iPadOS renders macOS-created `inkStrokes` through a platform-neutral
+  preview layer, so macOS pen input is visible on mobile clients.
+- iOS/iPadOS text boxes now use a placement flow: choose the text tool, tap a
+  page location, edit immediately, then tap once to select or tap the selected
+  object again to edit. Selected text/image objects expose an inline delete
+  affordance.
 
 Remaining:
 
