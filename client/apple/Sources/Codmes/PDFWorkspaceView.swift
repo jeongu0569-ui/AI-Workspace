@@ -92,6 +92,11 @@ struct PDFWorkspaceView: View {
 
     #if os(iOS)
     @State private var markupTool: PDFMarkupTool = .pen
+    @State private var toolOptions: PDFMarkupTool?
+    @State private var didConfirmCurrentTool = false
+    @State private var penColorHex = "#111111"
+    @State private var penWidth = 2.5
+    @State private var eraserWidth = 18.0
     @State private var currentPageIndex = 0
     @State private var isAddingText = false
     @State private var newTextValue = ""
@@ -122,6 +127,9 @@ struct PDFWorkspaceView: View {
                 annotations: annotations,
                 focus: store.selectedPDFFocus?.path == rawFile.path ? store.selectedPDFFocus : nil,
                 tool: markupTool,
+                penColorHex: penColorHex,
+                penWidth: penWidth,
+                eraserWidth: eraserWidth,
                 selectedObjectId: selectedObjectId,
                 onCurrentPageChanged: { currentPageIndex = $0 },
                 onPageInkChanged: updatePageInk(pageIndex:data:drawing:canvasSize:),
@@ -268,10 +276,22 @@ struct PDFWorkspaceView: View {
             Spacer()
 
             #if os(iOS)
-            pdfToolButton(.pen)
-            pdfToolButton(.eraser)
-            pdfToolButton(.lasso)
-            pdfToolButton(.select)
+            HStack(spacing: 4) {
+                pdfToolButton(.pen)
+                pdfToolButton(.eraser)
+                pdfToolButton(.lasso)
+                pdfToolButton(.select)
+            }
+            .popover(item: $toolOptions) { selectedTool in
+                PDFToolOptionsPopover(
+                    tool: selectedTool,
+                    penColorHex: $penColorHex,
+                    penWidth: $penWidth,
+                    eraserWidth: $eraserWidth
+                )
+                .frame(width: 260)
+                .padding(14)
+            }
 
             Divider()
                 .frame(height: 18)
@@ -346,7 +366,14 @@ struct PDFWorkspaceView: View {
     #if os(iOS)
     private func pdfToolButton(_ tool: PDFMarkupTool) -> some View {
         Button {
-            markupTool = tool
+            if (tool == .pen || tool == .eraser), markupTool == tool, didConfirmCurrentTool {
+                toolOptions = tool
+                didConfirmCurrentTool = false
+            } else {
+                markupTool = tool
+                toolOptions = nil
+                didConfirmCurrentTool = tool == .pen || tool == .eraser
+            }
         } label: {
             Image(systemName: tool.systemImage)
                 .font(.system(size: 15, weight: markupTool == tool ? .semibold : .regular))
@@ -357,6 +384,72 @@ struct PDFWorkspaceView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tool.label)
+    }
+
+    private struct PDFToolOptionsPopover: View {
+        let tool: PDFMarkupTool
+        @Binding var penColorHex: String
+        @Binding var penWidth: Double
+        @Binding var eraserWidth: Double
+
+        private let colorChoices = ["#111111", "#E03131", "#1971C2", "#2F9E44", "#F08C00", "#7048E8"]
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(tool.label, systemImage: tool.systemImage)
+                    .font(.headline)
+
+                if tool == .pen {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Color")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            ForEach(colorChoices, id: \.self) { hex in
+                                Button {
+                                    penColorHex = hex
+                                } label: {
+                                    Circle()
+                                        .fill(Color(UIColor(hexString: hex)))
+                                        .frame(width: 24, height: 24)
+                                        .overlay {
+                                            Circle()
+                                                .stroke(penColorHex == hex ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: penColorHex == hex ? 3 : 1)
+                                        }
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Pen color \(hex)")
+                            }
+                        }
+                    }
+
+                    ToolWidthSlider(label: "Width", value: $penWidth, range: 1...12)
+                } else {
+                    ToolWidthSlider(label: "Width", value: $eraserWidth, range: 6...44)
+                }
+            }
+        }
+    }
+
+    private struct ToolWidthSlider: View {
+        let label: String
+        @Binding var value: Double
+        let range: ClosedRange<Double>
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(value.rounded())) pt")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $value, in: range)
+            }
+        }
     }
     #endif
 
@@ -1325,6 +1418,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
     var annotations: PDFAnnotationDocument?
     var focus: PDFDocumentFocus?
     var tool: PDFMarkupTool
+    var penColorHex: String
+    var penWidth: Double
+    var eraserWidth: Double
     var selectedObjectId: String?
     var onCurrentPageChanged: (Int) -> Void
     var onPageInkChanged: (Int, Data, PKDrawing, CGSize) -> Void
@@ -1368,6 +1464,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         context.coordinator.annotations = annotations
         context.coordinator.focus = focus
         context.coordinator.tool = tool
+        context.coordinator.penColorHex = penColorHex
+        context.coordinator.penWidth = penWidth
+        context.coordinator.eraserWidth = eraserWidth
         context.coordinator.selectedObjectId = selectedObjectId
         if context.coordinator.currentURL != url {
             context.coordinator.currentURL = url
@@ -1390,6 +1489,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         var annotations: PDFAnnotationDocument?
         var focus: PDFDocumentFocus?
         var tool: PDFMarkupTool = .pen
+        var penColorHex = "#111111"
+        var penWidth = 2.5
+        var eraserWidth = 18.0
         var selectedObjectId: String?
         var onCurrentPageChanged: (Int) -> Void
         var onPageInkChanged: (Int, Data, PKDrawing, CGSize) -> Void
@@ -1496,9 +1598,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             }
             switch tool {
             case .pen:
-                overlay.canvas.tool = PKInkingTool(.pen, color: .label, width: 2.5)
+                overlay.canvas.tool = PKInkingTool(.pen, color: UIColor(hexString: penColorHex), width: CGFloat(penWidth))
             case .eraser:
-                overlay.canvas.tool = PKEraserTool(.vector)
+                overlay.canvas.tool = PKEraserTool(.vector, width: CGFloat(eraserWidth))
             case .lasso:
                 overlay.canvas.tool = PKLassoTool()
             case .select:
