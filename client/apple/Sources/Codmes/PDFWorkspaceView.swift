@@ -47,6 +47,8 @@ fileprivate struct PDFLassoSelectionSummary: Equatable {
     var pageIndex: Int
     var strokeIds: Set<String>
     var objectIds: Set<String>
+    var optionAnchor: CGPoint?
+    var isMoving: Bool
 }
 
 fileprivate struct PDFExportShare: Identifiable {
@@ -148,16 +150,25 @@ struct PDFWorkspaceView: View {
                 onLassoSelectionChanged: { lassoSelection = $0 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .top) {
-                if let selection = lassoSelection, isWritingMode, markupTool == .lasso {
-                    PDFLassoOptionsBar(
-                        selection: selection,
-                        hasTextSelection: hasTextObject(in: selection),
-                        onDelete: { deleteLassoSelection(selection) },
-                        onColor: { recolorLassoSelection(selection, colorHex: $0) },
-                        onFontSize: { adjustLassoTextSize(selection, delta: $0) }
-                    )
-                    .padding(.top, 10)
+            .overlay {
+                GeometryReader { proxy in
+                    if let selection = lassoSelection,
+                       !selection.isMoving,
+                       let anchor = selection.optionAnchor,
+                       isWritingMode,
+                       markupTool == .lasso {
+                        PDFLassoOptionsBar(
+                            selection: selection,
+                            hasTextSelection: hasTextObject(in: selection),
+                            onDelete: { deleteLassoSelection(selection) },
+                            onColor: { recolorLassoSelection(selection, colorHex: $0) },
+                            onFontSize: { adjustLassoTextSize(selection, delta: $0) }
+                        )
+                        .position(
+                            x: min(max(anchor.x, 92), proxy.size.width - 92),
+                            y: min(max(anchor.y, 28), proxy.size.height - 28)
+                        )
+                    }
                 }
             }
             #else
@@ -487,7 +498,14 @@ struct PDFWorkspaceView: View {
         var onColor: (String) -> Void
         var onFontSize: (Double) -> Void
 
-        private let colorChoices = ["#111111", "#E03131", "#1971C2", "#2F9E44", "#F08C00", "#7048E8"]
+        private let colorChoices = [
+            ("Black", "#111111"),
+            ("Red", "#E03131"),
+            ("Blue", "#1971C2"),
+            ("Green", "#2F9E44"),
+            ("Orange", "#F08C00"),
+            ("Purple", "#7048E8")
+        ]
 
         var body: some View {
             HStack(spacing: 8) {
@@ -499,11 +517,12 @@ struct PDFWorkspaceView: View {
                 .accessibilityLabel("Delete selection")
 
                 Menu {
-                    ForEach(colorChoices, id: \.self) { hex in
+                    ForEach(colorChoices, id: \.1) { name, hex in
                         Button {
                             onColor(hex)
                         } label: {
-                            Label(hex, systemImage: "circle.fill")
+                            Label(name, systemImage: "circle.fill")
+                                .foregroundStyle(Color(UIColor(hexString: hex)))
                         }
                     }
                 } label: {
@@ -1931,6 +1950,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         private var didLockScrollForDrawing = false
         private var shapeHoldWorkItem: DispatchWorkItem?
         private var activeShapeFit: ShapeFit?
+        private var lastPenPointTime: TimeInterval = 0
         private var lassoInteraction: LassoInteraction?
         private var lassoSelection: LassoSelection?
         private var lassoMoveStartPoint: CodmesInkPoint?
@@ -2149,6 +2169,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                     pdfView.drawingOverlay.lineWidth = CGFloat(penWidth)
                     pdfView.drawingOverlay.isDashed = false
                     activeShapeFit = nil
+                    lastPenPointTime = ProcessInfo.processInfo.systemUptime
                     pdfView.drawingOverlay.begin(at: overlayPoint)
                     scheduleShapeHoldFit(page: page)
                 } else if tool == .eraser {
@@ -2176,8 +2197,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 guard let page = activePage else { return }
                 if tool == .pen {
                     pdfView.drawingOverlay.move(to: overlayPoint)
+                    lastPenPointTime = ProcessInfo.processInfo.systemUptime
                     activeShapeFit = nil
-                    scheduleShapeHoldFit(page: page)
                 } else if tool == .eraser {
                     eraseStroke(at: viewPoint, page: page)
                 } else if tool == .lasso {
@@ -2228,7 +2249,16 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                     return
                 }
                 pdfView.drawingOverlay.move(to: overlayPoint)
-                let overlayPoints = pdfView.drawingOverlay.finish()
+                if activeShapeFit == nil {
+                    activeShapeFit = fitShape(from: pdfView.drawingOverlay.points)
+                    if let activeShapeFit {
+                        pdfView.drawingOverlay.replace(with: activeShapeFit.points)
+                    }
+                }
+                let overlayPoints = activeShapeFit?.points ?? pdfView.drawingOverlay.finish()
+                if activeShapeFit != nil {
+                    _ = pdfView.drawingOverlay.finish()
+                }
                 guard overlayPoints.count > 1 else { return }
                 let viewPoints = overlayPoints.map { pdfView.convert($0, from: pdfView.drawingOverlay) }
                 let stroke = makeStroke(from: viewPoints, page: page, tool: activeShapeFit.map { "shape:\($0.kind)" } ?? "pen")
@@ -2307,7 +2337,6 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         }
 
         private func scheduleShapeHoldFit(page: PDFPage) {
-            shapeHoldWorkItem?.cancel()
             guard tool == .pen, let pdfView else { return }
             let workItem = DispatchWorkItem { [weak self, weak pdfView, weak page] in
                 guard let self,
@@ -2315,13 +2344,19 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                       let page,
                       self.tool == .pen,
                       self.activePage === page else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - self.lastPenPointTime < 0.5 {
+                    self.scheduleShapeHoldFit(page: page)
+                    return
+                }
                 let overlayPoints = pdfView.drawingOverlay.points
                 guard let fit = self.fitShape(from: overlayPoints) else { return }
                 self.activeShapeFit = fit
                 pdfView.drawingOverlay.replace(with: fit.points)
             }
+            shapeHoldWorkItem?.cancel()
             shapeHoldWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
         }
 
         private func fitShape(from points: [CGPoint]) -> ShapeFit? {
@@ -2570,11 +2605,12 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 objectIds: selection.objectIds,
                 bounds: AnnotationBoundingBox(x: nextBounds.x, y: nextBounds.y, width: nextBounds.width, height: nextBounds.height, normalized: nil)
             )
-            notifyLassoSelectionChanged()
+            notifyLassoSelectionChanged(isMoving: !commit)
             applyCodmesInkAnnotations()
             applyAnnotationsToVisibleOverlays()
 
             if commit {
+                notifyLassoSelectionChanged(isMoving: false)
                 onStrokesChanged(selection.pageIndex, strokes(for: selection.pageIndex))
                 for object in movedObjects {
                     onObjectChanged(object)
@@ -2592,7 +2628,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             applyAnnotationsToVisibleOverlays()
         }
 
-        private func notifyLassoSelectionChanged() {
+        private func notifyLassoSelectionChanged(isMoving: Bool = false) {
             guard let lassoSelection else {
                 onLassoSelectionChanged(nil)
                 return
@@ -2600,8 +2636,23 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             onLassoSelectionChanged(PDFLassoSelectionSummary(
                 pageIndex: lassoSelection.pageIndex,
                 strokeIds: lassoSelection.strokeIds,
-                objectIds: lassoSelection.objectIds
+                objectIds: lassoSelection.objectIds,
+                optionAnchor: optionAnchor(for: lassoSelection),
+                isMoving: isMoving
             ))
+        }
+
+        private func optionAnchor(for selection: LassoSelection) -> CGPoint? {
+            guard let pdfView,
+                  let page = pdfView.document?.page(at: selection.pageIndex),
+                  let box = selection.bounds.normalizedOrSelf else { return nil }
+            let pageBounds = page.bounds(for: .mediaBox)
+            let pagePoint = CGPoint(
+                x: pageBounds.minX + pageBounds.width * (box.x + box.width / 2),
+                y: pageBounds.minY + pageBounds.height * (1 - box.y)
+            )
+            let viewPoint = pdfView.convert(pagePoint, from: page)
+            return CGPoint(x: viewPoint.x, y: viewPoint.y - 38)
         }
 
         private func applyShapeHandles(to overlay: PDFPageAnnotationOverlay, pageIndex: Int) {
