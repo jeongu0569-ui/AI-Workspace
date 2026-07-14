@@ -1798,28 +1798,44 @@ fileprivate final class PDFPageAnnotationOverlay: UIView {
 }
 
 fileprivate final class PDFShapeHandleView: UIView {
+    private enum Metrics {
+        static let hitSize: CGFloat = 36
+        static let dotSize: CGFloat = 12
+    }
+
     let strokeId: String
     let kind: String
     let handleIndex: Int
+    private let dotView = UIView()
 
     init(strokeId: String, kind: String, handleIndex: Int) {
         self.strokeId = strokeId
         self.kind = kind
         self.handleIndex = handleIndex
-        super.init(frame: CGRect(x: 0, y: 0, width: 16, height: 16))
-        backgroundColor = .systemBackground
-        layer.borderColor = UIColor.systemOrange.cgColor
-        layer.borderWidth = 1.5
-        layer.cornerRadius = 8
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.18
-        layer.shadowRadius = 3
-        layer.shadowOffset = CGSize(width: 0, height: 1)
+        super.init(frame: CGRect(x: 0, y: 0, width: Metrics.hitSize, height: Metrics.hitSize))
+        backgroundColor = .clear
         isUserInteractionEnabled = true
+
+        dotView.frame = CGRect(x: 0, y: 0, width: Metrics.dotSize, height: Metrics.dotSize)
+        dotView.backgroundColor = .systemBackground
+        dotView.layer.borderColor = UIColor.systemOrange.cgColor
+        dotView.layer.borderWidth = 1.25
+        dotView.layer.cornerRadius = Metrics.dotSize / 2
+        dotView.layer.shadowColor = UIColor.black.cgColor
+        dotView.layer.shadowOpacity = 0.18
+        dotView.layer.shadowRadius = 3
+        dotView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        dotView.isUserInteractionEnabled = false
+        addSubview(dotView)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        dotView.center = CGPoint(x: bounds.midX, y: bounds.midY)
     }
 }
 
