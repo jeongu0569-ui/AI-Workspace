@@ -1806,11 +1806,11 @@ fileprivate final class PDFShapeHandleView: UIView {
         self.strokeId = strokeId
         self.kind = kind
         self.handleIndex = handleIndex
-        super.init(frame: CGRect(x: 0, y: 0, width: 22, height: 22))
+        super.init(frame: CGRect(x: 0, y: 0, width: 16, height: 16))
         backgroundColor = .systemBackground
         layer.borderColor = UIColor.systemOrange.cgColor
-        layer.borderWidth = 2
-        layer.cornerRadius = 11
+        layer.borderWidth = 1.5
+        layer.cornerRadius = 8
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.18
         layer.shadowRadius = 3
@@ -1963,6 +1963,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         private var didLockScrollForDrawing = false
         private var shapeHoldWorkItem: DispatchWorkItem?
         private var activeShapeFit: ShapeFit?
+        private var activeShapeDragHandleIndex: Int?
         private var lastPenPointTime: TimeInterval = 0
         private var lastPenOverlayPoint: CGPoint?
         private var lassoInteraction: LassoInteraction?
@@ -2194,6 +2195,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                     pdfView.drawingOverlay.lineWidth = CGFloat(penWidth)
                     pdfView.drawingOverlay.isDashed = false
                     activeShapeFit = nil
+                    activeShapeDragHandleIndex = nil
                     lastPenPointTime = ProcessInfo.processInfo.systemUptime
                     lastPenOverlayPoint = overlayPoint
                     pdfView.drawingOverlay.begin(at: overlayPoint)
@@ -2222,7 +2224,12 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             case .changed:
                 guard let page = activePage else { return }
                 if tool == .pen {
-                    if activeShapeFit == nil {
+                    if let fit = activeShapeFit {
+                        let adjusted = adjustedShapeFit(fit, to: overlayPoint, handleIndex: activeShapeDragHandleIndex)
+                        activeShapeFit = adjusted
+                        lastPenOverlayPoint = overlayPoint
+                        pdfView.drawingOverlay.replace(with: adjusted.points)
+                    } else {
                         let movedDistance = lastPenOverlayPoint.map { distance($0, overlayPoint) } ?? .greatestFiniteMagnitude
                         if movedDistance >= 2.5 {
                             pdfView.drawingOverlay.move(to: overlayPoint)
@@ -2249,6 +2256,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                     shapeHoldWorkItem?.cancel()
                     shapeHoldWorkItem = nil
                     activeShapeFit = nil
+                    activeShapeDragHandleIndex = nil
                     lastPenOverlayPoint = nil
                     lassoInteraction = nil
                     lassoMoveStartPoint = nil
@@ -2305,6 +2313,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 shapeHoldWorkItem?.cancel()
                 shapeHoldWorkItem = nil
                 activeShapeFit = nil
+                activeShapeDragHandleIndex = nil
                 lastPenOverlayPoint = nil
                 lassoInteraction = nil
                 lassoMoveStartPoint = nil
@@ -2390,11 +2399,96 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 let overlayPoints = pdfView.drawingOverlay.points
                 guard let fit = self.fitShape(from: overlayPoints) else { return }
                 self.activeShapeFit = fit
+                self.activeShapeDragHandleIndex = self.shapeDragHandleIndex(for: fit, near: overlayPoints.last)
                 pdfView.drawingOverlay.replace(with: fit.points)
             }
             shapeHoldWorkItem?.cancel()
             shapeHoldWorkItem = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+        }
+
+        private func shapeDragHandleIndex(for fit: ShapeFit, near point: CGPoint?) -> Int {
+            guard let point else {
+                return fit.kind == "line" ? 1 : 0
+            }
+            let handles = shapeHandlePoints(for: fit)
+            guard let nearest = handles.min(by: { distance($0.point, point) < distance($1.point, point) }) else {
+                return fit.kind == "line" ? 1 : 0
+            }
+            return nearest.index
+        }
+
+        private func adjustedShapeFit(_ fit: ShapeFit, to point: CGPoint, handleIndex: Int?) -> ShapeFit {
+            let index = handleIndex ?? shapeDragHandleIndex(for: fit, near: point)
+            switch fit.kind {
+            case "line":
+                guard fit.points.count >= 2 else { return fit }
+                return ShapeFit(kind: fit.kind, points: [fit.points[0], point])
+            case "triangle":
+                guard fit.points.count >= 4 else { return fit }
+                var points = fit.points
+                let vertexIndex = min(max(index, 0), 2)
+                points[vertexIndex] = point
+                if vertexIndex == 0 {
+                    points[points.count - 1] = point
+                }
+                return ShapeFit(kind: fit.kind, points: points)
+            case "rectangle":
+                guard let bounds = pointBounds(fit.points) else { return fit }
+                let opposite: CGPoint
+                switch index {
+                case 0:
+                    opposite = CGPoint(x: bounds.maxX, y: bounds.maxY)
+                case 1:
+                    opposite = CGPoint(x: bounds.minX, y: bounds.maxY)
+                case 2:
+                    opposite = CGPoint(x: bounds.minX, y: bounds.minY)
+                default:
+                    opposite = CGPoint(x: bounds.maxX, y: bounds.minY)
+                }
+                return ShapeFit(kind: fit.kind, points: rectanglePoints(from: point, to: opposite))
+            case "ellipse":
+                guard let bounds = pointBounds(fit.points) else { return fit }
+                var minX = bounds.minX
+                var maxX = bounds.maxX
+                var minY = bounds.minY
+                var maxY = bounds.maxY
+                switch index {
+                case 0:
+                    minY = point.y
+                case 1:
+                    maxX = point.x
+                case 2:
+                    maxY = point.y
+                default:
+                    minX = point.x
+                }
+                return ShapeFit(kind: fit.kind, points: ellipsePoints(in: normalizedRect(minX: minX, minY: minY, maxX: maxX, maxY: maxY), count: 48))
+            default:
+                return fit
+            }
+        }
+
+        private func shapeHandlePoints(for fit: ShapeFit) -> [(index: Int, point: CGPoint)] {
+            switch fit.kind {
+            case "line":
+                guard let first = fit.points.first, let last = fit.points.last else { return [] }
+                return [(0, first), (1, last)]
+            case "rectangle":
+                return fit.points.prefix(4).enumerated().map { (index: $0.offset, point: $0.element) }
+            case "triangle":
+                return fit.points.prefix(3).enumerated().map { (index: $0.offset, point: $0.element) }
+            case "ellipse":
+                guard let bounds = pointBounds(fit.points) else { return [] }
+                return [
+                    (0, CGPoint(x: bounds.midX, y: bounds.minY)),
+                    (1, CGPoint(x: bounds.maxX, y: bounds.midY)),
+                    (2, CGPoint(x: bounds.midX, y: bounds.maxY)),
+                    (3, CGPoint(x: bounds.minX, y: bounds.midY))
+                ]
+            default:
+                return []
+            }
         }
 
         private func fitShape(from points: [CGPoint]) -> ShapeFit? {
@@ -2496,6 +2590,23 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 let angle = CGFloat(index) / CGFloat(count) * .pi * 2
                 return CGPoint(x: center.x + cos(angle) * rx, y: center.y + sin(angle) * ry)
             }
+        }
+
+        private func normalizedRect(minX: CGFloat, minY: CGFloat, maxX: CGFloat, maxY: CGFloat) -> CGRect {
+            let left = min(minX, maxX)
+            let right = max(minX, maxX)
+            let top = min(minY, maxY)
+            let bottom = max(minY, maxY)
+            return CGRect(x: left, y: top, width: max(1, right - left), height: max(1, bottom - top))
+        }
+
+        private func rectanglePoints(from point: CGPoint, to opposite: CGPoint) -> [CGPoint] {
+            let bounds = normalizedRect(minX: point.x, minY: point.y, maxX: opposite.x, maxY: opposite.y)
+            let topLeft = CGPoint(x: bounds.minX, y: bounds.minY)
+            let topRight = CGPoint(x: bounds.maxX, y: bounds.minY)
+            let bottomRight = CGPoint(x: bounds.maxX, y: bounds.maxY)
+            let bottomLeft = CGPoint(x: bounds.minX, y: bounds.maxY)
+            return [topLeft, topRight, bottomRight, bottomLeft, topLeft]
         }
 
         private func resampled(_ points: [CGPoint], spacing: CGFloat) -> [CGPoint] {
