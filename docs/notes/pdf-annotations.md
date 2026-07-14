@@ -99,9 +99,10 @@ or the configured VLM OCR path can extract text from their `dataBase64` payload.
 
 Current Apple support:
 
-- iOS/iPadOS: PDFKit preview, read/write mode, pen, partial eraser, pen
-  color/width options, eraser width options, text boxes, image objects,
-  object selection/move/resize/delete, export/import, and PDF insertion.
+- iOS/iPadOS: PDFKit preview, read/write mode, pen, partial eraser, lasso
+  selection/move, pen color/width options, eraser width options, text boxes,
+  image objects, object selection/move/resize/delete, export/import, and PDF
+  insertion.
 - macOS: PDFKit preview, mouse/trackpad pen input, stroke erasing, text/image
   object selection, object move/resize, text editing, inspector controls, pen
   color support, colored ink preview, and Delete-key object removal.
@@ -111,9 +112,9 @@ Current Apple support:
 - Stored `inkStrokes` are rendered as PDFKit `.ink` annotations so strokes made
   on one Apple platform remain visible on the other.
 
-The current lasso-style handwritten stroke selection/move workflow is not a
-supported primary path. Portable stroke editing should be built on top of
-`inkStrokes`, not on PencilKit-only selection state.
+The current lasso path is implemented against portable Codmes state: it selects
+and moves `inkStrokes`, text boxes, and image objects without depending on
+PencilKit-only selection state.
 
 ## Read And Write Modes
 

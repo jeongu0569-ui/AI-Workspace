@@ -85,8 +85,8 @@ macOS:
 ## What Is Still Not Solved
 
 - Handwriting OCR over pen strokes is not implemented.
-- Lasso-style handwritten stroke selection is not a supported primary workflow
-  in the current PDFKit ink path.
+- Lasso-style selection is now implemented against Codmes `inkStrokes` and
+  annotation objects. It is independent of PencilKit-only selection state.
 - Cross-platform Windows/Android render/edit adapters still need to consume the
   same `inkStrokes` model.
 
