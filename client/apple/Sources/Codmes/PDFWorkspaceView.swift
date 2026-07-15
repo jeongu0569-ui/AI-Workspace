@@ -2575,13 +2575,6 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             }
 
             let closedDistance = distance(points[0], points[points.count - 1])
-            if let triangle = strokePreservingTriangleCandidate(from: points, diagonal: diagonal) {
-                return triangle
-            }
-            if closedDistance / diagonal >= 0.95 {
-                return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
-            }
-
             let edgeFit = edgeFitRatio(points, bounds: bounds)
             let circle = circlePoints(in: bounds, count: 48)
             let ellipse = ellipsePoints(in: bounds, count: 48)
@@ -2590,6 +2583,20 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             let angleCoverage = angularCoverage(points, bounds: bounds)
             let circularityScore = closedCircularity(points)
             let angularStroke = angularStrokeIntent(points, diagonal: diagonal)
+            let blockRoundFit = angularStroke && circularityScore < 0.5
+
+            if circleScore < 0.22, angleCoverage > 0.7, edgeFit < 0.72, !blockRoundFit {
+                return ShapeFit(kind: "circle", points: circle)
+            }
+            if closedDistance / diagonal > 0.62, angularStroke {
+                return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
+            }
+            if let triangle = strokePreservingTriangleCandidate(from: points, diagonal: diagonal) {
+                return triangle
+            }
+            if closedDistance / diagonal >= 0.95 {
+                return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
+            }
             var candidates: [(fit: ShapeFit, score: CGFloat)] = []
 
             let rectPoints = [
@@ -2599,7 +2606,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 CGPoint(x: bounds.minX, y: bounds.maxY),
                 CGPoint(x: bounds.minX, y: bounds.minY)
             ]
-            if circleScore < 0.24, angleCoverage > 0.68, edgeFit < 0.72, !angularStroke {
+            if circleScore < 0.24, angleCoverage > 0.68, edgeFit < 0.72, !blockRoundFit {
                 return ShapeFit(kind: "circle", points: circle)
             }
 
@@ -2610,11 +2617,11 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 candidates.append((ShapeFit(kind: "rectangle", points: rectPoints), rectangleScore))
             }
 
-            if circleScore < 0.34, angleCoverage > 0.58, !angularStroke {
+            if circleScore < 0.34, angleCoverage > 0.58, !blockRoundFit {
                 candidates.append((ShapeFit(kind: "circle", points: circle), circleScore * 0.55))
             }
 
-            if ellipseScore < 0.5, circularityScore > 0.52, !angularStroke {
+            if ellipseScore < 0.5, circularityScore > 0.52, !blockRoundFit {
                 candidates.append((ShapeFit(kind: "ellipse", points: ellipse), ellipseScore * 0.7))
             }
 
@@ -2642,6 +2649,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         private func openTriangleCandidate(from points: [CGPoint], diagonal: CGFloat) -> ShapeFit? {
             guard points.count > 5 else { return nil }
+            guard angularStrokeIntent(points, diagonal: diagonal) else { return nil }
             let start = points[0]
             let end = points[points.count - 1]
             let baseLength = distance(start, end)
@@ -2728,6 +2736,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         private func roughStrokeTriangleCandidate(from points: [CGPoint], diagonal: CGFloat) -> ShapeFit? {
             guard angularStrokeIntent(points, diagonal: diagonal) else { return nil }
+            guard distance(points[0], points[points.count - 1]) / diagonal < 0.58 else { return nil }
             let epsilons: [CGFloat] = [0.025, 0.035, 0.045, 0.06, 0.08, 0.105]
             var best: (fit: ShapeFit, score: CGFloat)?
 
