@@ -2465,7 +2465,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 let overlayPoints = pdfView.drawingOverlay.points
                 guard let fit = self.fitShape(from: overlayPoints) else { return }
                 self.activeShapeFit = fit
-                self.activeShapeDragHandleIndex = self.shapeDragHandleIndex(for: fit, near: overlayPoints.last)
+                self.activeShapeDragHandleIndex = fit.kind == "triangle" ? 2 : self.shapeDragHandleIndex(for: fit, near: overlayPoints.last)
                 pdfView.drawingOverlay.replace(with: fit.points)
             }
             shapeHoldWorkItem?.cancel()
@@ -2490,6 +2490,12 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             case "line":
                 guard fit.points.count >= 2 else { return fit }
                 return ShapeFit(kind: fit.kind, points: [fit.points[0], point])
+            case "polyline":
+                guard fit.points.count >= 2 else { return fit }
+                var points = fit.points
+                let vertexIndex = min(max(index, 0), points.count - 1)
+                points[vertexIndex] = point
+                return ShapeFit(kind: fit.kind, points: points)
             case "triangle":
                 guard fit.points.count >= 4 else { return fit }
                 var points = fit.points
@@ -2520,21 +2526,13 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 return ShapeFit(kind: fit.kind, points: circlePoints(center: center, radius: radius, count: 48))
             case "ellipse":
                 guard let bounds = pointBounds(fit.points) else { return fit }
-                var minX = bounds.minX
-                var maxX = bounds.maxX
-                var minY = bounds.minY
-                var maxY = bounds.maxY
-                switch index {
-                case 0:
-                    minY = point.y
-                case 1:
-                    maxX = point.x
-                case 2:
-                    maxY = point.y
-                default:
-                    minX = point.x
-                }
-                return ShapeFit(kind: fit.kind, points: ellipsePoints(in: normalizedRect(minX: minX, minY: minY, maxX: maxX, maxY: maxY), count: 48))
+                let center = CGPoint(x: bounds.midX, y: bounds.midY)
+                let currentHandle = shapeHandlePoints(for: fit).first(where: { $0.index == index })?.point ?? CGPoint(x: bounds.maxX, y: bounds.midY)
+                let currentDistance = max(distance(center, currentHandle), 1)
+                let nextDistance = max(distance(center, point), 1)
+                let scale = nextDistance / currentDistance
+                let angle = atan2(point.y - center.y, point.x - center.x)
+                return ShapeFit(kind: fit.kind, points: ellipsePoints(center: center, rx: max(bounds.width / 2 * scale, 1), ry: max(bounds.height / 2 * scale, 1), angle: angle, count: 48))
             default:
                 return fit
             }
@@ -2542,9 +2540,12 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         private func shapeHandlePoints(for fit: ShapeFit) -> [(index: Int, point: CGPoint)] {
             switch fit.kind {
-            case "line":
+            case "line", "polyline":
                 guard let first = fit.points.first, let last = fit.points.last else { return [] }
-                return [(0, first), (1, last)]
+                if fit.kind == "line" {
+                    return [(0, first), (1, last)]
+                }
+                return fit.points.enumerated().map { (index: $0.offset, point: $0.element) }
             case "rectangle":
                 return fit.points.prefix(4).enumerated().map { (index: $0.offset, point: $0.element) }
             case "triangle":
@@ -2574,7 +2575,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             }
 
             let closedDistance = distance(points[0], points[points.count - 1])
-            guard closedDistance / diagonal < 0.95 else { return nil }
+            if closedDistance / diagonal >= 0.95 {
+                return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
+            }
 
             let edgeFit = edgeFitRatio(points, bounds: bounds)
             let circle = circlePoints(in: bounds, count: 48)
@@ -2586,6 +2589,13 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             var candidates: [(fit: ShapeFit, score: CGFloat)] = []
             if circleScore > 0.26, let triangleCandidate = bestTriangleCandidate(from: points, diagonal: diagonal) {
                 candidates.append(triangleCandidate)
+                if triangleCandidate.score < 0.22 {
+                    return triangleCandidate.fit
+                }
+            } else if circleScore > 0.26,
+                      circularityScore < 0.72,
+                      let triangleFallback = fallbackTriangle(from: points, bounds: bounds, diagonal: diagonal) {
+                candidates.append((triangleFallback, 0.32))
             }
 
             let rectPoints = [
@@ -2614,7 +2624,10 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 candidates.append((ShapeFit(kind: "ellipse", points: ellipse), ellipseScore * 0.7))
             }
 
-            return candidates.min { $0.score < $1.score }?.fit
+            if let best = candidates.min(by: { $0.score < $1.score }) {
+                return best.fit
+            }
+            return ShapeFit(kind: "ellipse", points: ellipse)
         }
 
         private func pointBounds(_ points: [CGPoint]) -> CGRect? {
@@ -2720,6 +2733,40 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             return best
         }
 
+        private func fallbackTriangle(from points: [CGPoint], bounds: CGRect, diagonal: CGFloat) -> ShapeFit? {
+            let hull = convexHull(points)
+            guard hull.count >= 3 else { return nil }
+            let center = CGPoint(x: bounds.midX, y: bounds.midY)
+            let sorted = hull.sorted { distance($0, center) > distance($1, center) }
+            var selected: [CGPoint] = []
+            for point in sorted {
+                guard selected.allSatisfy({ distance($0, point) > diagonal * 0.22 }) else { continue }
+                selected.append(point)
+                if selected.count == 3 { break }
+            }
+            guard selected.count == 3 else { return nil }
+            let ordered = selected.sorted {
+                atan2($0.y - center.y, $0.x - center.x) < atan2($1.y - center.y, $1.x - center.x)
+            }
+            return ShapeFit(kind: "triangle", points: ordered + [ordered[0]])
+        }
+
+        private func fittedPolyline(from points: [CGPoint], diagonal: CGFloat) -> [CGPoint] {
+            let simplified = simplify(points, epsilon: max(diagonal * 0.08, 6))
+            guard simplified.count > 2 else {
+                return [points[0], points[points.count - 1]]
+            }
+            if simplified.count <= 6 {
+                return simplified
+            }
+            let step = CGFloat(simplified.count - 1) / 5
+            var result: [CGPoint] = []
+            for index in 0...5 {
+                result.append(simplified[min(simplified.count - 1, Int(round(CGFloat(index) * step)))])
+            }
+            return result
+        }
+
         private func trianglePointOptions(from vertices: [CGPoint]) -> [[CGPoint]] {
             guard vertices.count >= 3 else { return [] }
             if vertices.count == 3 {
@@ -2812,6 +2859,18 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             (0...count).map { index in
                 let angle = CGFloat(index) / CGFloat(count) * .pi * 2
                 return CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+            }
+        }
+
+        private func ellipsePoints(center: CGPoint, rx: CGFloat, ry: CGFloat, angle: CGFloat, count: Int) -> [CGPoint] {
+            (0...count).map { index in
+                let theta = CGFloat(index) / CGFloat(count) * .pi * 2
+                let x = cos(theta) * rx
+                let y = sin(theta) * ry
+                return CGPoint(
+                    x: center.x + x * cos(angle) - y * sin(angle),
+                    y: center.y + x * sin(angle) + y * cos(angle)
+                )
             }
         }
 
@@ -3191,6 +3250,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             case "line":
                 guard let first = stroke.points.first, let last = stroke.points.last else { return [] }
                 return [(0, viewPoint(first)), (1, viewPoint(last))]
+            case "polyline":
+                return stroke.points.enumerated().map { ($0.offset, viewPoint($0.element)) }
             case "rectangle":
                 return stroke.points.prefix(4).enumerated().map { ($0.offset, viewPoint($0.element)) }
             case "triangle":
@@ -3293,6 +3354,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 } else {
                     next.points[next.points.count - 1] = point
                 }
+            case "polyline":
+                guard next.points.indices.contains(handleIndex) else { return next }
+                next.points[handleIndex] = point
             case "triangle":
                 guard next.points.count >= 4, handleIndex < 3 else { return next }
                 next.points[handleIndex] = point
