@@ -98,16 +98,33 @@ struct PDFShapeRecognizer {
 
         let angular = angularStrokeIntent(points, diagonal: diagonal)
         let circularity = closedCircularity(points)
+        let elongated = aspectRatio(bounds) > 1.75
         if let roundBest = candidates
             .filter({ $0.fit.kind == "circle" || $0.fit.kind == "ellipse" })
             .min(by: { $0.score < $1.score }),
            angular,
+           !elongated,
            circularity < 0.82,
            let angularBest = candidates
             .filter({ $0.fit.kind != "circle" && $0.fit.kind != "ellipse" })
             .min(by: { $0.score < $1.score }),
            angularBest.score <= roundBest.score + 0.14 {
+            if roundBest.score < 0.14, angularBest.fit.kind == "rectangle" {
+                return success(roundBest, selected: roundBest.fit.kind, reason: "round-guard", points: points, endpointGap: endpointGap, candidates: candidates)
+            }
             return success(angularBest, selected: angularBest.fit.kind, reason: "angular-over-round", points: points, endpointGap: endpointGap, candidates: candidates)
+        }
+
+        if elongated,
+           let ellipseBest = candidates
+            .filter({ $0.fit.kind == "ellipse" })
+            .min(by: { $0.score < $1.score }),
+           let polygonBest = candidates
+            .filter({ $0.fit.kind == "triangle" || $0.fit.kind == "rectangle" })
+            .min(by: { $0.score < $1.score }),
+           ellipseBest.score < 0.28,
+           polygonBest.score >= ellipseBest.score - 0.10 {
+            return success(ellipseBest, selected: ellipseBest.fit.kind, reason: "elongated-round-guard", points: points, endpointGap: endpointGap, candidates: candidates)
         }
 
         guard let best = candidates.min(by: { $0.score < $1.score }) else { return nil }
@@ -155,7 +172,7 @@ struct PDFShapeRecognizer {
     private func polygonCandidates(from points: [CGPoint], corners: [CGPoint], diagonal: CGFloat, endpointGap: CGFloat) -> [Candidate] {
         var result: [Candidate] = []
         var options = polygonVertexOptions(from: points, corners: corners, diagonal: diagonal)
-        if options.isEmpty, let bounds = pointBounds(points) {
+        if endpointGap > 0.34, options.isEmpty, let bounds = pointBounds(points) {
             options.append(extremeTriangle(from: points, bounds: bounds, diagonal: diagonal))
         }
 
@@ -178,15 +195,44 @@ struct PDFShapeRecognizer {
             }
         }
 
+        let strongTriangle = result.contains { $0.fit.kind == "triangle" && $0.score < 0.075 }
+        if !strongTriangle,
+           endpointGap < 0.34,
+           angularStrokeIntent(points, diagonal: diagonal),
+           let fallback = boundingRectangleCandidate(from: points, diagonal: diagonal, endpointGap: endpointGap) {
+            result.append(fallback)
+        }
+
         return result
+    }
+
+    private func boundingRectangleCandidate(from points: [CGPoint], diagonal: CGFloat, endpointGap: CGFloat) -> Candidate? {
+        guard let bounds = pointBounds(points), bounds.width > 8, bounds.height > 8 else { return nil }
+        let rectangle = rectanglePoints(in: bounds)
+        let edgeCoverage = edgeFitRatio(points, bounds: bounds)
+        let elongated = aspectRatio(bounds) > 2.3
+        let cornerCoverage = rectangleCornerCoverage(points, bounds: bounds)
+        let circularity = closedCircularity(points)
+        guard edgeCoverage > 0.38, circularity < 0.82 else { return nil }
+        guard !elongated || cornerCoverage > 0.018 else { return nil }
+        let fitError = polylineError(points, candidate: rectangle) / diagonal
+        let score = fitError * 0.62
+            + max(0, endpointGap - 0.16) * 0.12
+            + max(0, 0.56 - edgeCoverage) * 0.18
+            + max(0, 0.04 - cornerCoverage) * 0.08
+            + 0.005
+        return Candidate(fit: PDFShapeFit(kind: "rectangle", points: rectangle), score: score, reason: "rectangle-bounds", vertices: Array(rectangle.prefix(4)))
     }
 
     private func roundCandidates(from points: [CGPoint], bounds: CGRect, corners: [CGPoint], diagonal: CGFloat, endpointGap: CGFloat) -> [Candidate] {
         let circularity = closedCircularity(points)
         let coverage = angularCoverage(points, bounds: bounds)
-        guard endpointGap < 0.46, coverage > 0.58, circularity > 0.42 else { return [] }
+        let elongated = aspectRatio(bounds) > 1.75
+        guard endpointGap < 0.52,
+              coverage > (elongated ? 0.46 : 0.58),
+              circularity > (elongated ? 0.22 : 0.42) else { return [] }
         let cornerPenalty: CGFloat = corners.count <= 5 ? 0.16 : 0
-        if angularStrokeIntent(points, diagonal: diagonal), corners.count <= 5, circularity < 0.86 {
+        if !elongated, angularStrokeIntent(points, diagonal: diagonal), corners.count <= 5, circularity < 0.86 {
             return []
         }
 
@@ -195,13 +241,14 @@ struct PDFShapeRecognizer {
         let ellipseError = ellipseFitError(points, bounds: bounds)
         let coveragePenalty = max(0, 0.82 - coverage) * 0.12
         let closurePenalty = max(0, endpointGap - 0.16) * 0.18
-        if circleError < 0.48 {
+        if !elongated, circleError < 0.48 {
             let fit = PDFShapeFit(kind: "circle", points: circlePoints(in: bounds, count: 48))
             result.append(Candidate(fit: fit, score: circleError + coveragePenalty + closurePenalty + cornerPenalty + 0.045, reason: "round", vertices: []))
         }
-        if ellipseError < 0.48 {
+        if ellipseError < (elongated ? 0.62 : 0.48) {
             let fit = PDFShapeFit(kind: "ellipse", points: ellipsePoints(in: bounds, count: 48))
-            result.append(Candidate(fit: fit, score: ellipseError + coveragePenalty + closurePenalty + cornerPenalty + 0.055, reason: "round", vertices: []))
+            let elongatedBonus: CGFloat = elongated ? -0.09 : 0
+            result.append(Candidate(fit: fit, score: ellipseError + coveragePenalty + closurePenalty + cornerPenalty + 0.055 + elongatedBonus, reason: "round", vertices: []))
         }
         return result
     }
@@ -395,6 +442,34 @@ struct PDFShapeRecognizer {
         guard vertices.count == 4 else { return 0 }
         let lengths = (0..<4).map { distance(vertices[$0], vertices[($0 + 1) % 4]) / diagonal }
         return lengths.contains(where: { $0 < 0.12 }) ? 0.2 : 0
+    }
+
+    private func aspectRatio(_ bounds: CGRect) -> CGFloat {
+        max(bounds.width, bounds.height) / max(min(bounds.width, bounds.height), 1)
+    }
+
+    private func edgeFitRatio(_ points: [CGPoint], bounds: CGRect) -> CGFloat {
+        let tolerance = max(hypot(bounds.width, bounds.height) * 0.08, 4)
+        let hits = points.filter { point in
+            min(
+                abs(point.x - bounds.minX),
+                abs(point.x - bounds.maxX),
+                abs(point.y - bounds.minY),
+                abs(point.y - bounds.maxY)
+            ) <= tolerance
+        }
+        return CGFloat(hits.count) / CGFloat(max(points.count, 1))
+    }
+
+    private func rectangleCornerCoverage(_ points: [CGPoint], bounds: CGRect) -> CGFloat {
+        let diagonal = max(hypot(bounds.width, bounds.height), 1)
+        let shortSide = max(min(bounds.width, bounds.height), 1)
+        let tolerance = max(min(diagonal * 0.08, shortSide * 0.34), 5)
+        let corners = rectanglePoints(in: bounds).dropLast()
+        let perCorner = corners.map { corner in
+            points.filter { distance($0, corner) <= tolerance }.count
+        }
+        return CGFloat(perCorner.min() ?? 0) / CGFloat(max(points.count, 1))
     }
 
     private func angularStrokeIntent(_ points: [CGPoint], diagonal: CGFloat) -> Bool {
@@ -698,5 +773,13 @@ struct PDFShapeRecognizer {
             let angle = CGFloat(index) / CGFloat(count) * .pi * 2
             return CGPoint(x: center.x + cos(angle) * rx, y: center.y + sin(angle) * ry)
         }
+    }
+
+    private func rectanglePoints(in bounds: CGRect) -> [CGPoint] {
+        let topLeft = CGPoint(x: bounds.minX, y: bounds.minY)
+        let topRight = CGPoint(x: bounds.maxX, y: bounds.minY)
+        let bottomRight = CGPoint(x: bounds.maxX, y: bounds.maxY)
+        let bottomLeft = CGPoint(x: bounds.minX, y: bounds.maxY)
+        return [topLeft, topRight, bottomRight, bottomLeft, topLeft]
     }
 }
