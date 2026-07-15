@@ -18,6 +18,16 @@ Codmes shape recognition should be tuned with external vector stroke data first,
 python3 scripts/fetch_quickdraw_shape_samples.py --per-class 80
 ```
 
+  - Use `--skip-per-class` to create held-out replay sets that do not overlap
+    with an exported exemplar bank:
+
+```bash
+python3 scripts/fetch_quickdraw_shape_samples.py \
+  --per-class 100 \
+  --skip-per-class 200 \
+  --output /tmp/codmes-shape-quickdraw-heldout-after-800.jsonl
+```
+
 - PaleoSketch / ShortStraw research
   - PaleoSketch paper reference: <https://www.semanticscholar.org/paper/PaleoSketch%3A-accurate-primitive-sketch-recognition-Paulson-Hammond/545d3d4bc14f99ce37e21ed83e23804c2cc78532>
   - Useful as algorithm references for primitive recognition and corner detection.
@@ -59,8 +69,8 @@ scripts/evaluate_shape_recognition.sh \
 ```
 
 `exemplar` uses normalized stroke paths and leave-one-out nearest-neighbor
-matching. This is not the current app runtime recognizer yet; it is the
-validation path for moving toward a sample/model-backed recognizer.
+matching. This validates the sample-backed path independently from the app's
+geometric fit logic.
 
 For broader manual checks, generate a larger temporary corpus:
 
@@ -92,8 +102,52 @@ total=400 correct=361 none=0 wrong=39 accuracy=0.9025
 ```
 
 This shows that 90% is reachable with sample-backed recognition. The remaining
-work is to export a compact exemplar/model bank and call it from the Notes
+work was to export a compact exemplar/model bank and call it from the Notes
 canvas runtime alongside the geometric recognizer.
+
+## Runtime Exemplar Bank
+
+The app now includes a generated compact exemplar bank:
+
+```text
+client/apple/Sources/Codmes/PDFShapeExemplarBank.swift
+```
+
+Regenerate it from an external replay corpus with:
+
+```bash
+python3 scripts/fetch_quickdraw_shape_samples.py \
+  --per-class 200 \
+  --output /tmp/codmes-shape-quickdraw-800.jsonl
+
+python3 scripts/export_shape_exemplar_bank.py \
+  --input /tmp/codmes-shape-quickdraw-800.jsonl \
+  --output client/apple/Sources/Codmes/PDFShapeExemplarBank.swift
+```
+
+The exporter normalizes each stroke to 64 points, rotates by indicative angle,
+scales into a unit box, and stores quantized `Float` coordinates. At runtime,
+`PDFShapeRecognizer` compares the current hold-completion stroke against this
+bank. A close exemplar match decides the intended primitive shape; the
+geometric recognizer still provides the fitted points for line, rectangle,
+triangle, and circle output.
+
+Current replay checks:
+
+```text
+80-sample smoke corpus
+strategy=geometric
+total=80 correct=80 none=0 wrong=0 accuracy=1.0000
+
+400-sample held-out corpus after the exported 800-bank source window
+strategy=geometric
+total=400 correct=360 none=3 wrong=37 accuracy=0.9000
+```
+
+This 90% held-out result is a replay metric, not a guarantee that all real user
+stylus shapes will classify correctly. Real in-app failures should still be
+copied from diagnostics into a local replay corpus and used to grow or rebalance
+the bank.
 
 ## In-App Diagnostics
 

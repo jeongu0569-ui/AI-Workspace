@@ -69,6 +69,12 @@ def convert_record(record: dict, source_class: str, expected_kind: str, recogniz
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--per-class", type=int, default=80)
+    parser.add_argument(
+        "--skip-per-class",
+        type=int,
+        default=0,
+        help="skip this many converted records per class before writing samples",
+    )
     parser.add_argument("--output", default="docs/notes/shape-recognition-quickdraw-samples.jsonl")
     parser.add_argument(
         "--include-unrecognized",
@@ -84,6 +90,7 @@ def main() -> int:
     with output.open("w", encoding="utf-8") as handle:
         for source_class, expected_kind in DEFAULT_CLASSES.items():
             count = 0
+            skipped = 0
             for record in iter_quickdraw_records(source_class):
                 converted = convert_record(
                     record,
@@ -92,6 +99,9 @@ def main() -> int:
                     recognized_only=not args.include_unrecognized,
                 )
                 if not converted:
+                    continue
+                if skipped < args.skip_per_class:
+                    skipped += 1
                     continue
                 handle.write(json.dumps(converted, sort_keys=True, separators=(",", ":")) + "\n")
                 count += 1

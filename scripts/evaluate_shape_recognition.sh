@@ -8,6 +8,7 @@ BINARY="$BUILD_DIR/evaluate_shape_recognition"
 mkdir -p "$BUILD_DIR"
 
 swiftc \
+  "$ROOT/client/apple/Sources/Codmes/PDFShapeExemplarBank.swift" \
   "$ROOT/client/apple/Sources/Codmes/PDFShapeRecognizer.swift" \
   "$ROOT/scripts/evaluate_shape_recognition.swift" \
   -o "$BINARY"

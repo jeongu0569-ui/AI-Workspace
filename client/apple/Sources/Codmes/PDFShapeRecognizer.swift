@@ -50,6 +50,11 @@ struct PDFShapeRecognizer {
         var vertices: [CGPoint]
     }
 
+    private struct ExemplarMatch {
+        var kind: String
+        var distance: CGFloat
+    }
+
     func recognize(points rawPoints: [CGPoint]) -> PDFShapeRecognitionResult? {
         guard let attempt = recognizeAttempt(points: rawPoints),
               let fit = attempt.fit else { return nil }
@@ -91,6 +96,14 @@ struct PDFShapeRecognizer {
 
         if closed {
             candidates.append(contentsOf: roundCandidates(from: points, bounds: bounds, corners: corners, diagonal: diagonal, endpointGap: endpointGap))
+        }
+
+        if let exemplar = exemplarMatch(from: points),
+           let candidate = exemplarCandidate(from: exemplar, points: points, bounds: bounds, diagonal: diagonal, existingCandidates: candidates) {
+            candidates.append(candidate)
+            if exemplar.distance <= 0.40 {
+                return success(candidate, selected: candidate.fit.kind, reason: candidate.reason, points: points, endpointGap: endpointGap, candidates: candidates)
+            }
         }
 
         guard !candidates.isEmpty else {
@@ -296,6 +309,105 @@ struct PDFShapeRecognizer {
             result.append(Candidate(fit: fit, score: ellipseError + coveragePenalty + closurePenalty + cornerPenalty + 0.055 + elongatedBonus, reason: "round", vertices: []))
         }
         return result
+    }
+
+    private func exemplarMatch(from points: [CGPoint]) -> ExemplarMatch? {
+        let normalized = normalizedExemplarPath(points)
+        guard normalized.count == PDFShapeExemplarBank.pointCount * 2 else { return nil }
+        var best: ExemplarMatch?
+        for exemplar in PDFShapeExemplarBank.exemplars where exemplar.points.count == normalized.count {
+            let distance = exemplarDistance(normalized, exemplar.points)
+            if best == nil || distance < best!.distance {
+                best = ExemplarMatch(kind: exemplar.kind, distance: distance)
+            }
+        }
+        return best
+    }
+
+    private func exemplarCandidate(
+        from match: ExemplarMatch,
+        points: [CGPoint],
+        bounds: CGRect,
+        diagonal: CGFloat,
+        existingCandidates: [Candidate]
+    ) -> Candidate? {
+        let strictThreshold: CGFloat = 0.40
+        let bestExisting = existingCandidates.min(by: { $0.score < $1.score })
+        guard match.distance <= strictThreshold || bestExisting == nil else { return nil }
+
+        let matchingExisting = existingCandidates
+            .filter { $0.fit.kind == match.kind }
+            .min(by: { $0.score < $1.score })
+        let fit: PDFShapeFit
+        let vertices: [CGPoint]
+        if let matchingExisting {
+            fit = matchingExisting.fit
+            vertices = matchingExisting.vertices
+        } else {
+            switch match.kind {
+            case "line":
+                fit = PDFShapeFit(kind: "line", points: [points[0], points[points.count - 1]])
+                vertices = fit.points
+            case "rectangle":
+                let rectangle = rectanglePoints(in: bounds)
+                fit = PDFShapeFit(kind: "rectangle", points: rectangle)
+                vertices = Array(rectangle.dropLast())
+            case "triangle":
+                let triangle = extremeTriangle(from: points, bounds: bounds, diagonal: diagonal)
+                fit = PDFShapeFit(kind: "triangle", points: triangle + [triangle[0]])
+                vertices = triangle
+            case "circle":
+                fit = PDFShapeFit(kind: "circle", points: circlePoints(in: bounds, count: 48))
+                vertices = []
+            default:
+                return nil
+            }
+        }
+
+        let score = max(0.012, match.distance * 0.18 + 0.01)
+        return Candidate(fit: fit, score: score, reason: "exemplar-bank:\(String(format: "%.3f", Double(match.distance)))", vertices: vertices)
+    }
+
+    private func normalizedExemplarPath(_ points: [CGPoint]) -> [Float] {
+        let sampled = resampleToCount(points, count: PDFShapeExemplarBank.pointCount)
+        guard !sampled.isEmpty else { return [] }
+        let centroid = sampled.reduce(CGPoint.zero) { partial, point in
+            CGPoint(x: partial.x + point.x, y: partial.y + point.y)
+        }
+        let center = CGPoint(x: centroid.x / CGFloat(sampled.count), y: centroid.y / CGFloat(sampled.count))
+        var translated = sampled.map { CGPoint(x: $0.x - center.x, y: $0.y - center.y) }
+        if let first = translated.first {
+            translated = rotate(translated, by: -atan2(first.y, first.x))
+        }
+        let scale = max(
+            translated.map { abs($0.x) }.max() ?? 1,
+            translated.map { abs($0.y) }.max() ?? 1,
+            1
+        )
+        return translated.flatMap { point in
+            [Float(point.x / scale), Float(point.y / scale)]
+        }
+    }
+
+    private func rotate(_ points: [CGPoint], by angle: CGFloat) -> [CGPoint] {
+        let cosA = cos(angle)
+        let sinA = sin(angle)
+        return points.map { point in
+            CGPoint(x: point.x * cosA - point.y * sinA, y: point.x * sinA + point.y * cosA)
+        }
+    }
+
+    private func exemplarDistance(_ lhs: [Float], _ rhs: [Float]) -> CGFloat {
+        guard lhs.count == rhs.count, !lhs.isEmpty else { return .greatestFiniteMagnitude }
+        var total: CGFloat = 0
+        var index = 0
+        while index + 1 < lhs.count {
+            let dx = CGFloat(lhs[index] - rhs[index])
+            let dy = CGFloat(lhs[index + 1] - rhs[index + 1])
+            total += hypot(dx, dy)
+            index += 2
+        }
+        return total / CGFloat(lhs.count / 2)
     }
 
     private func success(_ candidate: Candidate, selected: String, reason: String, points: [CGPoint], endpointGap: CGFloat, candidates: [Candidate]) -> PDFShapeRecognitionAttempt {
