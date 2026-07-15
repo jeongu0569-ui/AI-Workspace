@@ -2583,11 +2583,15 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             let angleCoverage = angularCoverage(points, bounds: bounds)
             let circularityScore = closedCircularity(points)
             let angularStroke = angularStrokeIntent(points, diagonal: diagonal)
-            let blockRoundFit = angularStroke && circularityScore < 0.5
+            let roundStroke = closedRoundIntent(
+                points: points,
+                diagonal: diagonal,
+                circleScore: circleScore,
+                angleCoverage: angleCoverage,
+                circularityScore: circularityScore,
+                angularStroke: angularStroke
+            )
 
-            if circleScore < 0.22, angleCoverage > 0.7, edgeFit < 0.72, !blockRoundFit {
-                return ShapeFit(kind: "circle", points: circle)
-            }
             if closedDistance / diagonal > 0.62, angularStroke {
                 return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
             }
@@ -2606,9 +2610,6 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 CGPoint(x: bounds.minX, y: bounds.maxY),
                 CGPoint(x: bounds.minX, y: bounds.minY)
             ]
-            if circleScore < 0.24, angleCoverage > 0.68, edgeFit < 0.72, !blockRoundFit {
-                return ShapeFit(kind: "circle", points: circle)
-            }
 
             let rectanglePolylineScore = polylineError(points, candidate: rectPoints) / diagonal
             let rectangleEdgeMissScore = 1 - edgeFit
@@ -2617,21 +2618,18 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 candidates.append((ShapeFit(kind: "rectangle", points: rectPoints), rectangleScore))
             }
 
-            if circleScore < 0.34, angleCoverage > 0.58, !blockRoundFit {
+            if roundStroke, edgeFit < 0.72, circleScore < 0.28 {
                 candidates.append((ShapeFit(kind: "circle", points: circle), circleScore * 0.55))
             }
 
-            if ellipseScore < 0.5, circularityScore > 0.52, !blockRoundFit {
+            if roundStroke, ellipseScore < 0.42 {
                 candidates.append((ShapeFit(kind: "ellipse", points: ellipse), ellipseScore * 0.7))
             }
 
             if let best = candidates.min(by: { $0.score < $1.score }) {
                 return best.fit
             }
-            if angularStroke {
-                return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
-            }
-            return ShapeFit(kind: "ellipse", points: ellipse)
+            return ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
         }
 
         private func strokePreservingTriangleCandidate(from points: [CGPoint], diagonal: CGFloat) -> ShapeFit? {
@@ -2789,6 +2787,25 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 }
             }
             return sharpTurns >= 2
+        }
+
+        private func closedRoundIntent(
+            points: [CGPoint],
+            diagonal: CGFloat,
+            circleScore: CGFloat,
+            angleCoverage: CGFloat,
+            circularityScore: CGFloat,
+            angularStroke: Bool
+        ) -> Bool {
+            let endpointGap = distance(points[0], points[points.count - 1]) / diagonal
+            guard endpointGap < 0.38,
+                  angleCoverage > 0.62,
+                  circularityScore > 0.46,
+                  circleScore < 0.38 else { return false }
+            if angularStroke, circularityScore < 0.66 {
+                return false
+            }
+            return true
         }
 
         private func deduplicatedVertices(_ points: [CGPoint], diagonal: CGFloat) -> [CGPoint] {
