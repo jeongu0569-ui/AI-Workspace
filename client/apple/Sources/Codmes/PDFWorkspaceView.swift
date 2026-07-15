@@ -2672,33 +2672,35 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             guard endpointGap > 0.04, endpointGap < 0.5 else { return nil }
 
             let apex = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-            let hull = convexHull(points)
-            let baseCandidates = hull
-                .filter { distance($0, apex) / diagonal > 0.28 }
-                .sorted { distance($0, apex) > distance($1, apex) }
-            guard baseCandidates.count >= 2 else { return nil }
-
-            var bestPair: (CGPoint, CGPoint, CGFloat)?
-            for firstIndex in 0..<(baseCandidates.count - 1) {
-                for secondIndex in (firstIndex + 1)..<baseCandidates.count {
-                    let first = baseCandidates[firstIndex]
-                    let second = baseCandidates[secondIndex]
-                    let separation = distance(first, second) / diagonal
-                    guard separation > 0.32 else { continue }
-                    let triangle = [apex, first, second, apex]
-                    let score = polylineError(points, candidate: triangle) / diagonal
-                    if bestPair == nil || score < bestPair!.2 {
-                        bestPair = (first, second, score)
-                    }
+            var farthestIndex = 0
+            var farthestDistance: CGFloat = 0
+            for index in points.indices.dropFirst().dropLast() {
+                let currentDistance = distance(points[index], apex)
+                if currentDistance > farthestDistance {
+                    farthestDistance = currentDistance
+                    farthestIndex = index
                 }
             }
-            guard let bestPair, bestPair.2 < 0.5 else { return nil }
+            guard farthestDistance / diagonal > 0.32 else { return nil }
 
-            let center = CGPoint(x: bounds.midX, y: bounds.midY)
-            let orderedBase = [bestPair.0, bestPair.1].sorted {
-                atan2($0.y - center.y, $0.x - center.x) < atan2($1.y - center.y, $1.x - center.x)
+            let opposite = points[farthestIndex]
+            let firstLeg = Array(points[0...farthestIndex])
+            let secondLeg = Array(points[farthestIndex..<points.count])
+            guard let firstBase = farthestPoint(from: firstLeg, toSegmentStart: apex, end: opposite),
+                  let secondBase = farthestPoint(from: secondLeg, toSegmentStart: opposite, end: apex),
+                  distance(firstBase, secondBase) / diagonal > 0.22 else { return nil }
+
+            let triangle = [apex, firstBase, secondBase, apex]
+            let score = polylineError(points, candidate: triangle) / diagonal
+            guard score < 0.52 else { return nil }
+            return ShapeFit(kind: "triangle", points: triangle)
+        }
+
+        private func farthestPoint(from points: [CGPoint], toSegmentStart start: CGPoint, end: CGPoint) -> CGPoint? {
+            guard !points.isEmpty else { return nil }
+            return points.max { lhs, rhs in
+                distance(lhs, toSegmentStart: start, end: end) < distance(rhs, toSegmentStart: start, end: end)
             }
-            return ShapeFit(kind: "triangle", points: [apex, orderedBase[0], orderedBase[1], apex])
         }
 
         private func pointBounds(_ points: [CGPoint]) -> CGRect? {
