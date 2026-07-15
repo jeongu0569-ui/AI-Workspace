@@ -607,8 +607,7 @@ struct PDFWorkspaceView: View {
             next.pages.append(PDFAnnotationPage(pageIndex: pageIndex, inkDataBase64: nil, inkStrokes: [stroke], objects: []))
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func replaceMacInkStrokes(pageIndex: Int, strokes: [CodmesInkStroke]) {
@@ -619,8 +618,7 @@ struct PDFWorkspaceView: View {
             next.pages.append(PDFAnnotationPage(pageIndex: pageIndex, inkDataBase64: nil, inkStrokes: strokes, objects: []))
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func updateMacAnnotationObject(_ object: PDFAnnotationObject) {
@@ -639,8 +637,7 @@ struct PDFWorkspaceView: View {
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
         macSelectedObjectId = object.id
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func deleteMacAnnotationObject(_ object: PDFAnnotationObject) {
@@ -650,20 +647,23 @@ struct PDFWorkspaceView: View {
             var objects = next.pages[pageOffset].objects ?? []
             objects.removeAll { $0.id == object.id }
             next.pages[pageOffset].objects = objects
+            next.pages[pageOffset].elements = next.pages[pageOffset].elements?.filter { $0.id != object.id }
         }
         next.objects.removeAll { $0.id == object.id }
+        next.elements = next.elements?.filter { $0.id != object.id }
         if macSelectedObjectId == object.id {
             macSelectedObjectId = nil
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private var selectedMacAnnotationObject: PDFAnnotationObject? {
         guard let macSelectedObjectId else { return nil }
-        for page in annotations?.pages ?? [] {
-            if let object = page.objects?.first(where: { $0.id == macSelectedObjectId }) {
-                return object
+        if let annotations {
+            for page in annotations.pages {
+                if let object = annotations.noteObjects(pageIndex: page.pageIndex).first(where: { $0.id == macSelectedObjectId }) {
+                    return object
+                }
             }
         }
         return annotations?.objects.first(where: { $0.id == macSelectedObjectId })
@@ -701,8 +701,7 @@ struct PDFWorkspaceView: View {
             next.pages.append(PDFAnnotationPage(pageIndex: pageIndex, inkDataBase64: encoded, inkStrokes: strokes, objects: []))
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func appendInkStroke(pageIndex: Int, stroke: CodmesInkStroke) {
@@ -715,8 +714,7 @@ struct PDFWorkspaceView: View {
             next.pages.append(PDFAnnotationPage(pageIndex: pageIndex, inkDataBase64: nil, inkStrokes: [stroke], objects: []))
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func replaceInkStrokes(pageIndex: Int, strokes: [CodmesInkStroke]) {
@@ -727,18 +725,13 @@ struct PDFWorkspaceView: View {
             next.pages.append(PDFAnnotationPage(pageIndex: pageIndex, inkDataBase64: nil, inkStrokes: strokes, objects: []))
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func hasTextObject(in selection: PDFLassoSelectionSummary) -> Bool {
-        for page in annotations?.pages ?? [] {
-            if page.pageIndex == selection.pageIndex,
-               page.objects?.contains(where: { selection.objectIds.contains($0.id) && $0.type.lowercased().contains("text") }) == true {
-                return true
-            }
-        }
-        return annotations?.objects.contains(where: { selection.objectIds.contains($0.id) && $0.type.lowercased().contains("text") }) == true
+        annotations?.noteObjects(pageIndex: selection.pageIndex).contains {
+            selection.objectIds.contains($0.id) && $0.type.lowercased().contains("text")
+        } == true
     }
 
     private func deleteLassoSelection(_ selection: PDFLassoSelectionSummary) {
@@ -752,14 +745,17 @@ struct PDFWorkspaceView: View {
                 objects.removeAll { selection.objectIds.contains($0.id) }
                 next.pages[pageOffset].objects = objects
             }
+            let selectedIds = selection.strokeIds.union(selection.objectIds)
+            next.pages[pageOffset].elements = next.pages[pageOffset].elements?.filter { !selectedIds.contains($0.id) }
         }
         next.objects.removeAll { selection.objectIds.contains($0.id) }
+        let selectedIds = selection.strokeIds.union(selection.objectIds)
+        next.elements = next.elements?.filter { !selectedIds.contains($0.id) }
         if let selectedObjectId, selection.objectIds.contains(selectedObjectId) {
             self.selectedObjectId = nil
         }
         lassoSelection = nil
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func recolorLassoSelection(_ selection: PDFLassoSelectionSummary, colorHex: String) {
@@ -779,14 +775,43 @@ struct PDFWorkspaceView: View {
                 }
                 next.pages[pageOffset].objects = objects
             }
+            next.pages[pageOffset].elements = next.pages[pageOffset].elements?.map { element in
+                guard selection.strokeIds.contains(element.id) || selection.objectIds.contains(element.id) else { return element }
+                var copy = element
+                if var stroke = copy.stroke {
+                    stroke.color = colorHex
+                    copy = copy.replacing(stroke: stroke)
+                }
+                var style = copy.style ?? CodmesNoteStyle(strokeColor: nil, fillColor: nil, lineWidth: nil, opacity: nil, fontSize: nil)
+                style.strokeColor = colorHex
+                copy.style = style
+                var metadata = copy.metadata ?? [:]
+                metadata["color"] = colorHex
+                copy.metadata = metadata
+                return copy
+            }
         }
         for index in next.objects.indices where selection.objectIds.contains(next.objects[index].id) {
             var metadata = next.objects[index].metadata ?? [:]
             metadata["color"] = colorHex
             next.objects[index].metadata = metadata
         }
-        annotations = next
-        scheduleSave(next)
+        next.elements = next.elements?.map { element in
+            guard selection.strokeIds.contains(element.id) || selection.objectIds.contains(element.id) else { return element }
+            var copy = element
+            if var stroke = copy.stroke {
+                stroke.color = colorHex
+                copy = copy.replacing(stroke: stroke)
+            }
+            var style = copy.style ?? CodmesNoteStyle(strokeColor: nil, fillColor: nil, lineWidth: nil, opacity: nil, fontSize: nil)
+            style.strokeColor = colorHex
+            copy.style = style
+            var metadata = copy.metadata ?? [:]
+            metadata["color"] = colorHex
+            copy.metadata = metadata
+            return copy
+        }
+        commitAnnotationDocument(next)
     }
 
     private func adjustLassoTextSize(_ selection: PDFLassoSelectionSummary, delta: Double) {
@@ -805,12 +830,35 @@ struct PDFWorkspaceView: View {
                 }
                 next.pages[pageOffset].objects = objects
             }
+            next.pages[pageOffset].elements = next.pages[pageOffset].elements?.map { element in
+                guard selection.objectIds.contains(element.id), element.type.lowercased().contains("text") else { return element }
+                var copy = element
+                let current = copy.style?.fontSize ?? Double(copy.metadata?["fontSize"] ?? "16") ?? 16
+                var style = copy.style ?? CodmesNoteStyle(strokeColor: nil, fillColor: nil, lineWidth: nil, opacity: nil, fontSize: nil)
+                style.fontSize = max(8, min(72, current + delta))
+                copy.style = style
+                var metadata = copy.metadata ?? [:]
+                metadata["fontSize"] = String(Int(style.fontSize ?? 16))
+                copy.metadata = metadata
+                return copy
+            }
         }
         for index in next.objects.indices {
             adjust(&next.objects[index])
         }
-        annotations = next
-        scheduleSave(next)
+        next.elements = next.elements?.map { element in
+            guard selection.objectIds.contains(element.id), element.type.lowercased().contains("text") else { return element }
+            var copy = element
+            let current = copy.style?.fontSize ?? Double(copy.metadata?["fontSize"] ?? "16") ?? 16
+            var style = copy.style ?? CodmesNoteStyle(strokeColor: nil, fillColor: nil, lineWidth: nil, opacity: nil, fontSize: nil)
+            style.fontSize = max(8, min(72, current + delta))
+            copy.style = style
+            var metadata = copy.metadata ?? [:]
+            metadata["fontSize"] = String(Int(style.fontSize ?? 16))
+            copy.metadata = metadata
+            return copy
+        }
+        commitAnnotationDocument(next)
     }
 
     private func addTextBox(_ text: String) {
@@ -888,8 +936,7 @@ struct PDFWorkspaceView: View {
             next.pages.append(PDFAnnotationPage(pageIndex: pageIndex, inkDataBase64: nil, inkStrokes: nil, objects: [object]))
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private var selectedAnnotationObject: PDFAnnotationObject? {
@@ -898,12 +945,17 @@ struct PDFWorkspaceView: View {
     }
 
     private func annotationObject(with id: String) -> PDFAnnotationObject? {
-        for page in annotations?.pages ?? [] {
-            if let object = page.objects?.first(where: { $0.id == id }) {
+        if let annotations {
+            for page in annotations.pages {
+                if let object = annotations.noteObjects(pageIndex: page.pageIndex).first(where: { $0.id == id }) {
+                    return object
+                }
+            }
+            if let object = annotations.objects.first(where: { $0.id == id }) {
                 return object
             }
         }
-        return annotations?.objects.first(where: { $0.id == id })
+        return nil
     }
 
     private func duplicateAnnotationObject(_ object: PDFAnnotationObject) {
@@ -940,9 +992,11 @@ struct PDFWorkspaceView: View {
             objects.insert(item, at: min(objects.count, index + 1))
         }
         next.pages[pageOffset].objects = objects
-        annotations = next
+        var synced = next
+        synced.syncNoteElementsFromLegacy()
+        annotations = synced
         selectedObjectId = object.id
-        scheduleSave(next)
+        scheduleSave(synced)
     }
 
     private func deleteAnnotationObject(_ object: PDFAnnotationObject) {
@@ -952,13 +1006,14 @@ struct PDFWorkspaceView: View {
             var objects = next.pages[pageOffset].objects ?? []
             objects.removeAll { $0.id == object.id }
             next.pages[pageOffset].objects = objects
+            next.pages[pageOffset].elements = next.pages[pageOffset].elements?.filter { $0.id != object.id }
         }
         next.objects.removeAll { $0.id == object.id }
+        next.elements = next.elements?.filter { $0.id != object.id }
         if selectedObjectId == object.id {
             selectedObjectId = nil
         }
-        annotations = next
-        scheduleSave(next)
+        commitAnnotationDocument(next)
     }
 
     private func exportPDF(includeAnnotations: Bool) {
@@ -1124,6 +1179,13 @@ struct PDFWorkspaceView: View {
         }
     }
     #endif
+
+    private func commitAnnotationDocument(_ document: PDFAnnotationDocument) {
+        var synced = document
+        synced.syncNoteElementsFromLegacy()
+        annotations = synced
+        scheduleSave(synced)
+    }
 
     private func emptyAnnotationDocument() -> PDFAnnotationDocument {
         PDFAnnotationDocument(
@@ -1352,10 +1414,11 @@ private final class CodmesMacPDFView: PDFView {
             }
         }
         guard let annotations else { return }
-        for annotationPage in annotations.pages {
-            guard let page = document.page(at: annotationPage.pageIndex) else { continue }
+        for pageIndex in 0..<document.pageCount {
+            guard let page = document.page(at: pageIndex) else { continue }
             let pageBounds = page.bounds(for: .mediaBox)
-            if let strokes = annotationPage.inkStrokes, !strokes.isEmpty {
+            let strokes = annotations.noteStrokes(pageIndex: pageIndex)
+            if !strokes.isEmpty {
                 let ink = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
                 ink.contents = "codmes-ink-preview"
                 ink.color = .clear
@@ -1372,14 +1435,9 @@ private final class CodmesMacPDFView: PDFView {
                 }
                 page.addAnnotation(ink)
             }
-            for object in annotationPage.objects ?? [] {
+            for object in annotations.noteObjects(pageIndex: pageIndex) {
                 addObjectPreview(object, to: page, pageBounds: pageBounds)
             }
-        }
-        for object in annotations.objects {
-            guard let pageIndex = object.pageIndex,
-                  let page = document.page(at: pageIndex) else { continue }
-            addObjectPreview(object, to: page, pageBounds: page.bounds(for: .mediaBox))
         }
     }
 
@@ -1430,10 +1488,9 @@ private final class CodmesMacPDFView: PDFView {
     private func eraseStroke(at viewPoint: NSPoint, page: PDFPage) {
         guard let document, let annotations else { return }
         let pageIndex = document.index(for: page)
-        guard pageIndex >= 0,
-              let annotationPage = annotations.pages.first(where: { $0.pageIndex == pageIndex }),
-              let strokes = annotationPage.inkStrokes,
-              !strokes.isEmpty else { return }
+        guard pageIndex >= 0 else { return }
+        let strokes = annotations.noteStrokes(pageIndex: pageIndex)
+        guard !strokes.isEmpty else { return }
         let normalized = normalizedPoint(from: viewPoint, page: page)
         let pageBounds = page.bounds(for: .mediaBox)
         let threshold = max(0.004, 18.0 / Double(max(min(pageBounds.width, pageBounds.height), 1)))
@@ -1451,9 +1508,14 @@ private final class CodmesMacPDFView: PDFView {
     }
 
     private func allObjects() -> [PDFAnnotationObject] {
-        var result = annotations?.objects ?? []
-        for page in annotations?.pages ?? [] {
-            result.append(contentsOf: page.objects ?? [])
+        guard let annotations else { return [] }
+        var result: [PDFAnnotationObject] = []
+        var seen = Set<String>()
+        for page in annotations.pages {
+            for object in annotations.noteObjects(pageIndex: page.pageIndex) where !seen.contains(object.id) {
+                seen.insert(object.id)
+                result.append(object)
+            }
         }
         return result
     }
@@ -2192,11 +2254,11 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 }
             }
             guard let annotations else { return }
-            for annotationPage in annotations.pages {
-                guard let page = document.page(at: annotationPage.pageIndex),
-                      let strokes = annotationPage.inkStrokes else { continue }
+            for pageIndex in 0..<document.pageCount {
+                guard let page = document.page(at: pageIndex) else { continue }
+                let strokes = annotations.noteStrokes(pageIndex: pageIndex)
                 for stroke in strokes {
-                    let selected = lassoSelection?.pageIndex == annotationPage.pageIndex && lassoSelection?.strokeIds.contains(stroke.id) == true
+                    let selected = lassoSelection?.pageIndex == pageIndex && lassoSelection?.strokeIds.contains(stroke.id) == true
                     addInkPreview(stroke, to: page, contentsPrefix: "codmes-ink-preview", selected: selected)
                 }
             }
@@ -3141,10 +3203,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         private func eraseStroke(at viewPoint: CGPoint, page: PDFPage) {
             guard let pdfView, let document = pdfView.document, let annotations else { return }
             let pageIndex = document.index(for: page)
-            guard pageIndex >= 0,
-                  let annotationPage = annotations.pages.first(where: { $0.pageIndex == pageIndex }),
-                  let strokes = annotationPage.inkStrokes,
-                  !strokes.isEmpty else { return }
+            guard pageIndex >= 0 else { return }
+            let strokes = annotations.noteStrokes(pageIndex: pageIndex)
+            guard !strokes.isEmpty else { return }
             let normalized = normalizedPoint(from: viewPoint, page: page)
             let pageBounds = page.bounds(for: .mediaBox)
             let threshold = max(0.004, eraserWidth / Double(max(min(pageBounds.width, pageBounds.height), 1)))
@@ -3154,7 +3215,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         }
 
         private func strokes(for pageIndex: Int) -> [CodmesInkStroke] {
-            annotations?.pages.first(where: { $0.pageIndex == pageIndex })?.inkStrokes ?? []
+            annotations?.noteStrokes(pageIndex: pageIndex) ?? []
         }
 
         private func selectLassoContent(from viewPoints: [CGPoint], page: PDFPage, pageIndex: Int) {
@@ -3612,6 +3673,14 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             if let index = next.pages.firstIndex(where: { $0.pageIndex == pageIndex }) {
                 let current = next.pages[index].inkStrokes ?? []
                 next.pages[index].inkStrokes = current.map { selectedIds.contains($0.id) ? (movedById[$0.id] ?? $0) : $0 }
+                next.pages[index].elements = next.pages[index].elements?.map { element in
+                    guard let stroke = movedById[element.id] else { return element }
+                    return element.replacing(stroke: stroke)
+                }
+            }
+            next.elements = next.elements?.map { element in
+                guard element.pageIndex == pageIndex, let stroke = movedById[element.id] else { return element }
+                return element.replacing(stroke: stroke)
             }
             next.syncNoteElementsFromLegacy()
             annotations = next
@@ -3625,8 +3694,16 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 guard var objects = next.pages[pageIndex].objects else { continue }
                 objects = objects.map { movedById[$0.id] ?? $0 }
                 next.pages[pageIndex].objects = objects
+                next.pages[pageIndex].elements = next.pages[pageIndex].elements?.map { element in
+                    guard let object = movedById[element.id] else { return element }
+                    return element.replacing(object: object)
+                }
             }
             next.objects = next.objects.map { movedById[$0.id] ?? $0 }
+            next.elements = next.elements?.map { element in
+                guard let object = movedById[element.id] else { return element }
+                return element.replacing(object: object)
+            }
             next.syncNoteElementsFromLegacy()
             annotations = next
         }
@@ -3753,11 +3830,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         }
 
         private func objects(for pageIndex: Int) -> [PDFAnnotationObject] {
-            var result = annotations?.objects.filter { $0.pageIndex == pageIndex } ?? []
-            if let pageObjects = annotations?.pages.first(where: { $0.pageIndex == pageIndex })?.objects {
-                result.append(contentsOf: pageObjects)
-            }
-            return result
+            annotations?.noteObjects(pageIndex: pageIndex) ?? []
         }
 
         private func applyObjects(to overlay: PDFPageAnnotationOverlay, pageIndex: Int) {
@@ -3983,12 +4056,13 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         }
 
         private func object(with id: String) -> PDFAnnotationObject? {
-            for page in annotations?.pages ?? [] {
-                if let object = page.objects?.first(where: { $0.id == id }) {
+            guard let annotations else { return nil }
+            for page in annotations.pages {
+                if let object = annotations.noteObjects(pageIndex: page.pageIndex).first(where: { $0.id == id }) {
                     return object
                 }
             }
-            return annotations?.objects.first(where: { $0.id == id })
+            return annotations.objects.first(where: { $0.id == id })
         }
 
         private func frame(for bbox: AnnotationBoundingBox?, in bounds: CGRect) -> CGRect {
@@ -4458,15 +4532,13 @@ private func renderFlattenedPDF(document: PDFDocument, annotations: PDFAnnotatio
 
             if let annotationPage = annotations.pages.first(where: { $0.pageIndex == pageIndex }) {
                 drawInk(annotationPage.inkDataBase64, pageBounds: pageBounds)
-                if annotationPage.inkDataBase64 == nil {
-                    drawCodmesInk(annotationPage.inkStrokes, pageBounds: pageBounds)
-                }
-                for object in annotationPage.objects ?? [] {
-                    drawAnnotationObject(object, pageBounds: pageBounds)
-                }
             }
 
-            for object in annotations.objects where object.pageIndex == pageIndex {
+            let hasLegacyPKDrawing = annotations.pages.first(where: { $0.pageIndex == pageIndex })?.inkDataBase64 != nil
+            let elements = annotations.noteElements(pageIndex: pageIndex)
+            let strokes = hasLegacyPKDrawing ? elements.compactMap { $0.isEditableElementSource ? $0.stroke : nil } : elements.compactMap(\.stroke)
+            drawCodmesInk(strokes, pageBounds: pageBounds)
+            for object in elements.compactMap({ $0.annotationObject() }) {
                 drawAnnotationObject(object, pageBounds: pageBounds)
             }
         }

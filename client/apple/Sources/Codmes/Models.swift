@@ -233,13 +233,54 @@ struct NormalizedBoundingBox: Codable, Equatable {
 }
 
 extension PDFAnnotationDocument {
+    func noteElements(pageIndex: Int) -> [CodmesNoteElement] {
+        var result: [CodmesNoteElement] = []
+        var seen = Set<String>()
+
+        func append(_ element: CodmesNoteElement) {
+            guard element.pageIndex == pageIndex, !seen.contains(element.id) else { return }
+            seen.insert(element.id)
+            result.append(element)
+        }
+
+        if let page = pages.first(where: { $0.pageIndex == pageIndex }) {
+            for element in page.elements ?? [] {
+                append(element)
+            }
+        }
+        for element in elements ?? [] {
+            append(element)
+        }
+
+        if result.isEmpty, let page = pages.first(where: { $0.pageIndex == pageIndex }) {
+            for element in page.noteElementsFromLegacy() {
+                append(element)
+            }
+            for object in objects where object.pageIndex == pageIndex {
+                append(object.noteElement(pageIndex: pageIndex))
+            }
+        }
+
+        return result.sorted { ($0.zIndex ?? 0, $0.id) < ($1.zIndex ?? 0, $1.id) }
+    }
+
+    func noteStrokes(pageIndex: Int) -> [CodmesInkStroke] {
+        noteElements(pageIndex: pageIndex).compactMap(\.stroke)
+    }
+
+    func noteObjects(pageIndex: Int) -> [PDFAnnotationObject] {
+        noteElements(pageIndex: pageIndex).compactMap { $0.annotationObject() }
+    }
+
     mutating func syncNoteElementsFromLegacy() {
         schemaVersion = max(schemaVersion, 2)
         pages = pages.map { page in
             var copy = page
             let legacyElements = page.noteElementsFromLegacy()
             let legacyIds = Set(legacyElements.map(\.id))
-            let retainedElements = (page.elements ?? []).filter { !legacyIds.contains($0.id) }
+            let retainedElements = (page.elements ?? []).filter { element in
+                !legacyIds.contains(element.id) && element.isEditableElementSource
+            }
             copy.elements = legacyElements + retainedElements
             return copy
         }
@@ -248,7 +289,9 @@ extension PDFAnnotationDocument {
             return object.noteElement(pageIndex: pageIndex)
         }
         let legacyRootIds = Set(legacyRootElements.map { $0.id })
-        let retainedRootElements = (self.elements ?? []).filter { !legacyRootIds.contains($0.id) }
+        let retainedRootElements = (self.elements ?? []).filter { element in
+            !legacyRootIds.contains(element.id) && element.isEditableElementSource
+        }
         self.elements = legacyRootElements + retainedRootElements
     }
 
@@ -330,6 +373,84 @@ extension PDFAnnotationObject {
             metadata: metadata,
             source: "legacyAnnotationObject"
         )
+    }
+}
+
+extension CodmesNoteElement {
+    var isEditableElementSource: Bool {
+        source != "legacyInkStroke" && source != "legacyAnnotationObject"
+    }
+
+    func annotationObject() -> PDFAnnotationObject? {
+        guard type.lowercased().contains("text") || type.lowercased().contains("image") else { return nil }
+        var nextMetadata = metadata ?? [:]
+        if let fontSize = style?.fontSize {
+            nextMetadata["fontSize"] = String(Int(fontSize))
+        }
+        if let color = style?.strokeColor ?? style?.fillColor {
+            nextMetadata["color"] = color
+        }
+        if let mimeType = image?.mimeType {
+            nextMetadata["mimeType"] = mimeType
+        }
+        return PDFAnnotationObject(
+            id: id,
+            type: type,
+            pageIndex: pageIndex,
+            bbox: bbox,
+            text: text,
+            dataBase64: image?.dataBase64,
+            metadata: nextMetadata.isEmpty ? nil : nextMetadata
+        )
+    }
+
+    func replacing(stroke nextStroke: CodmesInkStroke) -> CodmesNoteElement {
+        var copy = self
+        copy.stroke = nextStroke
+        let shapeKind = nextStroke.shapeKind
+        copy.type = shapeKind == nil ? "stroke" : "shape"
+        copy.shape = shapeKind.map { CodmesNoteShape(kind: $0, points: nextStroke.points) }
+        copy.style = CodmesNoteStyle(
+            strokeColor: nextStroke.color,
+            fillColor: style?.fillColor,
+            lineWidth: nextStroke.width,
+            opacity: nextStroke.opacity,
+            fontSize: style?.fontSize
+        )
+        var nextMetadata = copy.metadata ?? [:]
+        nextMetadata["tool"] = nextStroke.tool
+        copy.metadata = nextMetadata
+        return copy
+    }
+
+    func replacing(object: PDFAnnotationObject) -> CodmesNoteElement {
+        var copy = self
+        copy.type = object.type
+        copy.pageIndex = object.pageIndex ?? pageIndex
+        copy.bbox = object.bbox
+        copy.text = object.text
+        copy.image = object.dataBase64.map { CodmesNoteImage(dataBase64: $0, mimeType: object.metadata?["mimeType"]) }
+        copy.metadata = object.metadata
+        copy.style = CodmesNoteStyle(
+            strokeColor: object.metadata?["color"],
+            fillColor: nil,
+            lineWidth: nil,
+            opacity: nil,
+            fontSize: Double(object.metadata?["fontSize"] ?? "")
+        )
+        return copy
+    }
+}
+
+extension CodmesInkStroke {
+    var shapeKind: String? {
+        if tool.hasPrefix("shape:") {
+            return String(tool.dropFirst("shape:".count))
+        }
+        if tool == "line" || tool == "polyline" || tool == "triangle" || tool == "rectangle" || tool == "circle" || tool == "ellipse" {
+            return tool
+        }
+        return nil
     }
 }
 

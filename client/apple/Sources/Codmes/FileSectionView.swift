@@ -745,10 +745,10 @@ struct PDFPreviewView: NSViewRepresentable {
             }
         }
         guard let annotations else { return }
-        for annotationPage in annotations.pages {
-            guard let page = document.page(at: annotationPage.pageIndex),
-                  let strokes = annotationPage.inkStrokes,
-                  !strokes.isEmpty else { continue }
+        for pageIndex in 0..<document.pageCount {
+            guard let page = document.page(at: pageIndex) else { continue }
+            let strokes = annotations.noteStrokes(pageIndex: pageIndex)
+            guard !strokes.isEmpty else { continue }
             let pageBounds = page.bounds(for: .mediaBox)
             let ink = PDFAnnotation(bounds: pageBounds, forType: .ink, withProperties: nil)
             ink.contents = "codmes-ink-preview"
