@@ -2040,10 +2040,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             case moving
         }
 
-        private struct ShapeFit {
-            var kind: String
-            var points: [CGPoint]
-        }
+        private typealias ShapeFit = PDFShapeFit
+        private typealias ShapeRecognitionDebug = PDFShapeRecognitionDebug
 
         private struct ShapeCandidate {
             var fit: ShapeFit
@@ -2054,32 +2052,6 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             var kind: String
             var points: [CGPoint]
             var isClosed: Bool
-        }
-
-        private struct ShapeRecognitionDebug {
-            var selected: String
-            var reason: String
-            var pointCount: Int
-            var endpointGap: CGFloat
-            var vertexCount: Int
-            var scores: [(kind: String, score: CGFloat)]
-            var samplePoints: [CGPoint]
-
-            var summary: String {
-                let scoreText = scores
-                    .sorted { $0.score < $1.score }
-                    .prefix(6)
-                    .map { "\($0.kind)=\(String(format: "%.3f", Double($0.score)))" }
-                    .joined(separator: " ")
-                return "shape \(selected) [\(reason)] pts=\(pointCount) gap=\(String(format: "%.2f", Double(endpointGap))) v=\(vertexCount)\n\(scoreText)"
-            }
-
-            var consoleDetails: String {
-                let pointsText = samplePoints.map {
-                    "[\(String(format: "%.1f", Double($0.x))),\(String(format: "%.1f", Double($0.y)))]"
-                }.joined(separator: ",")
-                return "\(summary.replacingOccurrences(of: "\n", with: " | ")) sample=[\(pointsText)]"
-            }
         }
 
         private struct ShapeHandleDrag {
@@ -2701,92 +2673,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         private func fitShape(from points: [CGPoint]) -> ShapeFit? {
             lastShapeRecognitionDebug = nil
-            let points = resampled(points, spacing: 4)
-            guard points.count > 8, let bounds = pointBounds(points) else {
-                lastShapeRecognitionDebug = ShapeRecognitionDebug(selected: "none", reason: "too-few-points", pointCount: points.count, endpointGap: 0, vertexCount: 0, scores: [], samplePoints: points)
-                return nil
-            }
-            let diagonal = max(hypot(bounds.width, bounds.height), 1)
-            guard diagonal > 20 else {
-                lastShapeRecognitionDebug = ShapeRecognitionDebug(selected: "none", reason: "too-small", pointCount: points.count, endpointGap: 0, vertexCount: 0, scores: [], samplePoints: resampleToCount(points, count: min(32, max(points.count, 2))))
-                return nil
-            }
-
-            let endpointGap = distance(points[0], points[points.count - 1]) / diagonal
-            var candidates: [ShapeCandidate] = []
-            let lineFit = ShapeFit(kind: "line", points: [points[0], points[points.count - 1]])
-            let lineScore = polylineError(points, candidate: lineFit.points) / diagonal
-            let dominantVertices = deduplicatedVertices(simplify(points, epsilon: max(diagonal * 0.045, 4)), diagonal: diagonal)
-            let isClosedGesture = endpointGap < 0.34
-
-            if endpointGap > 0.24, lineScore < 0.105 {
-                let selected = ShapeCandidate(fit: lineFit, score: lineScore + 0.01)
-                lastShapeRecognitionDebug = shapeDebug(selected: selected.fit.kind, reason: "straight-line", points: points, diagonal: diagonal, endpointGap: endpointGap, candidates: [selected])
-                return selected.fit
-            }
-
-            if endpointGap > 0.34, openPolylineIntent(points: points, diagonal: diagonal) {
-                let polyline = ShapeFit(kind: "polyline", points: fittedPolyline(from: points, diagonal: diagonal))
-                let score = polylineError(points, candidate: polyline.points) / diagonal
-                    + CGFloat(polyline.points.count) * 0.006
-                candidates.append(ShapeCandidate(fit: polyline, score: score + 0.01))
-            }
-
-            if endpointGap < 0.62, let triangle = bestTriangleFit(from: points, bounds: bounds, diagonal: diagonal) {
-                let vertexBias: CGFloat = dominantVertices.count == 3 ? -0.035 : (isClosedGesture && dominantVertices.count >= 4 ? 0.36 : 0)
-                let openGapPenalty = max(0, endpointGap - 0.34) * 0.1
-                candidates.append(ShapeCandidate(fit: triangle.fit, score: triangle.score + vertexBias + openGapPenalty + 0.015))
-            }
-
-            if isClosedGesture {
-                candidates.append(contentsOf: closedPolygonCandidates(from: points, diagonal: diagonal))
-                candidates.append(contentsOf: roundCandidates(from: points, bounds: bounds, diagonal: diagonal))
-            }
-
-            guard let best = candidates.min(by: { $0.score < $1.score }) else { return nil }
-            if best.fit.kind == "circle" || best.fit.kind == "ellipse" {
-                let angularIntent = angularStrokeIntent(points, diagonal: diagonal)
-                let circularity = closedCircularity(points)
-                if angularIntent && circularity < 0.72 {
-                    let angularCandidates = candidates.filter { $0.fit.kind != "circle" && $0.fit.kind != "ellipse" }
-                    if let angularBest = angularCandidates.min(by: { $0.score < $1.score }), angularBest.score < 0.62 {
-                        lastShapeRecognitionDebug = shapeDebug(selected: angularBest.fit.kind, reason: "angular-over-round", points: points, diagonal: diagonal, endpointGap: endpointGap, candidates: candidates)
-                        return angularBest.fit
-                    }
-                }
-            }
-
-            let threshold: CGFloat
-            switch best.fit.kind {
-            case "line":
-                threshold = 0.18
-            case "polyline":
-                threshold = 0.34
-            case "triangle":
-                threshold = 0.56
-            case "rectangle":
-                threshold = 0.34
-            case "circle", "ellipse":
-                threshold = 0.42
-            default:
-                threshold = 0.5
-            }
-
-            if best.score < threshold {
-                lastShapeRecognitionDebug = shapeDebug(selected: best.fit.kind, reason: "structural", points: points, diagonal: diagonal, endpointGap: endpointGap, candidates: candidates)
-                return best.fit
-            }
-
-            if let fallback = candidates
-                .filter({ $0.fit.kind == "line" || $0.fit.kind == "polyline" })
-                .min(by: { $0.score < $1.score }),
-               fallback.score < 0.78 {
-                lastShapeRecognitionDebug = shapeDebug(selected: fallback.fit.kind, reason: "line-fallback", points: points, diagonal: diagonal, endpointGap: endpointGap, candidates: candidates)
-                return fallback.fit
-            }
-
-            lastShapeRecognitionDebug = shapeDebug(selected: "none", reason: "score-threshold", points: points, diagonal: diagonal, endpointGap: endpointGap, candidates: candidates)
-            return nil
+            guard let result = PDFShapeRecognizer().recognize(points: points) else { return nil }
+            lastShapeRecognitionDebug = result.debug
+            return result.fit
         }
 
         private func templateRecognizedShape(from points: [CGPoint], bounds: CGRect, diagonal: CGFloat, endpointGap: CGFloat) -> ShapeFit? {
