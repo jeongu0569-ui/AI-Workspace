@@ -384,9 +384,13 @@ struct PDFShapeRecognizer {
             translated.map { abs($0.y) }.max() ?? 1,
             1
         )
-        return translated.flatMap { point in
-            [Float(point.x / scale), Float(point.y / scale)]
+        var normalized: [Float] = []
+        normalized.reserveCapacity(translated.count * 2)
+        for point in translated {
+            normalized.append(Float(point.x / scale))
+            normalized.append(Float(point.y / scale))
         }
+        return normalized
     }
 
     private func rotate(_ points: [CGPoint], by angle: CGFloat) -> [CGPoint] {
