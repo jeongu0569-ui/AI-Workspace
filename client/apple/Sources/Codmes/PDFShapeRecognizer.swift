@@ -71,6 +71,7 @@ struct PDFShapeRecognizer {
         let endpointGap = distance(points[0], points[points.count - 1]) / diagonal
         let closed = endpointGap < 0.34
         let corners = cornerCandidates(from: points, diagonal: diagonal, closed: closed)
+        let angular = angularStrokeIntent(points, diagonal: diagonal)
         var candidates: [Candidate] = []
 
         if let line = lineCandidate(from: points, diagonal: diagonal, endpointGap: endpointGap) {
@@ -84,7 +85,7 @@ struct PDFShapeRecognizer {
             candidates.append(contentsOf: polylineCandidates(from: points, corners: corners, diagonal: diagonal, endpointGap: endpointGap))
         }
 
-        if endpointGap < 0.58 {
+        if endpointGap < (angular ? 0.9 : 0.58) {
             candidates.append(contentsOf: polygonCandidates(from: points, corners: corners, diagonal: diagonal, endpointGap: endpointGap))
         }
 
@@ -96,7 +97,18 @@ struct PDFShapeRecognizer {
             return failure(selected: "none", reason: "no-candidates", points: points, endpointGap: endpointGap, vertexCount: corners.count, candidates: candidates)
         }
 
-        let angular = angularStrokeIntent(points, diagonal: diagonal)
+        if let polylineBest = candidates
+            .filter({ $0.fit.kind == "polyline" })
+            .min(by: { $0.score < $1.score }),
+           let triangleBest = candidates
+            .filter({ $0.fit.kind == "triangle" })
+            .min(by: { $0.score < $1.score }),
+           polylineBest.score < 0.05,
+           triangleBest.score < 0.17,
+           endpointGap < 0.9 {
+            return success(triangleBest, selected: triangleBest.fit.kind, reason: "open-triangle-guard", points: points, endpointGap: endpointGap, candidates: candidates)
+        }
+
         let circularity = closedCircularity(points)
         let elongated = aspectRatio(bounds) > 1.75
         if let roundBest = candidates
@@ -110,6 +122,10 @@ struct PDFShapeRecognizer {
             .min(by: { $0.score < $1.score }),
            angularBest.score <= roundBest.score + 0.14 {
             if roundBest.score < 0.14, angularBest.fit.kind == "rectangle" {
+                if isConfidentRectangle(points: points, bounds: bounds, circularity: circularity),
+                   angularBest.score + 0.08 < roundBest.score {
+                    return success(angularBest, selected: angularBest.fit.kind, reason: "rectangle-guard", points: points, endpointGap: endpointGap, candidates: candidates)
+                }
                 return success(roundBest, selected: roundBest.fit.kind, reason: "round-guard", points: points, endpointGap: endpointGap, candidates: candidates)
             }
             return success(angularBest, selected: angularBest.fit.kind, reason: "angular-over-round", points: points, endpointGap: endpointGap, candidates: candidates)
@@ -147,7 +163,36 @@ struct PDFShapeRecognizer {
         guard best.score < threshold else {
             return failure(selected: "none", reason: "score-threshold", points: points, endpointGap: endpointGap, vertexCount: corners.count, candidates: candidates)
         }
+        if isAmbiguous(best: best, candidates: candidates) {
+            return failure(selected: "none", reason: "ambiguous-candidates", points: points, endpointGap: endpointGap, vertexCount: corners.count, candidates: candidates)
+        }
         return success(best, selected: best.fit.kind, reason: best.reason, points: points, endpointGap: endpointGap, candidates: candidates)
+    }
+
+    private func isAmbiguous(best: Candidate, candidates: [Candidate]) -> Bool {
+        guard best.score > 0.08 else { return false }
+        let rivals = candidates
+            .filter { $0.fit.kind != best.fit.kind }
+            .map(\.score)
+            .sorted()
+        guard let rival = rivals.first else { return false }
+        if (best.fit.kind == "circle" || best.fit.kind == "ellipse"),
+           candidates
+            .filter({ ($0.fit.kind == "circle" || $0.fit.kind == "ellipse") && $0.fit.kind != best.fit.kind })
+            .contains(where: { abs($0.score - best.score) < 0.04 }) {
+            return false
+        }
+        let margin = rival - best.score
+        switch best.fit.kind {
+        case "triangle", "rectangle":
+            return margin < 0.035
+        case "circle", "ellipse":
+            return margin < 0.025
+        case "line", "polyline":
+            return margin < 0.045
+        default:
+            return false
+        }
     }
 
     private func lineCandidate(from points: [CGPoint], diagonal: CGFloat, endpointGap: CGFloat) -> Candidate? {
@@ -470,6 +515,12 @@ struct PDFShapeRecognizer {
             points.filter { distance($0, corner) <= tolerance }.count
         }
         return CGFloat(perCorner.min() ?? 0) / CGFloat(max(points.count, 1))
+    }
+
+    private func isConfidentRectangle(points: [CGPoint], bounds: CGRect, circularity: CGFloat) -> Bool {
+        edgeFitRatio(points, bounds: bounds) > 0.48
+            && rectangleCornerCoverage(points, bounds: bounds) > 0.018
+            && circularity < 0.76
     }
 
     private func angularStrokeIntent(_ points: [CGPoint], diagonal: CGFloat) -> Bool {
