@@ -136,6 +136,11 @@ struct RootView: View {
         activeSurfaceId
     }
 
+    private var activeDocumentTitle: String? {
+        guard activeSurfaceId == "notes" || activeSurfaceId == "code" else { return nil }
+        return store.selectedRawFile?.name ?? store.selectedFile?.name
+    }
+
     private var visibleWorkspaceSections: [WorkspaceSection] {
         WorkspaceSection.allCases.filter { section in
             store.surfaceEnabled(section.runtimeSurfaceId)
@@ -222,55 +227,61 @@ struct RootView: View {
     }
 
     private var iOSTopBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                openSidebar()
-            } label: {
-                Image(systemName: "sidebar.left")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .frame(width: 34, height: 34)
-            .contentShape(Rectangle())
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Button {
+                    openSidebar()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
 
-            VStack(alignment: .leading, spacing: 2) {
                 Text(activeSurfaceTitle)
                     .font(.headline.weight(.semibold))
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(store.isWorkspaceConnected ? .green : .orange)
-                        .frame(width: 7, height: 7)
-                    Text(store.isWorkspaceConnected ? "Connected" : "Disconnected")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+
+                Circle()
+                    .fill(store.isWorkspaceConnected ? .green : .orange)
+                    .frame(width: 7, height: 7)
+            }
+            .lineLimit(1)
+            .frame(maxWidth: 150, alignment: .leading)
+
+            Text(activeDocumentTitle ?? "")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityLabel(activeDocumentTitle.map { "Open file: \($0)" } ?? "No open file")
+
+            HStack(spacing: 4) {
+                Button {
+                    store.selectedPDFFocus = nil
+                    showingGlobalSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
                 }
-            }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
 
-            Spacer()
-
-            Button {
-                store.selectedPDFFocus = nil
-                showingGlobalSearch = true
-            } label: {
-                Image(systemName: "magnifyingglass")
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .frame(width: 34, height: 34)
-            .contentShape(Rectangle())
-
-            Button {
-                showingSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .frame(width: 34, height: 34)
-            .contentShape(Rectangle())
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 11)
+        .padding(.vertical, 6)
         .background(.quaternary.opacity(0.14))
     }
 

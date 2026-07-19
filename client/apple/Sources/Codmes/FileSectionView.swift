@@ -534,7 +534,9 @@ struct FilePreviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let rawFile = store.selectedRawFile {
+#if os(macOS)
                 HeaderView(title: rawFile.name, subtitle: rawFile.path)
+#endif
                 if rawFile.kind == "pdf" {
                     PDFWorkspaceView(rawFile: rawFile)
                 } else if rawFile.kind == "image" {
@@ -559,7 +561,9 @@ struct FilePreviewView: View {
                     ContentUnavailableView("Raw preview unavailable", systemImage: "doc", description: Text(rawFile.path))
                 }
             } else if let file = store.selectedFile {
+#if os(macOS)
                 HeaderView(title: file.name, subtitle: file.path)
+#endif
                 HStack(spacing: 12) {
                     if store.isEditingFile {
                         Button {
