@@ -31,11 +31,12 @@ struct WorkspaceAPI {
         try await get("/api/health")
     }
 
-    func tree(root: String, path: String = "") async throws -> TreeResponse {
+    func tree(root: String, path: String = "", recursive: Bool = false) async throws -> TreeResponse {
         var components = try components("/api/tree")
         components.queryItems = [
             URLQueryItem(name: "root", value: root),
-            URLQueryItem(name: "path", value: path)
+            URLQueryItem(name: "path", value: path),
+            URLQueryItem(name: "recursive", value: recursive ? "true" : "false")
         ]
         return try await request(components)
     }

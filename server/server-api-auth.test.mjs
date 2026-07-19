@@ -46,6 +46,16 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     assert.equal(metadata.path, "Notes/auth-note.md");
     assert.equal(metadata.kind, "markdown");
 
+    await fs.mkdir(path.join(workspaceRoot, "Notes", "Work", "Docs"), { recursive: true });
+    await fs.writeFile(path.join(workspaceRoot, "Notes", "Work", "README.md"), "# Work\n", "utf8");
+    await fs.writeFile(path.join(workspaceRoot, "Notes", "Work", "Docs", "Architecture.md"), "# Architecture\n", "utf8");
+    const directTree = await fetchJson(`${baseUrl}/api/tree?root=notes`, { token });
+    assert.equal(directTree.children.some((item) => item.path === "Notes/Work"), true);
+    assert.equal(directTree.children.some((item) => item.path === "Notes/Work/README.md"), false);
+    const recursiveTree = await fetchJson(`${baseUrl}/api/tree?root=notes&recursive=true`, { token });
+    assert.equal(recursiveTree.children.some((item) => item.path === "Notes/Work/README.md"), true);
+    assert.equal(recursiveTree.children.some((item) => item.path === "Notes/Work/Docs/Architecture.md"), true);
+
     await fs.writeFile(path.join(workspaceRoot, "Documents", "sample.pdf"), "%PDF-1.4\n%%EOF", "utf8");
     const emptyAnnotations = await fetchJson(`${baseUrl}/api/file/annotations?path=Documents/sample.pdf`, { token });
     assert.equal(emptyAnnotations.documentPath, "Documents/sample.pdf");

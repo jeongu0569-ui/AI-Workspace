@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import CoreTransferable
 import UniformTypeIdentifiers
 
 struct FileSectionView: View {
@@ -49,17 +50,80 @@ struct FileBrowserPane: View {
     @State private var newItemName = ""
     @State private var itemToRename: WorkspaceItem?
     @State private var renameName = ""
-    @State private var itemToDelete: WorkspaceItem?
+    @State private var itemsToDelete: [WorkspaceItem] = []
     @State private var transferAction: WorkspaceTransferAction?
     @State private var transferDestination = ""
     @State private var isImportingFile = false
+    @State private var expandedFolderPaths: Set<String>
+    @State private var dropTargetPath: String?
+    @State private var selectedTreePaths: Set<String> = []
+    @State private var isSelectingItems = false
+
+    init(
+        title: String,
+        root: String,
+        showsHeader: Bool = true,
+        onOpenFile: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.root = root
+        self.showsHeader = showsHeader
+        self.onOpenFile = onOpenFile
+        _expandedFolderPaths = State(initialValue: Self.savedExpandedFolders(root: root))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if showsHeader {
                 HeaderView(title: title, subtitle: store.sectionSubtitle(root: root))
             }
-            HStack(spacing: 8) {
+            if isSelectingItems {
+                HStack(spacing: 8) {
+                    Button {
+                        clearTreeSelection()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 30, height: 30)
+                    .help("Cancel selection")
+
+                    Text("\(selectedTreePaths.count) selected")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        beginCopy(items: selectedTreeItems)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 30, height: 30)
+                    .disabled(selectedTreePaths.isEmpty)
+                    .help("Copy selected items")
+
+                    Button(role: .destructive) {
+                        itemsToDelete = selectedTreeItems
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 30, height: 30)
+                    .disabled(selectedTreePaths.isEmpty)
+                    .help("Delete selected items")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.quaternary.opacity(0.10))
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(.quaternary.opacity(0.35))
+                        .frame(height: 1)
+                }
+            } else {
+                HStack(spacing: 8) {
                 Button {
                     newItemName = root == "code" ? "Untitled.swift" : "Untitled.md"
                     newItemKind = .file
@@ -93,26 +157,19 @@ struct FileBrowserPane: View {
                 .help("Attach or import file")
 
                 Button {
-                    Task { await store.goToParent(root: root) }
-                } label: {
-                    Image(systemName: "chevron.up")
-                }
-                .buttonStyle(.plain)
-                .frame(width: 30, height: 30)
-                .contentShape(Rectangle())
-                .disabled(store.currentPath(for: root).isEmpty)
-                .help("Go to parent folder")
-
-                Button {
-                    Task { await store.goToRoot(root: root) }
+                    store.selectFolder(root: root, item: nil)
                 } label: {
                     Image(systemName: "house")
                 }
                 .buttonStyle(.plain)
                 .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
-                .disabled(store.currentPath(for: root).isEmpty)
-                .help("Go to root folder")
+                .dropDestination(for: FileTreeDragItem.self, action: { items, _ in
+                    moveDraggedItems(items.first?.paths ?? [], into: nil)
+                }, isTargeted: { isTargeted in
+                    dropTargetPath = isTargeted ? workspaceRootName : nil
+                })
+                .help("Use root folder")
 
                 Text(store.currentPath(for: root).isEmpty ? "/" : store.currentPath(for: root))
                     .font(.caption)
@@ -121,55 +178,39 @@ struct FileBrowserPane: View {
                     .truncationMode(.middle)
 
                 Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.quaternary.opacity(0.10))
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(.quaternary.opacity(0.35))
-                    .frame(height: 1)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.quaternary.opacity(0.10))
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(.quaternary.opacity(0.35))
+                        .frame(height: 1)
+                }
             }
 
             UploadStatusPanel(root: root)
 
-            List(store.items(for: root)) { item in
-                HStack(spacing: 8) {
-                    Button {
-                        open(item)
-                    } label: {
-                        fileRowLabel(item)
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(visibleTreeEntries) { entry in
+                        treeRowWithContextMenu(entry)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 1)
+                            .background(
+                                rowBackground(for: entry.item),
+                                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            )
+                            .overlay {
+                                if dropTargetPath == entry.item.path {
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .stroke(Color.accentColor, lineWidth: 2)
+                                }
+                            }
+                            .padding(.horizontal, 6)
                     }
-                    .buttonStyle(.plain)
-
-                    Menu {
-                        itemManagementMenu(item)
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 30, height: 30)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
                 }
-                .contextMenu {
-                    itemManagementMenu(item)
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) {
-                        itemToDelete = item
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                    Button {
-                        itemToRename = item
-                        renameName = item.name
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
-                    }
-                    .tint(.secondary)
-                }
+                .padding(.vertical, 6)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -231,10 +272,9 @@ struct FileBrowserPane: View {
                 transferAction = nil
                 Task {
                     switch action {
-                    case let .move(item):
-                        await store.moveItem(root: root, item: item, destinationFolder: destination)
-                    case let .copy(item):
-                        await store.copyItem(root: root, item: item, destinationFolder: destination)
+                    case let .copy(items):
+                        await store.copyItems(root: root, items: items, destinationFolder: destination)
+                        clearTreeSelection()
                     case .none:
                         break
                     }
@@ -246,25 +286,40 @@ struct FileBrowserPane: View {
         } message: {
             Text("Use a folder path relative to \(title). Leave empty for the \(title) root.")
         }
-        .confirmationDialog("Delete item?", isPresented: deleteBinding, titleVisibility: .visible) {
+        .confirmationDialog(deleteDialogTitle, isPresented: deleteBinding, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                let item = itemToDelete
-                itemToDelete = nil
+                let items = itemsToDelete
+                itemsToDelete = []
                 Task {
-                    if let item {
-                        await store.deleteItem(root: root, item: item)
-                    }
+                    await store.deleteItems(root: root, items: items)
+                    clearTreeSelection()
                 }
             }
             Button("Cancel", role: .cancel) {
-                itemToDelete = nil
+                itemsToDelete = []
             }
         } message: {
-            Text(itemToDelete.map { "Delete \($0.path)?" } ?? "")
+            Text(deleteDialogMessage)
         }
         .task {
+            revealSelectedFile()
             if root == "code" {
                 await store.refreshCodeTasks()
+            }
+        }
+        .onChange(of: selectedFilePath) { _, _ in
+            revealSelectedFile()
+        }
+        .onChange(of: store.items(for: root)) { _, items in
+            let validFolders = Set(items.lazy.filter(\.isDirectory).map(\.path))
+            let previous = expandedFolderPaths
+            expandedFolderPaths.formIntersection(validFolders)
+            if previous != expandedFolderPaths {
+                saveExpandedFolders()
+            }
+            selectedTreePaths.formIntersection(Set(items.map(\.path)))
+            if isSelectingItems, selectedTreePaths.isEmpty {
+                clearTreeSelection()
             }
         }
     }
@@ -285,8 +340,8 @@ struct FileBrowserPane: View {
 
     private var deleteBinding: Binding<Bool> {
         Binding(
-            get: { itemToDelete != nil },
-            set: { if !$0 { itemToDelete = nil } }
+            get: { !itemsToDelete.isEmpty },
+            set: { if !$0 { itemsToDelete = [] } }
         )
     }
 
@@ -310,67 +365,335 @@ struct FileBrowserPane: View {
 
     private func open(_ item: WorkspaceItem) {
         Task {
-            if item.isDirectory {
-                await store.openFolder(root: root, item: item)
-            } else {
-                await store.loadFile(item)
-                onOpenFile?()
-            }
+            guard !item.isDirectory else { return }
+            await store.loadFile(item)
+            onOpenFile?()
         }
     }
 
     @ViewBuilder
     private func itemManagementMenu(_ item: WorkspaceItem) -> some View {
-        Button {
-            transferDestination = store.currentPath(for: root)
-            transferAction = .move(item)
-        } label: {
-            Label("Move to folder", systemImage: "folder")
+        if isSelectingItems {
+            Button {
+                toggleTreeSelection(item)
+            } label: {
+                Label(
+                    selectedTreePaths.contains(item.path) ? "Deselect" : "Add to Selection",
+                    systemImage: selectedTreePaths.contains(item.path) ? "checkmark.circle.fill" : "circle"
+                )
+            }
+        } else {
+            Button {
+                isSelectingItems = true
+                selectedTreePaths = [item.path]
+            } label: {
+                Label("Select Multiple", systemImage: "checkmark.circle")
+            }
         }
 
+        Divider()
+
         Button {
-            transferDestination = store.currentPath(for: root)
-            transferAction = .copy(item)
+            beginCopy(items: actionItems(for: item))
         } label: {
             Label("Copy to folder", systemImage: "doc.on.doc")
         }
 
-        Button {
-            itemToRename = item
-            renameName = item.name
-        } label: {
-            Label("Rename", systemImage: "pencil")
+        if actionItems(for: item).count == 1 {
+            Button {
+                itemToRename = item
+                renameName = item.name
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
         }
 
         Button(role: .destructive) {
-            itemToDelete = item
+            itemsToDelete = actionItems(for: item)
         } label: {
             Label("Delete", systemImage: "trash")
         }
     }
 
-    private func fileRowLabel(_ item: WorkspaceItem) -> some View {
-        HStack {
-            Image(systemName: icon(for: item))
-                .foregroundStyle(item.isDirectory ? Color.primary.opacity(0.82) : Color.secondary)
-            VStack(alignment: .leading) {
-                Text(item.name)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(item.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    @ViewBuilder
+    private func treeRowWithContextMenu(_ entry: FileTreeEntry) -> some View {
+        treeRow(entry)
+            .contextMenu {
+                itemManagementMenu(entry.item)
             }
-            Spacer()
-            if item.isDirectory {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+    }
+
+    private var selectedFilePath: String? {
+        store.selectedFile?.path ?? store.selectedRawFile?.path
+    }
+
+    private var workspaceRootName: String {
+        root == "code" ? "Code" : "Notes"
+    }
+
+    private var visibleTreeEntries: [FileTreeEntry] {
+        let grouped = Dictionary(grouping: store.items(for: root), by: { parentWorkspacePath($0.path) })
+        var result: [FileTreeEntry] = []
+
+        func appendChildren(of parent: String, depth: Int) {
+            let children = (grouped[parent] ?? []).sorted(by: treeItemSort)
+            for item in children {
+                result.append(FileTreeEntry(item: item, depth: depth))
+                if item.isDirectory, expandedFolderPaths.contains(item.path) {
+                    appendChildren(of: item.path, depth: depth + 1)
+                }
             }
         }
+
+        appendChildren(of: workspaceRootName, depth: 0)
+        return result
     }
+
+    @ViewBuilder
+    private func treeRow(_ entry: FileTreeEntry) -> some View {
+        let item = entry.item
+        let row = HStack(spacing: 3) {
+            Color.clear
+                .frame(width: CGFloat(entry.depth) * 15, height: 1)
+
+            if isSelectingItems {
+                Button {
+                    toggleTreeSelection(item)
+                } label: {
+                    Image(systemName: selectedTreePaths.contains(item.path) ? "checkmark.circle.fill" : "circle")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(selectedTreePaths.contains(item.path) ? Color.accentColor : Color.primary.opacity(0.72))
+                        .frame(width: 24, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if item.isDirectory {
+                Button {
+                    toggleFolder(item)
+                } label: {
+                    Image(systemName: expandedFolderPaths.contains(item.path) ? "chevron.down" : "chevron.right")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Color.primary.opacity(0.82))
+                        .frame(width: 22, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Color.clear
+                    .frame(width: 22, height: 30)
+            }
+
+            Button {
+                if isSelectingItems {
+                    toggleTreeSelection(item)
+                } else if item.isDirectory {
+                    store.selectFolder(root: root, item: item)
+                    toggleFolder(item)
+                } else {
+                    open(item)
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: item.isDirectory && expandedFolderPaths.contains(item.path) ? "folder.fill" : icon(for: item))
+                        .foregroundStyle(item.isDirectory ? Color.primary.opacity(0.82) : Color.secondary)
+                        .frame(width: 18)
+                    Text(item.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                }
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                itemManagementMenu(item)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(Color.primary.opacity(0.82))
+                    .frame(width: 28, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .tint(.primary)
+        }
+        .contentShape(Rectangle())
+        .draggable(dragItem(for: item)) {
+            Label(dragPreviewTitle(for: item), systemImage: dragPreviewIcon(for: item))
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+
+        if item.isDirectory {
+            row.dropDestination(for: FileTreeDragItem.self, action: { items, _ in
+                moveDraggedItems(items.first?.paths ?? [], into: item)
+            }, isTargeted: { isTargeted in
+                if isTargeted {
+                    dropTargetPath = item.path
+                } else if dropTargetPath == item.path {
+                    dropTargetPath = nil
+                }
+            })
+        } else {
+            row
+        }
+    }
+
+    private func rowBackground(for item: WorkspaceItem) -> Color {
+        if dropTargetPath == item.path {
+            return Color.accentColor.opacity(0.28)
+        }
+        if selectedFilePath == item.path {
+            return Color.secondary.opacity(0.16)
+        }
+        if selectedTreePaths.contains(item.path) {
+            return Color.accentColor.opacity(0.14)
+        }
+        let selectedFolderPath = store.currentPath(for: root)
+        let itemFolderPath = item.isDirectory
+            ? String(item.path.dropFirst(min(item.path.count, workspaceRootName.count + 1)))
+            : ""
+        if item.isDirectory, selectedFolderPath == itemFolderPath {
+            return Color.secondary.opacity(0.07)
+        }
+        return Color.clear
+    }
+
+    private func toggleFolder(_ item: WorkspaceItem) {
+        if expandedFolderPaths.contains(item.path) {
+            expandedFolderPaths.remove(item.path)
+        } else {
+            expandedFolderPaths.insert(item.path)
+        }
+        saveExpandedFolders()
+    }
+
+    private func revealSelectedFile() {
+        guard var path = selectedFilePath.map(parentWorkspacePath) else { return }
+        var changed = false
+        while path != workspaceRootName, path.hasPrefix(workspaceRootName + "/") {
+            changed = expandedFolderPaths.insert(path).inserted || changed
+            path = parentWorkspacePath(path)
+        }
+        if changed { saveExpandedFolders() }
+    }
+
+    private func moveDraggedItems(_ sourcePaths: [String], into folder: WorkspaceItem?) -> Bool {
+        guard !sourcePaths.isEmpty else { return false }
+        Task {
+            await store.moveTreeItems(root: root, sourcePaths: sourcePaths, into: folder)
+            clearTreeSelection()
+        }
+        return true
+    }
+
+    private var selectedTreeItems: [WorkspaceItem] {
+        store.items(for: root).filter { selectedTreePaths.contains($0.path) }
+    }
+
+    private func actionItems(for item: WorkspaceItem) -> [WorkspaceItem] {
+        if isSelectingItems, selectedTreePaths.contains(item.path) {
+            return selectedTreeItems
+        }
+        return [item]
+    }
+
+    private func toggleTreeSelection(_ item: WorkspaceItem) {
+        if selectedTreePaths.contains(item.path) {
+            selectedTreePaths.remove(item.path)
+        } else {
+            if selectedTreePaths.contains(where: { item.path.hasPrefix($0 + "/") }) {
+                return
+            }
+            selectedTreePaths = Set(selectedTreePaths.filter { !$0.hasPrefix(item.path + "/") })
+            selectedTreePaths.insert(item.path)
+        }
+    }
+
+    private func clearTreeSelection() {
+        selectedTreePaths = []
+        isSelectingItems = false
+    }
+
+    private func beginCopy(items: [WorkspaceItem]) {
+        guard !items.isEmpty else { return }
+        transferDestination = store.currentPath(for: root)
+        transferAction = .copy(items)
+    }
+
+    private func dragItem(for item: WorkspaceItem) -> FileTreeDragItem {
+        let paths = isSelectingItems && selectedTreePaths.contains(item.path)
+            ? selectedTreeItems.map(\.path)
+            : [item.path]
+        return FileTreeDragItem(paths: paths)
+    }
+
+    private func dragPreviewTitle(for item: WorkspaceItem) -> String {
+        let count = dragItem(for: item).paths.count
+        return count == 1 ? item.name : "\(count) items"
+    }
+
+    private func dragPreviewIcon(for item: WorkspaceItem) -> String {
+        dragItem(for: item).paths.count == 1 ? icon(for: item) : "doc.on.doc"
+    }
+
+    private var deleteDialogTitle: String {
+        itemsToDelete.count == 1 ? "Delete item?" : "Delete \(itemsToDelete.count) items?"
+    }
+
+    private var deleteDialogMessage: String {
+        if itemsToDelete.count == 1 {
+            return itemsToDelete.first.map { "Delete \($0.path)?" } ?? ""
+        }
+        return "The selected files and folders will be deleted."
+    }
+
+    private func saveExpandedFolders() {
+        UserDefaults.standard.set(Array(expandedFolderPaths).sorted(), forKey: Self.expandedFoldersKey(root: root))
+    }
+
+    private static func savedExpandedFolders(root: String) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: expandedFoldersKey(root: root)) ?? [])
+    }
+
+    private static func expandedFoldersKey(root: String) -> String {
+        "codmes.fileTree.expanded.\(root)"
+    }
+
+    private func parentWorkspacePath(_ path: String) -> String {
+        guard let slash = path.lastIndex(of: "/") else { return "" }
+        return String(path[..<slash])
+    }
+
+    private func treeItemSort(_ lhs: WorkspaceItem, _ rhs: WorkspaceItem) -> Bool {
+        if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+    }
+}
+
+private struct FileTreeEntry: Identifiable {
+    var id: String { item.path }
+    let item: WorkspaceItem
+    let depth: Int
+}
+
+private struct FileTreeDragItem: Codable, Transferable, Sendable {
+    let paths: [String]
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .codmesWorkspaceItem)
+    }
+}
+
+private extension UTType {
+    static let codmesWorkspaceItem = UTType(exportedAs: "com.codmes.workspace-item")
 }
 
 
@@ -479,19 +802,17 @@ private struct UploadStatusRow: View {
 }
 
 private enum WorkspaceTransferAction {
-    case move(WorkspaceItem)
-    case copy(WorkspaceItem)
+    case copy([WorkspaceItem])
 
     var title: String {
         switch self {
-        case let .move(item): "Move \(item.name)"
-        case let .copy(item): "Copy \(item.name)"
+        case let .copy(items):
+            items.count == 1 ? "Copy \(items[0].name)" : "Copy \(items.count) items"
         }
     }
 
     var buttonTitle: String {
         switch self {
-        case .move: "Move"
         case .copy: "Copy"
         }
     }

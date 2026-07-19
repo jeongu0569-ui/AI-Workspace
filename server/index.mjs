@@ -836,18 +836,24 @@ async function workspaceInfo() {
 async function readTree(url) {
   const rootPath = rootPathFromKey(url.searchParams.get("root"));
   const nestedPath = url.searchParams.get("path") || "";
+  const recursive = url.searchParams.get("recursive") === "true";
   const relativePath = joinWorkspacePath(rootPath, nestedPath);
   const { absolutePath } = resolveWorkspacePath(WORKSPACE_ROOT, relativePath);
+  const children = await readTreeChildren(relativePath, absolutePath, recursive);
+  return { path: relativePath, children };
+}
+
+async function readTreeChildren(relativePath, absolutePath, recursive) {
   const entries = await fs.readdir(absolutePath, { withFileTypes: true });
-  const children = await Promise.all(entries
-    .filter((entry) => !entry.name.startsWith(".DS_Store"))
-    .filter((entry) => !(relativePath === "" && entry.name === ".hermes-workspace"))
-    .filter((entry) => !(relativePath === "" && entry.name === ".codmes"))
+  const directChildren = await Promise.all(entries
+    .filter((entry) => entry.name !== ".DS_Store")
+    .filter((entry) => entry.name !== ".hermes-workspace")
+    .filter((entry) => entry.name !== ".codmes")
     .map(async (entry) => {
       const childRelativePath = joinWorkspacePath(relativePath, entry.name);
       const childAbsolutePath = path.join(absolutePath, entry.name);
       const stat = await fs.stat(childAbsolutePath);
-      return {
+      const item = {
         name: entry.name,
         path: childRelativePath,
         kind: fileKind(entry.name, entry.isDirectory()),
@@ -855,9 +861,17 @@ async function readTree(url) {
         size: stat.size,
         modifiedAt: stat.mtime.toISOString()
       };
+      const descendants = recursive && entry.isDirectory()
+        ? await readTreeChildren(childRelativePath, childAbsolutePath, true)
+        : [];
+      return [item, ...descendants];
     }));
-  children.sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
-  return { path: relativePath, children };
+  directChildren.sort((a, b) => {
+    const first = a[0];
+    const second = b[0];
+    return Number(second.isDirectory) - Number(first.isDirectory) || first.name.localeCompare(second.name);
+  });
+  return directChildren.flat();
 }
 
 async function readTextFile(url) {

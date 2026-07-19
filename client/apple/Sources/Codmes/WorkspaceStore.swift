@@ -167,9 +167,9 @@ final class WorkspaceStore: ObservableObject {
             connectionStep = "Loading /api/workspace"
             workspace = try await api.workspace()
             connectionStep = "Loading Notes tree"
-            let notesTree = try await api.tree(root: "notes", path: notesPath)
+            let notesTree = try await api.tree(root: "notes", recursive: true)
             connectionStep = "Loading Code tree"
-            let codeTree = try await api.tree(root: "code", path: codePath)
+            let codeTree = try await api.tree(root: "code", recursive: true)
             notes = notesTree.children
             code = codeTree.children
             connectionStep = "Loading surfaces"
@@ -679,20 +679,13 @@ final class WorkspaceStore: ObservableObject {
         return path.isEmpty ? rootName : "\(rootName)/\(path)"
     }
 
-    func openFolder(root: String, item: WorkspaceItem) async {
-        guard item.isDirectory else { return }
-        await loadTree(root: root, path: nestedPath(root: root, workspacePath: item.path))
-    }
-
-    func goToRoot(root: String) async {
-        await loadTree(root: root, path: "")
-    }
-
-    func goToParent(root: String) async {
-        let path = currentPath(for: root)
-        guard !path.isEmpty else { return }
-        let parent = parentPath(path)
-        await loadTree(root: root, path: parent)
+    func selectFolder(root: String, item: WorkspaceItem?) {
+        let path = item.map { nestedPath(root: root, workspacePath: $0.path) } ?? ""
+        if root == "code" {
+            codePath = path
+        } else {
+            notesPath = path
+        }
     }
 
     func refreshTree(root: String) async {
@@ -782,19 +775,87 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func copyItem(root: String, item: WorkspaceItem, destinationFolder: String) async {
+        await copyItems(root: root, items: [item], destinationFolder: destinationFolder)
+    }
+
+    func copyItems(root: String, items: [WorkspaceItem], destinationFolder: String) async {
         guard let api else { return }
-        let destination = workspacePath(in: root, folder: destinationFolder, name: item.name)
-        guard destination != item.path else {
+        let items = topLevelWorkspaceItems(items)
+        guard !items.isEmpty else { return }
+        let destinations = items.map { workspacePath(in: root, folder: destinationFolder, name: $0.name) }
+        guard Set(destinations).count == destinations.count else {
+            statusMessage = "Selected items contain duplicate names."
+            return
+        }
+        let existingPaths = Set(self.items(for: root).map(\.path))
+        guard !zip(items, destinations).contains(where: { pair in
+            pair.1 == pair.0.path || existingPaths.contains(pair.1)
+        }) else {
             statusMessage = "Choose a different destination"
             return
         }
         isLoading = true
         defer { isLoading = false }
         do {
-            try await api.copyPath(from: item.path, to: destination)
+            for (item, destination) in zip(items, destinations) {
+                try await api.copyPath(from: item.path, to: destination)
+            }
             await loadTree(root: root, path: currentPath(for: root))
-            statusMessage = "Copied \(item.name)"
+            statusMessage = items.count == 1 ? "Copied \(items[0].name)" : "Copied \(items.count) items"
         } catch {
+            await loadTree(root: root, path: currentPath(for: root))
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func moveTreeItem(root: String, sourcePath: String, into folder: WorkspaceItem?) async {
+        await moveTreeItems(root: root, sourcePaths: [sourcePath], into: folder)
+    }
+
+    func moveTreeItems(root: String, sourcePaths: [String], into folder: WorkspaceItem?) async {
+        guard let api else { return }
+        let sourcePathSet = Set(sourcePaths)
+        let draggedItems = topLevelWorkspaceItems(items(for: root).filter { sourcePathSet.contains($0.path) })
+        guard !draggedItems.isEmpty else {
+            statusMessage = "The dragged item no longer exists."
+            return
+        }
+        if let folder {
+            guard folder.isDirectory else { return }
+            guard !draggedItems.contains(where: {
+                folder.path == $0.path || folder.path.hasPrefix($0.path + "/")
+            }) else {
+                statusMessage = "A folder cannot be moved into itself."
+                return
+            }
+        }
+        let destinationFolder = folder.map { nestedPath(root: root, workspacePath: $0.path) } ?? ""
+        let destinations = draggedItems.map { workspacePath(in: root, folder: destinationFolder, name: $0.name) }
+        guard Set(destinations).count == destinations.count else {
+            statusMessage = "Selected items contain duplicate names."
+            return
+        }
+        let sourcePaths = Set(draggedItems.map(\.path))
+        let existingPaths = Set(items(for: root).map(\.path)).subtracting(sourcePaths)
+        guard !destinations.contains(where: existingPaths.contains) else {
+            statusMessage = "An item with the same name already exists in that folder."
+            return
+        }
+        let moves = Array(zip(draggedItems, destinations).filter { $0.0.path != $0.1 })
+        guard !moves.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            for (item, destination) in moves {
+                try await api.movePath(from: item.path, to: destination)
+            }
+            clearSelectionIfNeeded(paths: draggedItems.map(\.path))
+            await loadTree(root: root, path: currentPath(for: root))
+            statusMessage = draggedItems.count == 1
+                ? "Moved \(draggedItems[0].name)"
+                : "Moved \(draggedItems.count) items"
+        } catch {
+            await loadTree(root: root, path: currentPath(for: root))
             statusMessage = error.localizedDescription
         }
     }
@@ -1217,15 +1278,24 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func deleteItem(root: String, item: WorkspaceItem) async {
+        await deleteItems(root: root, items: [item])
+    }
+
+    func deleteItems(root: String, items: [WorkspaceItem]) async {
         guard let api else { return }
+        let items = topLevelWorkspaceItems(items)
+        guard !items.isEmpty else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            try await api.deletePath(path: item.path)
-            clearSelectionIfNeeded(paths: [item.path])
+            for item in items {
+                try await api.deletePath(path: item.path)
+            }
+            clearSelectionIfNeeded(paths: items.map(\.path))
             await loadTree(root: root, path: currentPath(for: root))
-            statusMessage = "Deleted \(item.name)"
+            statusMessage = items.count == 1 ? "Deleted \(items[0].name)" : "Deleted \(items.count) items"
         } catch {
+            await loadTree(root: root, path: currentPath(for: root))
             statusMessage = error.localizedDescription
         }
     }
@@ -1375,17 +1445,22 @@ final class WorkspaceStore: ObservableObject {
             }
         }
         do {
-            let tree = try await api.tree(root: root, path: path)
+            let tree = try await api.tree(root: root, recursive: true)
+            let rootName = workspaceRootFolderName(for: root)
+            let selectedFolderPath = path.isEmpty ? rootName : "\(rootName)/\(path)"
+            let resolvedPath = path.isEmpty || tree.children.contains(where: { $0.isDirectory && $0.path == selectedFolderPath })
+                ? path
+                : ""
             if root == "code" {
-                codePath = path
+                codePath = resolvedPath
                 code = tree.children
             } else {
-                notesPath = path
+                notesPath = resolvedPath
                 notes = tree.children
             }
-            clearSelectionIfMissingFromCurrentTree(root: root, treePath: path, children: tree.children)
+            clearSelectionIfMissingFromTree(root: root, children: tree.children)
             if showStatus {
-                statusMessage = tree.path.isEmpty ? "Opened workspace root" : "Opened \(tree.path)"
+                statusMessage = "Updated \(rootName) files"
             }
         } catch {
             if showStatus {
@@ -1462,12 +1537,22 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    private func clearSelectionIfMissingFromCurrentTree(root: String, treePath: String, children: [WorkspaceItem]) {
+    private func topLevelWorkspaceItems(_ items: [WorkspaceItem]) -> [WorkspaceItem] {
+        let uniqueItems = Dictionary(items.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let paths = Set(uniqueItems.keys)
+        return uniqueItems.values
+            .filter { item in
+                !paths.contains(where: { path in
+                    path != item.path && item.path.hasPrefix(path + "/")
+                })
+            }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    private func clearSelectionIfMissingFromTree(root: String, children: [WorkspaceItem]) {
         guard let selectedPath = selectedResourcePath else { return }
         let rootName = workspaceRootFolderName(for: root)
-        let currentFolder = treePath.isEmpty ? rootName : "\(rootName)/\(treePath)"
-        guard selectedPath.hasPrefix(currentFolder + "/") else { return }
-        guard parentPath(selectedPath) == currentFolder else { return }
+        guard selectedPath.hasPrefix(rootName + "/") else { return }
         if !children.contains(where: { $0.path == selectedPath }) {
             selectedFile = nil
             selectedRawFile = nil
@@ -2239,11 +2324,6 @@ final class WorkspaceStore: ObservableObject {
         let prefix = rootName + "/"
         guard workspacePath.hasPrefix(prefix) else { return workspacePath }
         return String(workspacePath.dropFirst(prefix.count))
-    }
-
-    private func parentPath(_ path: String) -> String {
-        guard let slashIndex = path.lastIndex(of: "/") else { return "" }
-        return String(path[..<slashIndex])
     }
 
     private func normalizedServerURL(_ value: String) -> String {
