@@ -1,372 +1,142 @@
-# API Contract
+# API 계약
 
-Base URL during local development:
+기본 주소는 `http://127.0.0.1:8787`이다. 이 문서는 endpoint를 찾기 위한 현행
+목록이며 request/response field의 최종 기준은 `server/index.mjs`와 Apple
+`WorkspaceAPI.swift`다.
 
-```text
-http://127.0.0.1:8787
-```
+## 공통 규칙
 
-## Auth
+- JSON endpoint는 `application/json`을 사용한다.
+- 파일 경로는 Workspace-relative POSIX 경로다.
+- token이 설정된 서버는 `Authorization: Bearer <token>`을 요구한다.
+- 오류는 적절한 HTTP status와 `{ "error": "..." }`를 반환한다.
+- `/api/health`는 서버 접근 확인을 위해 인증 없이 사용할 수 있다.
 
-`GET /api/health` is public. When `CODMES_SERVER_TOKEN` is set, all other HTTP
-endpoints require one of:
+## Workspace와 파일
 
-```text
-Authorization: Bearer <token>
-x-codmes-token: <token>
-?token=<token>
-```
+| Method | Path | 역할 |
+| --- | --- | --- |
+| GET | `/api/health` | 서버 상태 |
+| GET | `/api/workspace` | Workspace 정보 |
+| GET | `/api/tree` | 파일 트리, `root`, `path`, `recursive` 사용 |
+| GET/PUT | `/api/file` | text 파일 읽기/저장 |
+| POST | `/api/file` | 새 파일 |
+| POST | `/api/folder` | 새 폴더 |
+| PATCH | `/api/file/move` | 파일 또는 폴더 이동/이름 변경 |
+| POST | `/api/file/copy` | 복사 |
+| DELETE | `/api/file` | 삭제 |
+| GET | `/api/raw` | binary 원본 읽기 |
+| GET | `/api/file/metadata` | 파일 및 추출 metadata |
+| GET | `/api/pdf-thumbnail` | PDF page thumbnail |
 
-`WS /api/live` accepts `?token=<token>`.
+업로드:
 
-Error response:
+- `POST /api/file/upload`: 작은 파일 JSON 업로드
+- `PUT /api/file/binary`: binary 저장
+- `POST /api/file/upload/start`
+- `POST /api/file/upload/chunk`
+- `POST /api/file/upload/complete`
+- `POST /api/file/upload/cancel`
 
-```json
-{
-  "ok": false,
-  "error": "Unauthorized."
-}
-```
+Codmes PDF package:
 
-## Health
+- `POST /api/file/export-codmes-pdf`
+- `POST /api/file/import-codmes-pdf`
+- `POST /api/file/import-codmes-pdf-package`
 
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/health` | implemented | public | Apple diagnostics |
-
-Response includes `authRequired`.
-
-## Workspace
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/workspace` | implemented | token when configured | Apple startup |
-| GET | `/api/tree?root=notes&path=...` | implemented | token when configured | Apple Notes |
-| GET | `/api/tree?root=code&path=...` | implemented | token when configured | Apple Code |
-
-All file paths are workspace-relative. Absolute paths and traversal are
-rejected by `path-utils`.
-
-## Files
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/file?path=...` | implemented | token when configured | Apple preview/edit |
-| PUT | `/api/file?path=...` | implemented | token when configured | Apple save |
-| POST | `/api/file` | implemented | token when configured | Apple create file |
-| POST | `/api/folder` | implemented | token when configured | Apple create folder |
-| PATCH | `/api/file/move` | implemented | token when configured | Apple move/rename |
-| POST | `/api/file/copy` | implemented | token when configured | Apple copy |
-| DELETE | `/api/file?path=...` | implemented | token when configured | Apple delete |
-| GET | `/api/file/metadata?path=...` | implemented | token when configured | available |
-| GET | `/api/file/annotations?path=...` | implemented | token when configured | Apple PDF annotations |
-| PUT | `/api/file/annotations?path=...` | implemented | token when configured | Apple PDF annotations |
-
-## Raw Files And Uploads
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/raw?path=...` | implemented | token when configured | Apple PDF/image |
-| POST | `/api/file/upload` | implemented | token when configured | Apple small upload |
-| POST | `/api/file/upload/start` | implemented | token when configured | Apple chunked upload |
-| POST | `/api/file/upload/chunk` | implemented | token when configured | Apple chunked upload |
-| POST | `/api/file/upload/complete` | implemented | token when configured | Apple chunked upload |
-| POST | `/api/file/upload/cancel` | implemented | token when configured | Apple chunked upload |
-
-## Context
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| POST | `/api/context` | implemented | token when configured | runtime context |
-
-The server resolves context requests for `none`, `current`, `note`, `folder`,
-`pdf`, `linked`, and `workspace` style scopes.
-
-## Search And Index
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/search/status` | implemented | token when configured | Apple Search |
-| POST | `/api/search` | implemented | token when configured | Apple Search |
-| GET | `/api/index/status` | implemented | token when configured | available |
-| POST | `/api/index/rebuild` | implemented | token when configured | available |
-
-Current search provider is `codmes-search-index` after the first rebuild, with
-`workspace-scan` as the secondary search path when no index exists. It supports content
-search, filename hits, scope filtering, `kind`/`kinds`, modified date filters,
-and first-pass PDF/Office/HWP/Excel/image/ZIP extraction through
-`.codmes/documents/<document-key>/index/`.
-
-Codmes Search ownership and incremental indexing are tracked in
-`docs/search/codmes-search-integration.md`.
-
-## Provider, Auth, And Models
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/providers` | implemented | token when configured | settings |
-| GET | `/api/models` | implemented | token when configured | model picker |
-| GET | `/api/auth` | implemented | token when configured | settings |
-| POST | `/api/auth/:provider` | implemented | token when configured | settings |
-| DELETE | `/api/auth/:provider/:key` | implemented | token when configured | settings |
-| GET | `/api/model/default` | implemented | token when configured | settings |
-| POST | `/api/model/default` | implemented | token when configured | settings |
-| POST | `/api/providers/custom` | implemented | token when configured | settings |
-| DELETE | `/api/providers/custom/:id` | implemented | token when configured | settings |
-
-`POST /api/auth/:provider` accepts easy client-facing keys such as `apiKey`,
-`token`, and `baseUrl`; the server maps them to the provider registry storage
-keys under `.codmes/config`.
-
-## Sessions
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/models` | implemented | token when configured | Apple model picker |
-| GET | `/api/workspace/models` | implemented | token when configured | alias |
-| GET | `/api/sessions` | implemented | token when configured | Apple session menu |
-| POST | `/api/sessions` | implemented | token when configured | live/session UI |
-| GET | `/api/sessions/:id/messages` | implemented | token when configured | Apple history |
-| DELETE | `/api/sessions/:id` | implemented | token when configured | Apple history |
-| POST | `/api/sessions/:id/rename` | implemented | token when configured | available |
-| GET | `/api/sessions/:id/export` | implemented | token when configured | available |
-| POST | `/api/sessions/prune` | implemented | token when configured | available |
-
-`/api/workspace/sessions` and `/api/workspace/sessions/:id/messages` are also
-available as workspace-owned aliases.
-
-## Live WebSocket
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| WS | `/api/live?token=...` | implemented | token when configured | Apple chat |
-
-Supported commands include:
+## PDF annotation
 
 ```text
-connect
-session.create
-session.resume
-prompt.submit
-approval.respond
-approval.inbox.list
-approval.inbox.show
-approval.inbox.respond
-task.resume
-task.cancel
-config.accessMode
-config.reasoning
-code.task.create
-code.checks.run
-code.patch.propose
-code.patch.apply
-code.patch.reject
+GET /api/file/annotations?path=Notes/example.pdf
+PUT /api/file/annotations?path=Notes/example.pdf
 ```
 
-## Tasks And Approvals
+저장에 성공하면 해당 문서의 검색 항목도 갱신한다. 상태 형식과 저장 위치는
+[Notes annotation 문서](notes/common/pdf-annotations.md)를 참고한다.
 
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/agent/tasks` | implemented | token when configured | Apple Code Agent |
-| GET | `/api/agent/tasks/:id` | implemented | token when configured | Apple Code Agent |
-| POST | `/api/agent/tasks/:id/resume` | implemented | token when configured | CLI/API |
-| POST | `/api/agent/tasks/:id/cancel` | implemented | token when configured | CLI/API |
-| GET | `/api/agent/approvals` | implemented | token when configured | Apple approvals |
-| GET | `/api/agent/approvals/:id` | implemented | token when configured | Apple approvals |
-| POST | `/api/agent/approvals/:id/respond` | implemented | token when configured | Apple approvals |
+## Search와 context
 
-Runtime tasks can pause with `status=approval_required`. The server stores
-`approvalIds[]` and `pendingState`; clients should approve/reject/cancel through
-the server instead of reconstructing tool calls.
+| Method | Path | 역할 |
+| --- | --- | --- |
+| POST | `/api/context` | 선택 범위의 model context 구성 |
+| GET | `/api/index/status` | 파일/index 상태 |
+| POST | `/api/index/rebuild` | 전체 검색 index 재생성 |
+| GET | `/api/search/status` | search runtime 상태 |
+| GET | `/api/global-search` | cursor 기반 사용자 전역 검색 |
+| POST | `/api/search` | runtime chunk 검색 |
+| GET/POST | `/api/search/config` | 검색 설정 조회/저장 |
 
-## Tool Modes, Discovery, Conversations, And Memory
+`/api/global-search`는 한 번에 최대 100개를 반환하고 `nextCursor`와 `hasMore`로
+다음 묶음을 읽는다. 전체 결과를 100개에서 잘라내지는 않는다. UI 결과는 문서별로
+묶고 문서는 파일명 일치와 일치 page/횟수로 정렬하며, 문서 내부 PDF 결과는 page
+순서를 사용한다.
 
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/tool-modes` | implemented | token when configured | Apple settings |
-| POST | `/api/tool-modes/:surface` | implemented | token when configured | Apple settings |
-| GET | `/api/tools/available` | implemented | token when configured | Apple settings/runtime |
-| POST | `/api/tools/discover` | implemented | token when configured | runtime |
-| POST | `/api/conversations/search` | implemented | token when configured | runtime/search |
-| GET | `/api/conversations/search?query=...` | implemented | token when configured | runtime/search |
-| POST | `/api/conversations/read` | implemented | token when configured | runtime/search |
-| GET | `/api/conversation-folders` | implemented | token when configured | Apple sessions |
-| POST | `/api/conversation-folders` | implemented | token when configured | Apple sessions |
-| PATCH | `/api/conversation-folders/:id` | implemented | token when configured | Apple sessions |
-| DELETE | `/api/conversation-folders/:id` | implemented | token when configured | Apple sessions |
-| POST | `/api/sessions/:id/move-to-folder` | implemented | token when configured | Apple sessions |
-| POST | `/api/sessions/:id/archive` | implemented | token when configured | Apple sessions |
-| POST | `/api/sessions/:id/unarchive` | implemented | token when configured | Apple sessions |
-| POST | `/api/sessions/archive-expired` | implemented | token when configured | maintenance |
-| POST | `/api/sessions/:id/summarize` | implemented | token when configured | runtime |
-| GET | `/api/memory/search` | implemented | token when configured | runtime/search |
-| GET | `/api/memory/settings` | implemented | token when configured | settings/runtime |
-| POST | `/api/memory/settings` | implemented | token when configured | settings/runtime |
-| GET | `/api/memory/candidates` | implemented | token when configured | settings/runtime |
-| POST | `/api/memory/candidates/:id/approve` | implemented | token when configured | settings/runtime |
-| POST | `/api/memory/candidates/:id/reject` | implemented | token when configured | settings/runtime |
-| POST | `/api/memory` | implemented | token when configured | settings/runtime |
-| GET | `/api/memory/:id` | implemented | token when configured | settings/runtime |
-| PATCH | `/api/memory/:id` | implemented | token when configured | settings/runtime |
-| DELETE | `/api/memory/:id` | implemented | token when configured | settings/runtime |
-| POST | `/api/memory/extract-from-session` | implemented | token when configured | runtime |
+## Provider, model, auth
 
-Tool modes are surface-scoped:
+- `GET /api/providers`
+- `POST /api/providers/custom`
+- `DELETE /api/providers/custom/:id`
+- `GET /api/providers/:id/models`
+- `GET /api/auth`
+- `POST /api/auth/:provider`
+- `DELETE /api/auth/:provider/:credentialId`
+- `POST /api/auth/:provider/select`
+- `DELETE /api/auth/:provider/credentials/:credentialId`
+- `POST /api/auth/openai-codex/login/start`
+- `GET /api/auth/openai-codex/login/:id`
+- `POST /api/auth/openai-codex/login/:id/cancel`
+- `GET/POST /api/model/default`
+- `GET /api/models` (`/api/workspace/models` alias 포함)
 
-```text
-chat  -> conversation_search, conversation_read, memory_search, tool_discovery
-notes -> workspace/Codmes Search/read-note/file-metadata tools plus conversation/memory tools
-code  -> CodeAgentRuntime search/read/git/patch/check tools plus conversation/memory tools
-```
+## Sessions와 live chat
 
-Surface registry endpoints:
+- `GET/POST /api/sessions`
+- `GET/DELETE /api/sessions/:id`
+- `GET /api/sessions/:id/messages`
+- `POST /api/sessions/:id/rename`
+- `GET /api/sessions/:id/export`
+- `POST /api/sessions/prune`
+- `POST /api/sessions/:id/archive`
+- `POST /api/sessions/:id/unarchive`
+- `POST /api/sessions/:id/summarize`
+- `GET /api/conversation-archive`
+- `POST /api/sessions/archive-expired`
+- `GET/POST/PATCH/DELETE /api/conversation-folders...`
+- `POST /api/sessions/:id/move-to-folder`
+- `GET/POST /api/conversations/search`
+- `POST /api/conversations/read`
+- `GET /api/conversations/:id/messages`
 
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/surfaces` | implemented | token when configured | settings/navigation |
-| POST | `/api/surfaces/:surface` | implemented | token when configured | settings/plugins |
+`/api/workspace/sessions` 계열은 Workspace-owned session 호환 endpoint다.
+실시간 채팅은 `/api/live` WebSocket을 사용한다.
 
-`chat` is the default always-on surface. Built-in surfaces such as `notes` and
-`code` can be hidden with `enabled: false`; plugin surfaces can be added with a
-title, icon, prompt hint, and tool-mode fields.
+## Tasks, approvals, code
 
-`tool_discovery` can temporarily expand safe tools for the current turn. It
-does not auto-enable approval-gated tools such as `apply_patch`,
-`run_checks`, or `run_git_command`.
+- `/api/agent/tasks`, `/api/agent/tasks/:id`
+- `/api/agent/tasks/:id/resume`, `/api/agent/tasks/:id/cancel`
+- `/api/agent/approvals`, `/api/agent/approvals/:id`
+- `/api/agent/approvals/:id/respond`
+- `POST /api/agent/code-task`
+- `POST /api/agent/code-task/:id/patches`
+- `POST /api/agent/code-task/:id/patches/generate`
+- `POST /api/agent/code-task/:id/patches/:proposalId/apply`
+- `POST /api/agent/code-task/:id/patches/:proposalId/reject`
+- `POST /api/agent/code-task/:id/checks`
+- `POST /api/agent/code-task/:id/git`
 
-Core recall tools are always present in surface modes:
-`tool_discovery`, `conversation_search`, `conversation_read`, and
-`memory_search`. Surface-level custom modes cannot remove these. The global
-runtime `disabledTools` config can still block them when an administrator needs
-to disable recall or discovery globally.
+## Runtime 관리
 
-Temporary tool expansion is turn-only. It is not stored in session JSON, user
-tool-mode overrides, or global runtime config. Runtime events include
-`tool.discovery.request`, `tool.discovery.result`,
-`tool.expansion.applied`, and `tool.expansion.blocked`.
+- `/api/skills...`
+- `/api/security`
+- `/api/mcp...`
+- `/api/doctor`
+- `/api/surfaces...`
+- `/api/tool-modes...`
+- `/api/tools/available`
+- `/api/tools/discover`
+- `/api/memory...`
+- `POST /api/render/markdown`
+- `POST /api/render/code`
 
-Conversation search supports fuzzy keyword recall and time ranges:
-`today`, `yesterday`, `this_week`, `last_week`, `last_7_days`, and ISO date
-ranges. `last_week` means the previous calendar Monday-Sunday in the server's
-Asia/Seoul default time basis, while `last_7_days` is rolling.
-
-General unscoped `[Chat]` sessions are count-managed rather than date-managed:
-the server keeps the latest 30 visible general chats and archives older
-overflow. Sessions attached to a project, folder, pin, active code task, or
-pending approval are exempt.
-
-Conversation search hides archived sessions by default. Pass
-`includeArchived=true` to search archived general-chat overflow or manually
-archived sessions. Search results include `archived`, `archivedAt`, and
-`archiveReason`.
-
-Memory extraction defaults:
-
-```json
-{
-  "autoSaveProjectMemory": true,
-  "autoSaveFolderMemory": true,
-  "autoSaveSessionSummaryMemory": true,
-  "autoSaveUserMemory": false,
-  "memoryReviewRequired": true
-}
-```
-
-Project/folder/session-summary memories can be saved automatically. User-global
-memories and sensitive-looking memories go through the candidate inbox unless a
-local setting explicitly allows automatic user memory saves.
-
-## Code Tasks
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| POST | `/api/agent/code-task` | implemented | token when configured | Apple Code Agent |
-| POST | `/api/agent/code-task/:id/patches` | implemented | token when configured | CLI/API |
-| POST | `/api/agent/code-task/:id/patches/generate` | implemented | token when configured | available |
-| POST | `/api/agent/code-task/:id/patches/:proposalId/apply` | implemented | token when configured | Apple Code Agent |
-| POST | `/api/agent/code-task/:id/patches/:proposalId/reject` | implemented | token when configured | Apple Code Agent |
-| POST | `/api/agent/code-task/:id/checks` | implemented | token when configured | Apple Code Agent |
-| POST | `/api/agent/code-task/:id/git` | implemented | token when configured | available |
-
-## Render
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| POST | `/api/render/markdown` | implemented | token when configured | Apple rich Markdown |
-| POST | `/api/render/code` | implemented | token when configured | Apple code preview |
-
-The server uses `marked` and `shiki`.
-
-## Models, Providers, Auth
-
-`codmes model`, `codmes provider`, and `codmes auth` own local runtime config under
-`.codmes/config`. The same store is now exposed through HTTP so the Apple
-client can configure runtime access without shell commands.
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/providers` | implemented | token when configured | Apple settings |
-| GET | `/api/models` | implemented | token when configured | Apple chat/settings |
-| GET | `/api/auth` | implemented | token when configured | Apple settings |
-| POST | `/api/auth/:provider` | implemented | token when configured | Apple settings |
-| DELETE | `/api/auth/:provider/:key` | implemented | token when configured | Apple settings |
-| GET | `/api/model/default` | implemented | token when configured | Apple settings |
-| POST | `/api/model/default` | implemented | token when configured | Apple settings |
-| POST | `/api/providers/custom` | implemented | token when configured | Apple settings |
-| DELETE | `/api/providers/custom/:id` | implemented | token when configured | Apple settings |
-
-## Skills
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/skills` | implemented | token when configured | available |
-| GET | `/api/skills/:name` | implemented | token when configured | available |
-| POST | `/api/skills/:name/enable` | implemented | token when configured | available |
-| POST | `/api/skills/:name/disable` | implemented | token when configured | available |
-
-## Security
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/security` | implemented | token when configured | available |
-| POST | `/api/security` | implemented | token when configured | available |
-
-The security API reads/writes approval mode, shell policy, allowed commands,
-denied commands, and require-approval categories.
-
-## MCP
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/mcp` | implemented | token when configured | available |
-| POST | `/api/mcp` | implemented | token when configured | available |
-| DELETE | `/api/mcp/:name` | implemented | token when configured | available |
-| POST | `/api/mcp/:name/enable` | implemented | token when configured | available |
-| POST | `/api/mcp/:name/disable` | implemented | token when configured | available |
-
-MCP process execution still happens inside the runtime, not in the client.
-
-## Doctor
-
-| Method | Path | Status | Auth | Client |
-|---|---|---:|---|---|
-| GET | `/api/doctor` | implemented | token when configured | available |
-
-The response includes runtime, MCP, skills, security, index, search summary,
-document-ingest diagnostics, and audit summary when `.codmes/audit/audit.jsonl`
-exists. Document diagnostics report the Python worker, bootstrap requirements
-file, and installed Python libraries such as PyMuPDF4LLM/PyMuPDF/MarkItDown. Codmes Core
-does not require native OCR or office-conversion binaries such as `tesseract`,
-`pdftoppm`, Java-based ODL, LibreOffice, or `soffice`. Paid cloud OCR providers
-are not part of the default dependency path.
-
-## Known Gaps
-
-- OAuth provider flow is not complete.
-- Built-in search is a server-owned text/document chunk index with workspace
-  scan. PDF Markdown/table and text extraction uses bootstrap Python libraries where possible.
-  Scanned PDF/image extraction is limited to MarkItDown's default local/free
-  converter path until Codmes owns a stronger free/local OCR provider. Native
-  vector embeddings are planned as a later Codmes Search Runtime layer.
-- Audit log exists for security policy decisions. More runtime subsystems should
-  write explicit approved/rejected records as they become first-class actions.
+동적 endpoint의 허용 method와 body schema를 변경할 때는 서버 route test와
+`WorkspaceAPI.swift` 호출부를 함께 수정한다.

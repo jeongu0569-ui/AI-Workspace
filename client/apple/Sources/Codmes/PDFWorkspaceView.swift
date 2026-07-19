@@ -17,6 +17,24 @@ fileprivate typealias PDFPagePreviewImage = UIImage
 fileprivate typealias PDFPagePreviewImage = NSImage
 #endif
 
+fileprivate enum PDFReadingZoom {
+    static let pageHeightFraction: CGFloat = 0.88
+    static let pageWidthFraction: CGFloat = 0.94
+    static let elasticLowerBoundFraction: CGFloat = 0.78
+
+    static func fittedScale(page: PDFPage, displayBox: PDFDisplayBox, viewport: CGSize) -> CGFloat? {
+        guard viewport.width > 1, viewport.height > 1 else { return nil }
+        var pageSize = page.bounds(for: displayBox).size
+        if abs(page.rotation) % 180 == 90 {
+            pageSize = CGSize(width: pageSize.height, height: pageSize.width)
+        }
+        guard pageSize.width > 1, pageSize.height > 1 else { return nil }
+        let widthScale = viewport.width * pageWidthFraction / pageSize.width
+        let heightScale = viewport.height * pageHeightFraction / pageSize.height
+        return min(widthScale, heightScale)
+    }
+}
+
 #if os(iOS)
 fileprivate enum PDFMarkupTool: String, CaseIterable, Identifiable {
     case pen
@@ -201,7 +219,7 @@ struct PDFWorkspaceView: View {
                         }
                     }
                     .scaleEffect(pdfCanvasScale, anchor: .center)
-                    .offset(x: pdfCanvasOffset(for: stageProxy.size.width))
+                    .offset(x: pdfCanvasOffset(for: stageProxy.size))
                     #else
                     MacAnnotatedPDFKitView(
                 url: rawFile.url,
@@ -258,7 +276,7 @@ struct PDFWorkspaceView: View {
                         }
                     }
                     .scaleEffect(pdfCanvasScale, anchor: .center)
-                    .offset(x: pdfCanvasOffset(for: stageProxy.size.width))
+                    .offset(x: pdfCanvasOffset(for: stageProxy.size))
                     #endif
 
                     if isPageBrowserPresented, usesOverlayPageBrowser {
@@ -281,6 +299,7 @@ struct PDFWorkspaceView: View {
                 }
                 .clipped()
                 .animation(.easeInOut(duration: 0.25), value: isPageBrowserPresented)
+                .animation(.easeInOut(duration: 0.25), value: stageProxy.size)
             }
         }
         .task(id: rawFile.path) {
@@ -588,9 +607,13 @@ struct PDFWorkspaceView: View {
         return min(max(containerWidth * 0.34, 320), 360)
     }
 
-    private func pdfCanvasOffset(for containerWidth: CGFloat) -> CGFloat {
+    private func pdfCanvasOffset(for containerSize: CGSize) -> CGFloat {
         guard isPageBrowserPresented, !usesOverlayPageBrowser else { return 0 }
-        return (1 - pdfCanvasScale) * containerWidth / 2
+        let minimumOffset = (1 - pdfCanvasScale) * containerSize.width / 2
+        guard containerSize.width > containerSize.height else { return minimumOffset }
+
+        // In landscape, center the page in the area remaining to the right of the sidebar.
+        return pageBrowserWidth(for: containerSize.width) / 2
     }
 
     private var pdfCanvasScale: CGFloat {
@@ -1877,9 +1900,11 @@ private struct MacAnnotatedPDFKitView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> CodmesMacPDFView {
         let view = CodmesMacPDFView()
-        view.autoScales = true
+        view.autoScales = false
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
+        view.displaysPageBreaks = true
+        view.pageBreakMargins = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         view.backgroundColor = .clear
         view.pageOverlayViewProvider = context.coordinator
         context.coordinator.pdfView = view
@@ -1921,6 +1946,7 @@ private struct MacAnnotatedPDFKitView: NSViewRepresentable {
         view.onObjectEditRequested = onObjectEditRequested
         if view.document?.documentURL != url {
             view.document = PDFDocument(url: url)
+            view.applyReadingScaleIfNeeded(force: true)
         }
         view.applyCodmesInkAnnotations(annotations)
         context.coordinator.applyFocus(focus, to: view)
@@ -2780,8 +2806,54 @@ private final class CodmesMacPDFView: PDFView {
     private var lassoMoveStartStrokes: [CodmesInkStroke] = []
     private var lassoMoveStartObjects: [PDFAnnotationObject] = []
     private var activeShapeHandleDrag: ShapeHandleDrag?
+    private var readingMinimumScaleFactor: CGFloat = 1
+    private var lastReadingViewportSize = CGSize.zero
+    private var isApplyingReadingScale = false
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func layout() {
+        super.layout()
+        applyReadingScaleIfNeeded()
+    }
+
+    override func magnify(with event: NSEvent) {
+        super.magnify(with: event)
+        guard event.phase.contains(.ended) || event.phase.contains(.cancelled),
+              scaleFactor < readingMinimumScaleFactor else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.35
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().scaleFactor = readingMinimumScaleFactor
+        }
+    }
+
+    func applyReadingScaleIfNeeded(force: Bool = false) {
+        guard !isApplyingReadingScale,
+              let document,
+              let page = currentPage ?? document.page(at: 0),
+              bounds.width > 1,
+              bounds.height > 1,
+              force || bounds.size != lastReadingViewportSize,
+              let fittedScale = PDFReadingZoom.fittedScale(
+                  page: page,
+                  displayBox: displayBox,
+                  viewport: bounds.size
+              ) else { return }
+
+        lastReadingViewportSize = bounds.size
+        readingMinimumScaleFactor = fittedScale
+        isApplyingReadingScale = true
+        autoScales = false
+        minScaleFactor = fittedScale * PDFReadingZoom.elasticLowerBoundFraction
+        maxScaleFactor = max(fittedScale * 6, 4)
+        scaleFactor = fittedScale
+        isApplyingReadingScale = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.go(to: page)
+        }
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard isWritingMode else {
@@ -4136,6 +4208,10 @@ private extension NSColor {
 fileprivate final class AnnotatedPDFView: PDFView {
     let drawingOverlay = PDFDrawingOverlayView()
     private let shapeDebugLabel = UILabel()
+    private var readingMinimumScaleFactor: CGFloat = 1
+    private var lastReadingViewportSize = CGSize.zero
+    private var observedPinchRecognizers = Set<ObjectIdentifier>()
+    private var isApplyingReadingScale = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -4162,6 +4238,76 @@ fileprivate final class AnnotatedPDFView: PDFView {
         shapeDebugLabel.frame = CGRect(x: 12, y: safeAreaInsets.top + 12, width: maxWidth, height: 68)
         bringSubviewToFront(drawingOverlay)
         bringSubviewToFront(shapeDebugLabel)
+        applyReadingScaleIfNeeded()
+    }
+
+    func applyReadingScaleIfNeeded(force: Bool = false) {
+        guard !isApplyingReadingScale,
+              let document,
+              let page = currentPage ?? document.page(at: 0),
+              bounds.width > 1,
+              bounds.height > 1,
+              force || bounds.size != lastReadingViewportSize,
+              let fittedScale = PDFReadingZoom.fittedScale(
+                  page: page,
+                  displayBox: displayBox,
+                  viewport: bounds.size
+              ) else {
+            installReadingZoomBehavior()
+            return
+        }
+
+        lastReadingViewportSize = bounds.size
+        readingMinimumScaleFactor = fittedScale
+        isApplyingReadingScale = true
+        autoScales = false
+        minScaleFactor = fittedScale * PDFReadingZoom.elasticLowerBoundFraction
+        maxScaleFactor = max(fittedScale * 6, 4)
+        scaleFactor = fittedScale
+        isApplyingReadingScale = false
+        installReadingZoomBehavior()
+        DispatchQueue.main.async { [weak self] in
+            self?.centerPageVertically(page)
+        }
+    }
+
+    func centerPageVertically(_ page: PDFPage) {
+        guard let scrollView = descendantScrollViews
+            .filter({ $0.isScrollEnabled })
+            .max(by: { $0.contentSize.height < $1.contentSize.height }) else { return }
+        let pageRect = convert(page.bounds(for: displayBox), from: page)
+        let delta = pageRect.midY - bounds.midY
+        let minimumY = -scrollView.adjustedContentInset.top
+        let maximumY = max(
+            minimumY,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+        var offset = scrollView.contentOffset
+        offset.y = min(max(offset.y + delta, minimumY), maximumY)
+        scrollView.setContentOffset(offset, animated: false)
+    }
+
+    private func installReadingZoomBehavior() {
+        for scrollView in descendantScrollViews where scrollView.isScrollEnabled {
+            scrollView.bouncesZoom = false
+            guard let pinch = scrollView.pinchGestureRecognizer else { continue }
+            let identifier = ObjectIdentifier(pinch)
+            guard observedPinchRecognizers.insert(identifier).inserted else { continue }
+            pinch.addTarget(self, action: #selector(handleReadingPinch(_:)))
+        }
+    }
+
+    @objc private func handleReadingPinch(_ gesture: UIPinchGestureRecognizer) {
+        guard gesture.state == .ended || gesture.state == .cancelled,
+              scaleFactor < readingMinimumScaleFactor else { return }
+        UIView.animate(
+            withDuration: 0.22,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+        ) {
+            self.scaleFactor = self.readingMinimumScaleFactor
+            self.layoutIfNeeded()
+        }
     }
 
     func showShapeDebug(_ text: String) {
@@ -4545,9 +4691,11 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> AnnotatedPDFView {
         let view = AnnotatedPDFView()
-        view.autoScales = true
+        view.autoScales = false
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
+        view.displaysPageBreaks = true
+        view.pageBreakMargins = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         view.backgroundColor = .clear
         view.pageOverlayViewProvider = context.coordinator
         let drawGesture = PDFImmediateDrawingGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDrawingPan(_:)))
@@ -4616,8 +4764,10 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             context.coordinator.currentURL = url
             context.coordinator.overlays.removeAll()
             view.document = PDFDocument(url: url)
+            view.applyReadingScaleIfNeeded(force: true)
         } else if view.document == nil {
             view.document = PDFDocument(url: url)
+            view.applyReadingScaleIfNeeded(force: true)
         }
         context.coordinator.applyToolToVisibleOverlays()
         context.coordinator.applyPDFNavigationMode()
@@ -4892,9 +5042,11 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         private func navigateToFocusedPage(_ page: PDFPage, in pdfView: PDFView) {
             pdfView.go(to: page)
+            (pdfView as? AnnotatedPDFView)?.centerPageVertically(page)
             for delay in [0.05, 0.18] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak pdfView] in
                     pdfView?.go(to: page)
+                    (pdfView as? AnnotatedPDFView)?.centerPageVertically(page)
                 }
             }
         }

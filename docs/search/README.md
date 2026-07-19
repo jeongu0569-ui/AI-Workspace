@@ -1,27 +1,11 @@
-# Search And RAG Documentation
+# Search 문서
 
-This folder documents Codmes Search and RAG as workspace-wide server features.
-They are used by Notes, Code, Documents, PDF annotation indexing, and
-conversation recall; they are not Notes-only features.
+- [현재 검색 구조](search-runtime.md)
 
-## Start Here
+Codmes에는 목적이 다른 두 검색 흐름이 있다.
 
-- [Codmes Search Integration](codmes-search-integration.md): built-in search API,
-  extraction worker, OCR/VLM settings, and annotation OCR.
-- [Codmes Search Explained](codmes-search-explained.md): beginner-friendly search
-  and VLM walkthrough.
-- [RAG Backend Design](rag-backend-design.md): server-side context routing and
-  current RAG limitations.
+- 사용자 전역 검색: 파일을 찾고 PDF page로 이동하기 위한 UI 검색
+- runtime 검색: LLM이 필요한 작은 chunk를 가져오는 `codmes_search`
 
-## Scope
-
-Codmes Search can index and retrieve from:
-
-- Notes and Markdown/text files
-- PDFs and PDF annotation text/image OCR blocks
-- Documents and attachments such as Office, HWP/HWPX, image, and ZIP files
-- Code files where the workspace search layer is appropriate
-- Conversation/session/memory search paths exposed by runtime tools
-
-Notes surface documentation links here when it describes how notes and PDFs
-enter search/RAG, but ownership of the search runtime belongs here.
+현재 둘 다 text index를 사용한다. embedding 설정은 보존되지만 vector 검색은
+아직 구현되지 않았다.
