@@ -126,14 +126,23 @@ test("document ingest removes stale and deleted document cache files", async () 
   await createMinimalPdf(pdfPath, "first cache version");
   await extractAndCacheDocument(root, pdfPath, relativePath);
   assert.equal((await cacheFileNames(root, relativePath)).length, 2);
+  const annotationPath = annotationsPathForDocument(root, relativePath);
+  await fs.writeFile(annotationPath, JSON.stringify({
+    schemaVersion: 2,
+    documentPath: relativePath,
+    pages: [{ pageIndex: 0, objects: [{ id: "kept-note", type: "text", text: "keep me" }] }]
+  }), "utf8");
 
   await fs.rm(pdfPath);
-  await createMinimalPdf(pdfPath, "second cache version with a different size");
-  await extractAndCacheDocument(root, pdfPath, relativePath);
+  await createMultiPagePdf(pdfPath, ["first page after insert", "inserted second page"]);
+  const refreshed = await extractAndCacheDocument(root, pdfPath, relativePath);
   const refreshedEntries = await cacheFileNames(root, relativePath);
   assert.equal(refreshedEntries.length, 2);
   assert.equal(refreshedEntries.filter((entry) => entry.endsWith(".json")).length, 1);
   assert.equal(refreshedEntries.filter((entry) => entry.endsWith(".md")).length, 1);
+  assert.equal(refreshed.blocks.some((block) => block.page === 2 && /inserted second page/i.test(block.text)), true);
+  const preservedAnnotations = JSON.parse(await fs.readFile(annotationPath, "utf8"));
+  assert.equal(preservedAnnotations.pages[0].objects[0].text, "keep me");
 
   await removeDocumentIngestCacheFiles(root, [relativePath]);
   assert.deepEqual(await cacheFileNames(root, relativePath), []);
@@ -446,6 +455,22 @@ page.insert_text((72, 72), text, fontsize=14)
 doc.save(path)
 `;
   await execFileAsync(process.env.CODMES_PYTHON || ".codmes-runtime/bin/python", ["-c", script, filePath, text]);
+}
+
+async function createMultiPagePdf(filePath, pageTexts) {
+  const script = `
+import fitz, json, sys
+path, texts = sys.argv[1], json.loads(sys.argv[2])
+doc = fitz.open()
+for text in texts:
+    page = doc.new_page()
+    page.insert_text((72, 72), text, fontsize=14)
+doc.save(path)
+`;
+  await execFileAsync(
+    process.env.CODMES_PYTHON || ".codmes-runtime/bin/python",
+    ["-c", script, filePath, JSON.stringify(pageTexts)]
+  );
 }
 
 async function cacheFileNames(root, relativePath) {
