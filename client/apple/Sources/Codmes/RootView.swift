@@ -201,7 +201,7 @@ struct RootView: View {
             WorkspaceSettingsView(isPresented: $showingSettings)
                 .environmentObject(store)
         }
-        .fullScreenCover(isPresented: $showingGlobalSearch) {
+        .sheet(isPresented: $showingGlobalSearch) {
             SearchView(onSelectSurface: selectSurfaceFromSearch)
                 .environmentObject(store)
         }
