@@ -15,9 +15,8 @@ Codmes/
 └── .codmes/
 ```
 
-Hidden Codmes state stays in `.codmes` folders. For PDF annotation state, the
-hidden state is placed next to the document folder so copying or moving a folder
-can carry editable PDF notes with it.
+Hidden Codmes state stays under the workspace-root `.codmes`. PDF annotation
+and derived extraction state share a readable document-key folder.
 
 ## Notes Surface Content
 
@@ -25,8 +24,8 @@ can carry editable PDF notes with it.
 | --- | --- | --- |
 | Markdown: `.md`, `.markdown`, `.mdx` | `Notes/` | Read as text, rendered as Markdown, editable through the file API, and readable by Notes chat through `read_note_file`. |
 | Plain text notes | `Notes/` | Read and edited as UTF-8 text when safe. |
-| PDF: `.pdf` | `Notes/` or attached from `Attachments/` | Opened through raw file serving and PDFKit. Editable annotation state is stored in a hidden `.codmes/annotations` file beside the PDF folder. |
-| PDF annotation state: `.codmes/annotations/*.codmes.json` | Hidden beside the PDF folder | Stores editable ink, text objects, and image objects. It is app state, not a user note to show in normal trees. |
+| PDF: `.pdf` | `Notes/` or attached from `Attachments/` | Opened through raw file serving and PDFKit. Editable state is stored under workspace `.codmes/documents/<document-key>/`. |
+| PDF annotation state: `annotations.json` | `.codmes/documents/<document-key>/` | Stores editable ink, text objects, and image objects. It is app state, not a user note to show in normal trees. |
 | Images: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.tif`, `.tiff`, `.heic` | `Attachments/` or PDF image objects | Can be attached to notes/PDFs. PDF image objects store payload and metadata in annotation JSON. |
 | Other attached documents | `Attachments/` | Can be stored and opened/listed as workspace files. Their extraction behavior is not owned by the Notes surface. |
 
@@ -43,7 +42,7 @@ become additional searchable blocks:
 - Text annotation objects become `source: "annotation-text"` blocks.
 - Image annotation objects become `source: "annotation-image-ocr"` blocks if
   they already have text metadata or if VLM OCR is enabled and succeeds.
-- Image OCR cache files live under `.codmes/index/annotation-ocr/`.
+- Image OCR cache files live under `.codmes/documents/<document-key>/index/annotation-ocr/`.
 
 ## OCR Boundary
 

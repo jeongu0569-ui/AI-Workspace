@@ -27,6 +27,9 @@ import { buildSearchIndex, globalSearch, searchStatus, searchWorkspace, updateSe
 import {
   annotationsPathForDocument,
   contentScopedAnnotationsPathForDocument,
+  documentFolderAnnotationsPathForDocument,
+  documentStateDirectory,
+  ensureDocumentStateManifest,
   legacyAnnotationsPathForDocument,
   removeDocumentIngestCacheFiles
 } from "./lib/document-ingest.mjs";
@@ -1042,6 +1045,9 @@ async function movePath(req) {
   await fs.rename(from.absolutePath, to.absolutePath);
   await transferDocumentStateFiles(movedDocuments, { mode: "move" });
   await removeDocumentIngestCacheFiles(WORKSPACE_ROOT, movedDocuments.map((transition) => transition.from));
+  await Promise.all(movedDocuments.map((transition) => (
+    fs.rm(documentStateDirectory(WORKSPACE_ROOT, transition.from), { recursive: true, force: true })
+  )));
   await refreshSearchIndexPaths([from.relativePath, to.relativePath]);
   return { ok: true, from: from.relativePath, to: to.relativePath };
 }
@@ -1109,6 +1115,7 @@ async function importCodmesPdf(req) {
     const targetAnnotationPath = annotationsPathForDocument(WORKSPACE_ROOT, target.relativePath);
     await fs.mkdir(path.dirname(targetAnnotationPath), { recursive: true });
     await fs.writeFile(targetAnnotationPath, JSON.stringify(annotations, null, 2) + "\n", "utf8");
+    await ensureDocumentStateManifest(WORKSPACE_ROOT, target.relativePath);
   }
 
   await refreshSearchIndexPaths([target.relativePath]);
@@ -1253,6 +1260,7 @@ async function writeFileAnnotations(req, url) {
   const targetPath = annotationsPath(relativePath);
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, JSON.stringify(annotations, null, 2) + "\n", "utf8");
+  await ensureDocumentStateManifest(WORKSPACE_ROOT, relativePath);
   await refreshSearchIndexPaths([relativePath]);
   return annotations;
 }
@@ -1317,8 +1325,10 @@ async function transferDocumentStateFiles(transitions, { mode }) {
     } catch {}
     if (mode === "copy") {
       await fs.writeFile(targetPath, output);
+      await ensureDocumentStateManifest(WORKSPACE_ROOT, transition.to);
     } else {
       await fs.writeFile(targetPath, output);
+      await ensureDocumentStateManifest(WORKSPACE_ROOT, transition.to);
       await removeAnnotationStateForPath(transition.from);
     }
   }
@@ -1334,6 +1344,7 @@ async function removeDocumentStateFiles(relativePaths) {
 async function existingAnnotationStatePath(relativePath) {
   for (const candidate of [
     annotationsPathForDocument(WORKSPACE_ROOT, relativePath),
+    documentFolderAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath),
     contentScopedAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath),
     legacyAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath)
   ]) {
@@ -1347,7 +1358,8 @@ async function existingAnnotationStatePath(relativePath) {
 
 async function removeAnnotationStateForPath(relativePath) {
   await Promise.all([
-    fs.rm(annotationsPathForDocument(WORKSPACE_ROOT, relativePath), { force: true }),
+    fs.rm(documentStateDirectory(WORKSPACE_ROOT, relativePath), { recursive: true, force: true }),
+    fs.rm(documentFolderAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath), { force: true }),
     fs.rm(contentScopedAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath), { force: true }),
     fs.rm(legacyAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath), { force: true })
   ]);
@@ -1356,17 +1368,22 @@ async function removeAnnotationStateForPath(relativePath) {
 async function migrateLegacyAnnotations(relativePath) {
   const targetPath = annotationsPathForDocument(WORKSPACE_ROOT, relativePath);
   for (const legacyPath of [
+    documentFolderAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath),
     contentScopedAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath),
     legacyAnnotationsPathForDocument(WORKSPACE_ROOT, relativePath)
   ]) {
     if (legacyPath === targetPath) continue;
     try {
       const raw = await fs.readFile(legacyPath, "utf8");
+      const parsed = JSON.parse(raw);
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.writeFile(targetPath, raw, { flag: "wx" }).catch((error) => {
         if (error?.code !== "EEXIST") throw error;
       });
-      return JSON.parse(raw);
+      await ensureDocumentStateManifest(WORKSPACE_ROOT, relativePath);
+      const persisted = JSON.parse(await fs.readFile(targetPath, "utf8"));
+      await fs.rm(legacyPath, { force: true });
+      return persisted || parsed;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }

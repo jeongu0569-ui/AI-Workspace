@@ -13,7 +13,7 @@ import {
   searchWorkspace,
   updateSearchIndex
 } from "./search-service.mjs";
-import { annotationsPathForDocument } from "./document-ingest.mjs";
+import { annotationsPathForDocument, documentIngestCacheDirectory } from "./document-ingest.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -309,7 +309,8 @@ test("searches extracted PDF text and caches it", async () => {
   assert.equal(result.results[0].path, "Documents/manual.pdf");
   assert.match(result.results[0].snippet, /semantic workspace/i);
 
-  const cacheEntries = await fs.readdir(path.join(root, ".codmes", "index", "documents"));
+  const cacheDirectory = documentIngestCacheDirectory(root, "Documents/manual.pdf");
+  const cacheEntries = await fs.readdir(cacheDirectory);
   assert.equal(cacheEntries.length, 2);
   assert.equal(cacheEntries.filter((entry) => entry.endsWith(".json")).length, 1);
   assert.equal(cacheEntries.filter((entry) => entry.endsWith(".md")).length, 1);
@@ -317,7 +318,7 @@ test("searches extracted PDF text and caches it", async () => {
   await fs.rm(path.join(root, "Documents", "manual.pdf"));
   const updated = await updateSearchIndex(root, ["Documents/manual.pdf"]);
   assert.equal(updated.items.some((item) => item.path === "Documents/manual.pdf"), false);
-  assert.deepEqual(await fs.readdir(path.join(root, ".codmes", "index", "documents")), []);
+  assert.deepEqual(await fs.readdir(cacheDirectory).catch(() => []), []);
 });
 
 test("indexes searchable PDF annotation text and image OCR blocks", async () => {

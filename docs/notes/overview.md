@@ -58,8 +58,8 @@ Codmes uses a GoodNotes-style structure with a portable annotation state file:
 
 1. Serve PDFs as raw files for client preview.
 2. Store file metadata in `.codmes/index/files.json`.
-3. Store server-owned annotation layers in a hidden state folder inside the
-   document folder, such as `Notes/.codmes/annotations/mypage.codmes.json`.
+3. Store server-owned annotation layers under the workspace document registry,
+   such as `.codmes/documents/mypage--<path-hash>/annotations.json`.
 4. Render live iOS/iPadOS drawing through PDFKit ink input.
 5. Save editable strokes and objects as portable Codmes annotation JSON.
 6. Ask the server to refresh derived state after annotation saves or PDF merges.
@@ -68,7 +68,7 @@ Current annotation state:
 
 ```text
 Notes/mypage.pdf
-Notes/.codmes/annotations/mypage.codmes.json
+.codmes/documents/mypage--<path-hash>/annotations.json
 ```
 
 PDF annotations should not be stored only inside a client-local app cache. They

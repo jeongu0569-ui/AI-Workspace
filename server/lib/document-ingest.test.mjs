@@ -3,15 +3,21 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
   annotationsPathForDocument,
   annotationOcrCachePath,
   contentScopedAnnotationsPathForDocument,
+  documentFolderAnnotationsPathForDocument,
   extractAndCacheDocument,
   extractDocumentAnnotationBlocks,
+  documentIngestCacheDirectory,
+  documentIngestCachePath,
   documentIngestMarkdownPath,
+  documentManifestPath,
+  documentStateDirectory,
   getDocumentIngestMetadata,
   isDocumentIngestFile,
   legacyAnnotationsPathForDocument,
@@ -42,6 +48,9 @@ test("document ingest extracts and caches PDF text through the worker", async ()
 
   const second = await extractAndCacheDocument(root, pdfPath, "Documents/manual.pdf");
   assert.deepEqual(second.text, first.text);
+  const manifest = JSON.parse(await fs.readFile(documentManifestPath(root, "Documents/manual.pdf"), "utf8"));
+  assert.equal(manifest.sourcePath, "Documents/manual.pdf");
+  assert.match(documentStateDirectory(root, "Documents/manual.pdf"), /manual--[a-f0-9]{8}$/);
 });
 
 test("document ingest stores structured PDF tables and a Markdown sidecar", async () => {
@@ -71,6 +80,43 @@ test("document ingest stores structured PDF tables and a Markdown sidecar", asyn
   assert.match(metadata.markdownPath, /\.md$/);
 });
 
+test("document folders remain readable and distinct for duplicate filenames", () => {
+  const root = "/workspace";
+  const notesPath = documentStateDirectory(root, "Notes/manual.pdf");
+  const documentsPath = documentStateDirectory(root, "Documents/manual.pdf");
+  assert.match(notesPath, /manual--[a-f0-9]{8}$/);
+  assert.match(documentsPath, /manual--[a-f0-9]{8}$/);
+  assert.notEqual(notesPath, documentsPath);
+});
+
+test("document ingest migrates the current legacy hash cache into its document folder", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-ingest-cache-migration-"));
+  await fs.mkdir(path.join(root, "Documents"), { recursive: true });
+  const relativePath = "Documents/manual.pdf";
+  const pdfPath = path.join(root, relativePath);
+  await createMinimalPdf(pdfPath, "legacy cache migration marker");
+
+  const extracted = await extractAndCacheDocument(root, pdfPath, relativePath);
+  const markdown = await fs.readFile(documentIngestMarkdownPath(root, relativePath), "utf8");
+  const stat = await fs.stat(pdfPath);
+  const oldKey = crypto.createHash("sha256")
+    .update(`v2\n${relativePath}\n${stat.size}:${stat.mtimeMs}`)
+    .digest("hex");
+  const oldDirectory = path.join(root, ".codmes", "index", "documents");
+  const oldJsonPath = path.join(oldDirectory, `${oldKey}.json`);
+  await fs.mkdir(oldDirectory, { recursive: true });
+  const { cache: _cache, ...legacy } = extracted;
+  await fs.writeFile(oldJsonPath, JSON.stringify(legacy), "utf8");
+  await fs.writeFile(oldJsonPath.replace(/\.json$/, ".md"), markdown, "utf8");
+  await fs.rm(documentStateDirectory(root, relativePath), { recursive: true, force: true });
+
+  const migrated = await extractAndCacheDocument(root, pdfPath, relativePath, stat);
+  assert.match(migrated.text, /legacy cache migration marker/i);
+  await fs.access(documentIngestCachePath(root, relativePath));
+  await fs.access(documentManifestPath(root, relativePath));
+  await assert.rejects(fs.access(oldJsonPath), { code: "ENOENT" });
+});
+
 test("document ingest removes stale and deleted document cache files", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-ingest-cleanup-"));
   await fs.mkdir(path.join(root, "Documents"), { recursive: true });
@@ -79,18 +125,18 @@ test("document ingest removes stale and deleted document cache files", async () 
 
   await createMinimalPdf(pdfPath, "first cache version");
   await extractAndCacheDocument(root, pdfPath, relativePath);
-  assert.equal((await cacheFileNames(root)).length, 2);
+  assert.equal((await cacheFileNames(root, relativePath)).length, 2);
 
   await fs.rm(pdfPath);
   await createMinimalPdf(pdfPath, "second cache version with a different size");
   await extractAndCacheDocument(root, pdfPath, relativePath);
-  const refreshedEntries = await cacheFileNames(root);
+  const refreshedEntries = await cacheFileNames(root, relativePath);
   assert.equal(refreshedEntries.length, 2);
   assert.equal(refreshedEntries.filter((entry) => entry.endsWith(".json")).length, 1);
   assert.equal(refreshedEntries.filter((entry) => entry.endsWith(".md")).length, 1);
 
   await removeDocumentIngestCacheFiles(root, [relativePath]);
-  assert.deepEqual(await cacheFileNames(root), []);
+  assert.deepEqual(await cacheFileNames(root, relativePath), []);
 });
 
 test("document ingest prunes orphaned cache files", async () => {
@@ -102,10 +148,10 @@ test("document ingest prunes orphaned cache files", async () => {
   await createMinimalPdf(pdfPath, "orphaned cache marker");
   await extractAndCacheDocument(root, pdfPath, relativePath);
   await fs.rm(pdfPath);
-  assert.equal((await cacheFileNames(root)).length, 2);
+  assert.equal((await cacheFileNames(root, relativePath)).length, 2);
 
   await pruneDocumentIngestCacheFiles(root);
-  assert.deepEqual(await cacheFileNames(root), []);
+  assert.deepEqual(await cacheFileNames(root, relativePath), []);
 });
 
 test("document ingest extracts DOCX text without LibreOffice through OpenXML", async () => {
@@ -259,7 +305,7 @@ test("document ingest migrates legacy annotations into document-folder state", a
   const relativePath = "Notes/paper.pdf";
   const legacyPath = legacyAnnotationsPathForDocument(root, relativePath);
   const primaryPath = annotationsPathForDocument(root, relativePath);
-  assert.equal(primaryPath, path.join(root, "Notes", ".codmes", "annotations", "paper.codmes.json"));
+  assert.match(primaryPath, /\.codmes\/documents\/paper--[a-f0-9]{8}\/annotations\.json$/);
   assert.notEqual(primaryPath, legacyPath);
   await fs.mkdir(path.dirname(legacyPath), { recursive: true });
   await fs.writeFile(legacyPath, JSON.stringify({
@@ -281,6 +327,8 @@ test("document ingest migrates legacy annotations into document-folder state", a
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0].text, "legacy annotation migrated");
   await fs.access(primaryPath);
+  await fs.access(documentManifestPath(root, relativePath));
+  await assert.rejects(fs.access(legacyPath), { code: "ENOENT" });
 });
 
 test("document ingest migrates content-scoped hidden annotations into document-folder state", async () => {
@@ -288,7 +336,7 @@ test("document ingest migrates content-scoped hidden annotations into document-f
   const relativePath = "Documents/lecture.pdf";
   const contentScopedPath = contentScopedAnnotationsPathForDocument(root, relativePath);
   const primaryPath = annotationsPathForDocument(root, relativePath);
-  assert.equal(primaryPath, path.join(root, "Documents", ".codmes", "annotations", "lecture.codmes.json"));
+  assert.match(primaryPath, /\.codmes\/documents\/lecture--[a-f0-9]{8}\/annotations\.json$/);
   assert.match(contentScopedPath, /Documents\/\.codmes\/annotations/);
   await fs.mkdir(path.dirname(contentScopedPath), { recursive: true });
   await fs.writeFile(contentScopedPath, JSON.stringify({
@@ -310,6 +358,24 @@ test("document ingest migrates content-scoped hidden annotations into document-f
   assert.equal(blocks.length, 1);
   assert.equal(blocks[0].text, "content state migrated");
   await fs.access(primaryPath);
+  await assert.rejects(fs.access(contentScopedPath), { code: "ENOENT" });
+});
+
+test("document ingest migrates annotations previously stored beside the document folder", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-ingest-folder-state-migration-"));
+  const relativePath = "Notes/legacy-paper.pdf";
+  const previousPath = documentFolderAnnotationsPathForDocument(root, relativePath);
+  await fs.mkdir(path.dirname(previousPath), { recursive: true });
+  await fs.writeFile(previousPath, JSON.stringify({
+    schemaVersion: 2,
+    documentPath: relativePath,
+    pages: [{ pageIndex: 0, objects: [{ id: "old-text", type: "text", text: "old folder annotation" }] }]
+  }), "utf8");
+
+  const blocks = await extractDocumentAnnotationBlocks(root, relativePath);
+  assert.equal(blocks[0].text, "old folder annotation");
+  await fs.access(annotationsPathForDocument(root, relativePath));
+  await assert.rejects(fs.access(previousPath), { code: "ENOENT" });
 });
 
 test("PDF annotation image OCR is cached by content hash while bbox stays live", async () => {
@@ -356,7 +422,7 @@ test("PDF annotation image OCR is cached by content hash while bbox stays live",
     assert.equal(first[0].bbox.x, 0.1);
     assert.equal(first[0].metadata.cached, false);
     assert.ok(first[0].metadata.contentHash.startsWith("sha256-"));
-    await fs.access(annotationOcrCachePath(root, first[0].metadata.contentHash));
+    await fs.access(annotationOcrCachePath(root, "Documents/live-bbox.pdf", first[0].metadata.contentHash));
 
     await writeAnnotation({ x: 0.55, y: 0.22, width: 0.18, height: 0.19 });
     const second = await extractDocumentAnnotationBlocks(root, "Documents/live-bbox.pdf");
@@ -382,8 +448,8 @@ doc.save(path)
   await execFileAsync(process.env.CODMES_PYTHON || ".codmes-runtime/bin/python", ["-c", script, filePath, text]);
 }
 
-async function cacheFileNames(root) {
-  return await fs.readdir(path.join(root, ".codmes", "index", "documents")).catch(() => []);
+async function cacheFileNames(root, relativePath) {
+  return await fs.readdir(documentIngestCacheDirectory(root, relativePath)).catch(() => []);
 }
 
 async function createTablePdf(filePath) {

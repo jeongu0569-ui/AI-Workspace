@@ -136,8 +136,8 @@ Status: in progress.
 Done for first pass:
 
 - PDF annotation and Apple Pencil storage/sync for iOS/iPadOS page ink through
-  document-folder state files such as
-  `Notes/.codmes/annotations/mypage.codmes.json`.
+  workspace document state files such as
+  `.codmes/documents/mypage--<path-hash>/annotations.json`.
 - Platform-neutral ink storage uses normalized `inkStrokes`. Legacy
   `inkDataBase64` can still be read for older Apple state.
 - iOS/iPadOS PDF annotation objects for text boxes and image attachments.

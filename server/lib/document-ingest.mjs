@@ -42,90 +42,96 @@ export function isDocumentIngestFile(relativePath) {
   return DOCUMENT_EXTENSIONS.has(path.extname(String(relativePath || "")).toLowerCase());
 }
 
-export function documentIngestCacheDirectory(workspaceRoot) {
-  return path.join(workspaceRoot, ".codmes", "index", "documents");
+export function documentStateRootDirectory(workspaceRoot) {
+  return path.join(workspaceRoot, ".codmes", "documents");
 }
 
-export function documentIngestCachePath(workspaceRoot, relativePath, stat) {
-  const stamp = stat ? `${stat.size}:${stat.mtimeMs}` : "";
-  const key = crypto
-    .createHash("sha256")
-    .update(`v${DOCUMENT_INGEST_CACHE_VERSION}\n${String(relativePath || "").replace(/\\/g, "/")}\n${stamp}`)
-    .digest("hex");
-  return path.join(documentIngestCacheDirectory(workspaceRoot), `${key}.json`);
+export function documentStateDirectory(workspaceRoot, relativePath) {
+  const normalized = normalizeDocumentPath(relativePath);
+  const parsed = path.posix.parse(normalized);
+  const readableName = sanitizeDocumentDirectoryName(parsed.name || "document");
+  const pathHash = crypto.createHash("sha256").update(normalized.normalize("NFC")).digest("hex").slice(0, 8);
+  return path.join(documentStateRootDirectory(workspaceRoot), `${readableName}--${pathHash}`);
 }
 
-export function documentIngestMarkdownPath(workspaceRoot, relativePath, stat) {
-  return documentIngestCachePath(workspaceRoot, relativePath, stat).replace(/\.json$/, ".md");
+export function documentManifestPath(workspaceRoot, relativePath) {
+  return path.join(documentStateDirectory(workspaceRoot, relativePath), "manifest.json");
 }
 
-export async function removeDocumentIngestCacheFiles(workspaceRoot, relativePaths, options = {}) {
+export function documentIngestCacheDirectory(workspaceRoot, relativePath) {
+  return path.join(documentStateDirectory(workspaceRoot, relativePath), "index");
+}
+
+export function documentIngestCachePath(workspaceRoot, relativePath, _stat = null) {
+  return path.join(documentIngestCacheDirectory(workspaceRoot, relativePath), "extraction.json");
+}
+
+export function documentIngestMarkdownPath(workspaceRoot, relativePath, _stat = null) {
+  return path.join(documentIngestCacheDirectory(workspaceRoot, relativePath), "content.md");
+}
+
+export async function ensureDocumentStateManifest(workspaceRoot, relativePath) {
+  const normalized = normalizeDocumentPath(relativePath);
+  const manifestPath = documentManifestPath(workspaceRoot, normalized);
+  const manifest = {
+    schemaVersion: 1,
+    documentId: path.basename(documentStateDirectory(workspaceRoot, normalized)).split("--").at(-1),
+    sourcePath: normalized,
+    displayName: path.posix.basename(normalized),
+    updatedAt: new Date().toISOString()
+  };
+  await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+  let existing = null;
+  try { existing = JSON.parse(await fs.readFile(manifestPath, "utf8")); } catch {}
+  if (existing?.sourcePath === normalized && existing?.displayName === manifest.displayName) return existing;
+  await fs.writeFile(manifestPath, JSON.stringify({ ...existing, ...manifest }, null, 2) + "\n", "utf8");
+  return manifest;
+}
+
+export async function removeDocumentIngestCacheFiles(workspaceRoot, relativePaths) {
   const targets = [].concat(relativePaths || [])
     .map(normalizeDocumentPath)
     .filter(Boolean);
   if (!targets.length) return { removed: 0 };
-  const keep = new Set([].concat(options.keepPaths || []).map((item) => path.resolve(String(item))));
-  const cacheDirectory = documentIngestCacheDirectory(workspaceRoot);
-  const entries = await fs.readdir(cacheDirectory, { withFileTypes: true }).catch(() => []);
+  const documentPaths = await matchingDocumentStatePaths(workspaceRoot, targets);
   const removals = [];
-  const matchedDocuments = new Set();
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    const jsonPath = path.join(cacheDirectory, entry.name);
-    if (keep.has(path.resolve(jsonPath))) continue;
-    let cached;
-    try {
-      cached = JSON.parse(await fs.readFile(jsonPath, "utf8"));
-    } catch {
-      continue;
-    }
-    const documentPath = normalizeDocumentPath(cached.path);
-    if (!documentPath || !targets.some((target) => documentPath === target || documentPath.startsWith(`${target}/`))) {
-      continue;
-    }
-    matchedDocuments.add(documentPath);
-    removals.push(fs.rm(jsonPath, { force: true }));
-    removals.push(fs.rm(jsonPath.replace(/\.json$/, ".md"), { force: true }));
+  for (const documentPath of documentPaths) {
+    const indexDirectory = documentIngestCacheDirectory(workspaceRoot, documentPath);
+    removals.push(fs.rm(indexDirectory, { recursive: true, force: true }));
   }
-  for (const documentPath of matchedDocuments) {
-    removals.push(fs.rm(documentVlmRenderDirectory(workspaceRoot, documentPath), { recursive: true, force: true }));
-  }
+  const legacyRemoved = await removeLegacyDocumentCacheFiles(workspaceRoot, targets);
   await Promise.all(removals);
-  return { removed: removals.length };
+  return { removed: removals.length + legacyRemoved };
 }
 
 export async function pruneDocumentIngestCacheFiles(workspaceRoot) {
-  const cacheDirectory = documentIngestCacheDirectory(workspaceRoot);
-  const entries = await fs.readdir(cacheDirectory, { withFileTypes: true }).catch(() => []);
+  const entries = await readDocumentStateManifests(workspaceRoot);
   const removals = [];
-  const removedDocuments = new Set();
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-    const jsonPath = path.join(cacheDirectory, entry.name);
-    let cached;
-    try {
-      cached = JSON.parse(await fs.readFile(jsonPath, "utf8"));
-    } catch {
-      continue;
-    }
-    const relativePath = normalizeDocumentPath(cached.path);
+    const relativePath = normalizeDocumentPath(entry.manifest.sourcePath);
     if (!relativePath) continue;
     const absolutePath = path.join(workspaceRoot, ...relativePath.split("/"));
     const stat = await fs.stat(absolutePath).catch(() => null);
-    const currentPath = stat ? documentIngestCachePath(workspaceRoot, relativePath, stat) : null;
-    if (currentPath && path.resolve(currentPath) === path.resolve(jsonPath)) continue;
-    removals.push(fs.rm(jsonPath, { force: true }));
-    removals.push(fs.rm(jsonPath.replace(/\.json$/, ".md"), { force: true }));
-    if (!stat) removedDocuments.add(relativePath);
-  }
-  for (const relativePath of removedDocuments) {
-    removals.push(fs.rm(documentVlmRenderDirectory(workspaceRoot, relativePath), { recursive: true, force: true }));
+    if (!stat) {
+      removals.push(fs.rm(path.join(entry.directory, "index"), { recursive: true, force: true }));
+      continue;
+    }
+    let cached = null;
+    try { cached = JSON.parse(await fs.readFile(documentIngestCachePath(workspaceRoot, relativePath), "utf8")); } catch {}
+    if (!isCurrentDocumentCache(cached, relativePath, stat)) {
+      removals.push(fs.rm(path.join(entry.directory, "index"), { recursive: true, force: true }));
+    }
   }
   await Promise.all(removals);
-  return { removed: removals.length };
+  const legacyRemoved = await pruneLegacyDocumentCacheFiles(workspaceRoot);
+  return { removed: removals.length + legacyRemoved };
 }
 
 export function annotationsPathForDocument(workspaceRoot, relativePath) {
+  return path.join(documentStateDirectory(workspaceRoot, relativePath), "annotations.json");
+}
+
+export function documentFolderAnnotationsPathForDocument(workspaceRoot, relativePath) {
   const normalized = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
   const parsed = path.posix.parse(normalized);
   const stateName = `${parsed.name || "document"}.codmes.json`;
@@ -147,13 +153,18 @@ export function legacyAnnotationsPathForDocument(workspaceRoot, relativePath) {
   return path.join(workspaceRoot, ".codmes", "annotations", `${encoded}.json`);
 }
 
-export function annotationOcrCachePath(workspaceRoot, contentHash) {
-  return path.join(workspaceRoot, ".codmes", "index", "annotation-ocr", `${String(contentHash || "").replace(/^sha256-/, "")}.json`);
+export function annotationOcrCachePath(workspaceRoot, relativePath, contentHash) {
+  return path.join(
+    documentIngestCacheDirectory(workspaceRoot, relativePath),
+    "annotation-ocr",
+    `${String(contentHash || "").replace(/^sha256-/, "")}.json`
+  );
 }
 
 export async function getDocumentIngestMetadata(workspaceRoot, absolutePath, relativePath, stat = null) {
   const fileStat = stat || await fs.stat(absolutePath);
   const cachePath = documentIngestCachePath(workspaceRoot, relativePath, fileStat);
+  await migrateLegacyDocumentCache(workspaceRoot, relativePath, fileStat);
   let cached = false;
   let textLength = 0;
   let blockCount = 0;
@@ -161,11 +172,13 @@ export async function getDocumentIngestMetadata(workspaceRoot, absolutePath, rel
   let warnings = [];
   try {
     const cachedJson = JSON.parse(await fs.readFile(cachePath, "utf8"));
-    cached = true;
-    textLength = String(cachedJson.text || "").length;
-    blockCount = Array.isArray(cachedJson.blocks) ? cachedJson.blocks.length : 0;
-    tableCount = Array.isArray(cachedJson.tables) ? cachedJson.tables.length : 0;
-    warnings = Array.isArray(cachedJson.warnings) ? cachedJson.warnings : [];
+    if (isCurrentDocumentCache(cachedJson, relativePath, fileStat)) {
+      cached = true;
+      textLength = String(cachedJson.text || "").length;
+      blockCount = Array.isArray(cachedJson.blocks) ? cachedJson.blocks.length : 0;
+      tableCount = Array.isArray(cachedJson.tables) ? cachedJson.tables.length : 0;
+      warnings = Array.isArray(cachedJson.warnings) ? cachedJson.warnings : [];
+    }
   } catch {}
   return {
     type: "document-ingest",
@@ -175,7 +188,7 @@ export async function getDocumentIngestMetadata(workspaceRoot, absolutePath, rel
     tableCount,
     warnings,
     cachePath: path.relative(workspaceRoot, cachePath).replace(/\\/g, "/"),
-    markdownPath: path.relative(workspaceRoot, cachePath.replace(/\.json$/, ".md")).replace(/\\/g, "/"),
+    markdownPath: path.relative(workspaceRoot, documentIngestMarkdownPath(workspaceRoot, relativePath)).replace(/\\/g, "/"),
     supported: isDocumentIngestFile(relativePath)
   };
 }
@@ -189,20 +202,28 @@ export async function extractAndCacheDocument(workspaceRoot, absolutePath, relat
   const fileStat = stat || await fs.stat(absolutePath);
   const cachePath = documentIngestCachePath(workspaceRoot, relativePath, fileStat);
   const markdownPath = documentIngestMarkdownPath(workspaceRoot, relativePath, fileStat);
-  await removeDocumentIngestCacheFiles(workspaceRoot, [relativePath], { keepPaths: [cachePath] });
+  await ensureDocumentStateManifest(workspaceRoot, relativePath);
+  await migrateLegacyDocumentCache(workspaceRoot, relativePath, fileStat);
   try {
     const cached = JSON.parse(await fs.readFile(cachePath, "utf8"));
-    await ensureDocumentMarkdown(markdownPath, cached);
-    return cached;
+    if (isCurrentDocumentCache(cached, relativePath, fileStat)) {
+      await ensureDocumentMarkdown(markdownPath, cached);
+      return cached;
+    }
   } catch {}
+  await fs.rm(path.dirname(cachePath), { recursive: true, force: true });
 
   const result = await runDocumentWorker({ absolutePath, relativePath });
-  const normalized = await maybeEnhanceWithVlmOcr(
+  const extracted = await maybeEnhanceWithVlmOcr(
     workspaceRoot,
     absolutePath,
     relativePath,
     normalizeWorkerResult(result, relativePath)
   );
+  const normalized = {
+    ...extracted,
+    cache: documentCacheIdentity(relativePath, fileStat)
+  };
   await fs.mkdir(path.dirname(cachePath), { recursive: true });
   await fs.writeFile(cachePath, JSON.stringify(normalized, null, 2) + "\n", "utf8");
   await fs.writeFile(markdownPath, documentMarkdown(normalized), "utf8");
@@ -248,7 +269,7 @@ export async function extractDocumentAnnotationBlocks(workspaceRoot, relativePat
       const mime = object.metadata?.mime || object.metadata?.contentType || "image/png";
       const dataBase64 = String(object.dataBase64).replace(/^data:[^,]+,/, "");
       const contentHash = annotationImageContentHash(object, dataBase64);
-      const ocr = await readOrCreateAnnotationImageOcr(workspaceRoot, config, {
+      const ocr = await readOrCreateAnnotationImageOcr(workspaceRoot, relativePath, config, {
         contentHash,
         mime,
         dataBase64
@@ -272,11 +293,28 @@ export async function extractDocumentAnnotationBlocks(workspaceRoot, relativePat
   return blocks;
 }
 
-async function readOrCreateAnnotationImageOcr(workspaceRoot, config, { contentHash, mime, dataBase64 }) {
-  const cachePath = annotationOcrCachePath(workspaceRoot, contentHash);
+async function readOrCreateAnnotationImageOcr(workspaceRoot, relativePath, config, { contentHash, mime, dataBase64 }) {
+  const cachePath = annotationOcrCachePath(workspaceRoot, relativePath, contentHash);
   try {
     const cached = JSON.parse(await fs.readFile(cachePath, "utf8"));
     if (String(cached.text || "").trim()) {
+      return { ...cached, cached: true };
+    }
+  } catch {}
+  const legacyPath = path.join(
+    workspaceRoot,
+    ".codmes",
+    "index",
+    "annotation-ocr",
+    `${String(contentHash || "").replace(/^sha256-/, "")}.json`
+  );
+  try {
+    const cached = JSON.parse(await fs.readFile(legacyPath, "utf8"));
+    if (String(cached.text || "").trim()) {
+      await ensureDocumentStateManifest(workspaceRoot, relativePath);
+      await fs.mkdir(path.dirname(cachePath), { recursive: true });
+      await fs.writeFile(cachePath, JSON.stringify(cached, null, 2) + "\n", "utf8");
+      await fs.rm(legacyPath, { force: true });
       return { ...cached, cached: true };
     }
   } catch {}
@@ -415,23 +453,30 @@ async function maybeEnhanceWithVlmOcr(workspaceRoot, absolutePath, relativePath,
 async function readAnnotationsForDocument(workspaceRoot, relativePath) {
   const primaryPath = annotationsPathForDocument(workspaceRoot, relativePath);
   try {
-    return JSON.parse(await fs.readFile(primaryPath, "utf8"));
+    const annotations = JSON.parse(await fs.readFile(primaryPath, "utf8"));
+    await ensureDocumentStateManifest(workspaceRoot, relativePath);
+    return annotations;
   } catch (error) {
     if (error?.code !== "ENOENT") return null;
   }
 
   for (const legacyPath of [
+    documentFolderAnnotationsPathForDocument(workspaceRoot, relativePath),
     contentScopedAnnotationsPathForDocument(workspaceRoot, relativePath),
     legacyAnnotationsPathForDocument(workspaceRoot, relativePath)
   ]) {
     if (legacyPath === primaryPath) continue;
     try {
       const raw = await fs.readFile(legacyPath, "utf8");
+      const parsed = JSON.parse(raw);
       await fs.mkdir(path.dirname(primaryPath), { recursive: true });
       await fs.writeFile(primaryPath, raw, { flag: "wx" }).catch((error) => {
         if (error?.code !== "EEXIST") throw error;
       });
-      return JSON.parse(raw);
+      await ensureDocumentStateManifest(workspaceRoot, relativePath);
+      const persisted = JSON.parse(await fs.readFile(primaryPath, "utf8"));
+      await fs.rm(legacyPath, { force: true });
+      return persisted || parsed;
     } catch (error) {
       if (error?.code !== "ENOENT") return null;
     }
@@ -574,17 +619,141 @@ print(json.dumps(items))
 }
 
 function documentVlmRenderDirectory(workspaceRoot, relativePath) {
-  const normalized = normalizeDocumentPath(relativePath);
-  const absolutePath = path.join(workspaceRoot, ...normalized.split("/"));
-  return path.join(
-    documentIngestCacheDirectory(workspaceRoot),
-    "vlm-pages",
-    crypto.createHash("sha256").update(`${normalized}\n${absolutePath}`).digest("hex").slice(0, 16)
-  );
+  return path.join(documentIngestCacheDirectory(workspaceRoot, relativePath), "vlm-pages");
 }
 
 function normalizeDocumentPath(value) {
   return String(value || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+}
+
+function sanitizeDocumentDirectoryName(value) {
+  const normalized = String(value || "document").normalize("NFC")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return Array.from(normalized || "document").slice(0, 80).join("");
+}
+
+function documentCacheIdentity(relativePath, stat) {
+  return {
+    version: DOCUMENT_INGEST_CACHE_VERSION,
+    sourcePath: normalizeDocumentPath(relativePath),
+    size: Number(stat?.size || 0),
+    mtimeMs: Number(stat?.mtimeMs || 0)
+  };
+}
+
+function isCurrentDocumentCache(cached, relativePath, stat) {
+  const expected = documentCacheIdentity(relativePath, stat);
+  return Number(cached?.schemaVersion) === DOCUMENT_INGEST_CACHE_VERSION
+    && Number(cached?.cache?.version) === expected.version
+    && normalizeDocumentPath(cached?.cache?.sourcePath || cached?.path) === expected.sourcePath
+    && Number(cached?.cache?.size) === expected.size
+    && Number(cached?.cache?.mtimeMs) === expected.mtimeMs;
+}
+
+function legacyDocumentIngestCacheDirectory(workspaceRoot) {
+  return path.join(workspaceRoot, ".codmes", "index", "documents");
+}
+
+function legacyDocumentIngestCachePath(workspaceRoot, relativePath, stat, version = DOCUMENT_INGEST_CACHE_VERSION) {
+  const stamp = stat ? `${stat.size}:${stat.mtimeMs}` : "";
+  const normalized = normalizeDocumentPath(relativePath);
+  const input = version === 1 ? `${normalized}\n${stamp}` : `v${version}\n${normalized}\n${stamp}`;
+  const key = crypto.createHash("sha256").update(input).digest("hex");
+  return path.join(legacyDocumentIngestCacheDirectory(workspaceRoot), `${key}.json`);
+}
+
+async function migrateLegacyDocumentCache(workspaceRoot, relativePath, stat) {
+  const targetPath = documentIngestCachePath(workspaceRoot, relativePath);
+  try {
+    const current = JSON.parse(await fs.readFile(targetPath, "utf8"));
+    if (isCurrentDocumentCache(current, relativePath, stat)) return current;
+  } catch {}
+
+  const legacyPath = legacyDocumentIngestCachePath(workspaceRoot, relativePath, stat);
+  let legacy = null;
+  try { legacy = JSON.parse(await fs.readFile(legacyPath, "utf8")); } catch {}
+  if (!legacy || Number(legacy.schemaVersion) !== DOCUMENT_INGEST_CACHE_VERSION) return null;
+
+  const migrated = { ...legacy, cache: documentCacheIdentity(relativePath, stat) };
+  const markdownPath = documentIngestMarkdownPath(workspaceRoot, relativePath);
+  await ensureDocumentStateManifest(workspaceRoot, relativePath);
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, JSON.stringify(migrated, null, 2) + "\n", "utf8");
+  const legacyMarkdownPath = legacyPath.replace(/\.json$/, ".md");
+  const markdown = await fs.readFile(legacyMarkdownPath, "utf8").catch(() => documentMarkdown(migrated));
+  await fs.writeFile(markdownPath, markdown, "utf8");
+  await removeLegacyDocumentCacheFiles(workspaceRoot, [relativePath]);
+  return migrated;
+}
+
+async function readDocumentStateManifests(workspaceRoot) {
+  const root = documentStateRootDirectory(workspaceRoot);
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const results = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const directory = path.join(root, entry.name);
+    try {
+      const manifest = JSON.parse(await fs.readFile(path.join(directory, "manifest.json"), "utf8"));
+      results.push({ directory, manifest });
+    } catch {}
+  }
+  return results;
+}
+
+async function matchingDocumentStatePaths(workspaceRoot, targets) {
+  const paths = new Set();
+  for (const target of targets) {
+    if (path.posix.extname(target)) paths.add(target);
+  }
+  for (const entry of await readDocumentStateManifests(workspaceRoot)) {
+    const sourcePath = normalizeDocumentPath(entry.manifest.sourcePath);
+    if (targets.some((target) => sourcePath === target || sourcePath.startsWith(`${target}/`))) paths.add(sourcePath);
+  }
+  return paths;
+}
+
+async function removeLegacyDocumentCacheFiles(workspaceRoot, targets) {
+  const directory = legacyDocumentIngestCacheDirectory(workspaceRoot);
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  const removals = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const jsonPath = path.join(directory, entry.name);
+    let cached = null;
+    try { cached = JSON.parse(await fs.readFile(jsonPath, "utf8")); } catch {}
+    const sourcePath = normalizeDocumentPath(cached?.path);
+    if (!sourcePath || !targets.some((target) => sourcePath === target || sourcePath.startsWith(`${target}/`))) continue;
+    removals.push(fs.rm(jsonPath, { force: true }));
+    removals.push(fs.rm(jsonPath.replace(/\.json$/, ".md"), { force: true }));
+  }
+  await Promise.all(removals);
+  return removals.length;
+}
+
+async function pruneLegacyDocumentCacheFiles(workspaceRoot) {
+  const directory = legacyDocumentIngestCacheDirectory(workspaceRoot);
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  const removals = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const jsonPath = path.join(directory, entry.name);
+    let cached = null;
+    try { cached = JSON.parse(await fs.readFile(jsonPath, "utf8")); } catch {}
+    const sourcePath = normalizeDocumentPath(cached?.path);
+    if (!sourcePath) continue;
+    const absolutePath = path.join(workspaceRoot, ...sourcePath.split("/"));
+    const sourceExists = await fs.stat(absolutePath).then(() => true).catch(() => false);
+    const migratedExists = await fs.stat(documentIngestCachePath(workspaceRoot, sourcePath)).then(() => true).catch(() => false);
+    if (sourceExists && !migratedExists) continue;
+    removals.push(fs.rm(jsonPath, { force: true }));
+    removals.push(fs.rm(jsonPath.replace(/\.json$/, ".md"), { force: true }));
+  }
+  await Promise.all(removals);
+  return removals.length;
 }
 
 async function callConfiguredVlm(config, input) {

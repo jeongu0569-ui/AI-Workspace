@@ -304,7 +304,7 @@ Returns the current metadata index summary from `.codmes/index/files.json`.
 Rebuilds the current workspace file metadata index and Codmes native search
 index. The search index stores chunk metadata and text snippets under
 `.codmes/index/search.json`. Document extraction results are cached under
-`.codmes/index/documents`. Embedding provider/model settings are persisted in
+`.codmes/documents/<document-key>/index`. Embedding provider/model settings are persisted in
 the index metadata; actual vector embedding generation is a future layer.
 
 ## Runtime Management

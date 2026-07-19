@@ -50,7 +50,7 @@ These are rendered into the system/context message as compact “Search results 
 First pass implemented:
 
 - PDF metadata appears under `GET /api/file/metadata`.
-- Text-layer PDF and Office extraction utility caches text under `.codmes/index/documents/`.
+- Text-layer PDF and Office extraction utility caches text under `.codmes/documents/<document-key>/index/`.
 - Codmes Search can index and search extracted PDF, image, Office, HWP, spreadsheet, and ZIP text.
 
 Planned:

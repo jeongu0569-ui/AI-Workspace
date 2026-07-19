@@ -12,15 +12,14 @@ For a PDF file:
 Notes/mypage.pdf
 ```
 
-Codmes stores editable annotation state next to the document folder:
+Codmes stores editable annotation state in the workspace document registry:
 
 ```text
-Notes/.codmes/annotations/mypage.codmes.json
+.codmes/documents/mypage--<path-hash>/annotations.json
 ```
 
-This keeps the PDF visible in normal file lists while letting a folder move or
-copy carry its editable notes with it. The server also migrates older state
-paths when it reads annotations.
+The readable name makes the state easy to inspect, while the relative-path hash
+prevents collisions. The server migrates older state paths when it reads annotations.
 
 API:
 
@@ -153,7 +152,7 @@ server:
 2. The client loads editable annotation JSON through `GET /api/file/annotations`.
 3. Drawing or object edits update local state.
 4. The client saves state with `PUT /api/file/annotations`.
-5. The server writes `Notes/.codmes/annotations/*.codmes.json`.
+5. The server writes `.codmes/documents/<document-key>/annotations.json`.
 6. The server refreshes the search index for the PDF path.
 
 The server can use the saved PDF and annotation state for derived features such
@@ -178,7 +177,7 @@ erase behavior and [Undo And Redo](undo-redo.md) for history behavior.
 A future Windows or Android client should:
 
 1. Load the PDF through the platform-native PDF viewer.
-2. Load the matching `.codmes/annotations/*.codmes.json` file through the
+2. Load the matching `.codmes/documents/<document-key>/annotations.json` file through the
    Codmes Server API.
 3. Render each `inkStrokes` point list over the page using normalized page
    coordinates.

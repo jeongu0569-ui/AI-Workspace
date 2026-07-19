@@ -103,7 +103,7 @@ Codmes: PyMuPDF4LLM markdown -> PyMuPDF coordinates -> MarkItDown/internal extra
 Extraction cache:
 
 ```text
-<Workspace>/.codmes/index/documents/*.json
+<Workspace>/.codmes/documents/<document-key>/index/extraction.json
 ```
 
 The worker returns blocks with:
@@ -123,12 +123,10 @@ The worker returns blocks with:
 search result at the matching page and highlight text-layer blocks. The Apple
 client now has the first server-owned PDF annotation layer in place: iOS/iPadOS
 page ink is stored through `GET/PUT /api/file/annotations`. The physical JSON
-is stored in a hidden state folder inside the document folder, such as
-`Notes/.codmes/annotations/mypage.codmes.json`, so a user can move a document
-folder without cluttering the visible file list. Older root-level
-`.codmes/annotations` files and content-root `Notes/.codmes/annotations` files
-with encoded names are copied forward to the document-folder state path on first
-read.
+is stored under `.codmes/documents/<document-key>/annotations.json`. The readable
+name and short relative-path hash avoid collisions without cluttering the visible
+file list. Older root-level, content-root, and document-adjacent annotation files
+are moved forward to this workspace document registry on first read.
 
 For scanned PDFs or image-background PDFs, Codmes renders pages to PNG through
 PyMuPDF and sends each page image to the configured VLM endpoint. The returned
@@ -145,7 +143,7 @@ to the annotated PDF page.
 Annotation image OCR is cached by image content hash under:
 
 ```text
-<Workspace>/.codmes/index/annotation-ocr/
+<Workspace>/.codmes/documents/<document-key>/index/annotation-ocr/
 ```
 
 Moving, resizing, rotating, or deleting an annotation updates only the live

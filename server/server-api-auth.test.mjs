@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { annotationsPathForDocument } from "./lib/document-ingest.mjs";
+import { annotationsPathForDocument, documentManifestPath, documentStateDirectory } from "./lib/document-ingest.mjs";
 
 test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes management APIs", async () => {
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codmes-server-api-"));
@@ -86,8 +86,9 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     await fs.access(annotationsPathForDocument(workspaceRoot, "Documents/sample.pdf"));
     assert.equal(
       annotationsPathForDocument(workspaceRoot, "Documents/sample.pdf"),
-      path.join(workspaceRoot, "Documents", ".codmes", "annotations", "sample.codmes.json")
+      path.join(documentStateDirectory(workspaceRoot, "Documents/sample.pdf"), "annotations.json")
     );
+    await fs.access(documentManifestPath(workspaceRoot, "Documents/sample.pdf"));
 
     const movedPdf = await fetchJson(`${baseUrl}/api/file/move`, {
       token,
@@ -99,8 +100,9 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     assert.equal(movedAnnotations.documentPath, "Documents/renamed.pdf");
     assert.equal(movedAnnotations.pages[0].inkDataBase64, "cGVuLWRhdGE=");
     await fs.access(annotationsPathForDocument(workspaceRoot, "Documents/renamed.pdf"));
+    await fs.access(documentManifestPath(workspaceRoot, "Documents/renamed.pdf"));
     await assert.rejects(
-      fs.access(annotationsPathForDocument(workspaceRoot, "Documents/sample.pdf")),
+      fs.access(documentStateDirectory(workspaceRoot, "Documents/sample.pdf")),
       { code: "ENOENT" }
     );
 
@@ -113,6 +115,7 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     const copiedAnnotations = await fetchJson(`${baseUrl}/api/file/annotations?path=Documents/copied.pdf`, { token });
     assert.equal(copiedAnnotations.documentPath, "Documents/copied.pdf");
     assert.equal(copiedAnnotations.pages[0].inkDataBase64, "cGVuLWRhdGE=");
+    await fs.access(documentManifestPath(workspaceRoot, "Documents/copied.pdf"));
 
     const deletedCopy = await fetchJson(`${baseUrl}/api/file?path=Documents/copied.pdf`, {
       token,
@@ -120,7 +123,7 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     });
     assert.equal(deletedCopy.path, "Documents/copied.pdf");
     await assert.rejects(
-      fs.access(annotationsPathForDocument(workspaceRoot, "Documents/copied.pdf")),
+      fs.access(documentStateDirectory(workspaceRoot, "Documents/copied.pdf")),
       { code: "ENOENT" }
     );
 

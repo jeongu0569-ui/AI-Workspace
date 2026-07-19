@@ -65,7 +65,7 @@ Workspace 안에 저장됩니다.
 문서 추출 캐시는 다음 경로에 저장됩니다.
 
 ```text
-<Workspace>/.codmes/index/documents/
+<Workspace>/.codmes/documents/<document-key>/index/
 ```
 
 이 파일들은 사용자의 workspace 상태 데이터입니다. 공개 Git 저장소에 커밋하면 안 됩니다.
@@ -343,7 +343,7 @@ annotation-image-ocr
 ```text
 이미지 내용
   -> contentHash 기준 OCR cache
-  -> .codmes/index/annotation-ocr/
+  -> .codmes/documents/<document-key>/index/annotation-ocr/
 
 이미지 위치/크기
   -> annotation object의 pageIndex/bbox

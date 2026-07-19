@@ -95,7 +95,7 @@ Current search provider is `codmes-search-index` after the first rebuild, with
 `workspace-scan` as the secondary search path when no index exists. It supports content
 search, filename hits, scope filtering, `kind`/`kinds`, modified date filters,
 and first-pass PDF/Office/HWP/Excel/image/ZIP extraction through
-`.codmes/index/documents/`.
+`.codmes/documents/<document-key>/index/`.
 
 Codmes Search ownership and incremental indexing are tracked in
 `docs/search/codmes-search-integration.md`.
