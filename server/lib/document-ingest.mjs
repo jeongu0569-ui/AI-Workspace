@@ -59,6 +59,72 @@ export function documentIngestMarkdownPath(workspaceRoot, relativePath, stat) {
   return documentIngestCachePath(workspaceRoot, relativePath, stat).replace(/\.json$/, ".md");
 }
 
+export async function removeDocumentIngestCacheFiles(workspaceRoot, relativePaths, options = {}) {
+  const targets = [].concat(relativePaths || [])
+    .map(normalizeDocumentPath)
+    .filter(Boolean);
+  if (!targets.length) return { removed: 0 };
+  const keep = new Set([].concat(options.keepPaths || []).map((item) => path.resolve(String(item))));
+  const cacheDirectory = documentIngestCacheDirectory(workspaceRoot);
+  const entries = await fs.readdir(cacheDirectory, { withFileTypes: true }).catch(() => []);
+  const removals = [];
+  const matchedDocuments = new Set();
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const jsonPath = path.join(cacheDirectory, entry.name);
+    if (keep.has(path.resolve(jsonPath))) continue;
+    let cached;
+    try {
+      cached = JSON.parse(await fs.readFile(jsonPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const documentPath = normalizeDocumentPath(cached.path);
+    if (!documentPath || !targets.some((target) => documentPath === target || documentPath.startsWith(`${target}/`))) {
+      continue;
+    }
+    matchedDocuments.add(documentPath);
+    removals.push(fs.rm(jsonPath, { force: true }));
+    removals.push(fs.rm(jsonPath.replace(/\.json$/, ".md"), { force: true }));
+  }
+  for (const documentPath of matchedDocuments) {
+    removals.push(fs.rm(documentVlmRenderDirectory(workspaceRoot, documentPath), { recursive: true, force: true }));
+  }
+  await Promise.all(removals);
+  return { removed: removals.length };
+}
+
+export async function pruneDocumentIngestCacheFiles(workspaceRoot) {
+  const cacheDirectory = documentIngestCacheDirectory(workspaceRoot);
+  const entries = await fs.readdir(cacheDirectory, { withFileTypes: true }).catch(() => []);
+  const removals = [];
+  const removedDocuments = new Set();
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const jsonPath = path.join(cacheDirectory, entry.name);
+    let cached;
+    try {
+      cached = JSON.parse(await fs.readFile(jsonPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const relativePath = normalizeDocumentPath(cached.path);
+    if (!relativePath) continue;
+    const absolutePath = path.join(workspaceRoot, ...relativePath.split("/"));
+    const stat = await fs.stat(absolutePath).catch(() => null);
+    const currentPath = stat ? documentIngestCachePath(workspaceRoot, relativePath, stat) : null;
+    if (currentPath && path.resolve(currentPath) === path.resolve(jsonPath)) continue;
+    removals.push(fs.rm(jsonPath, { force: true }));
+    removals.push(fs.rm(jsonPath.replace(/\.json$/, ".md"), { force: true }));
+    if (!stat) removedDocuments.add(relativePath);
+  }
+  for (const relativePath of removedDocuments) {
+    removals.push(fs.rm(documentVlmRenderDirectory(workspaceRoot, relativePath), { recursive: true, force: true }));
+  }
+  await Promise.all(removals);
+  return { removed: removals.length };
+}
+
 export function annotationsPathForDocument(workspaceRoot, relativePath) {
   const normalized = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
   const parsed = path.posix.parse(normalized);
@@ -123,6 +189,7 @@ export async function extractAndCacheDocument(workspaceRoot, absolutePath, relat
   const fileStat = stat || await fs.stat(absolutePath);
   const cachePath = documentIngestCachePath(workspaceRoot, relativePath, fileStat);
   const markdownPath = documentIngestMarkdownPath(workspaceRoot, relativePath, fileStat);
+  await removeDocumentIngestCacheFiles(workspaceRoot, [relativePath], { keepPaths: [cachePath] });
   try {
     const cached = JSON.parse(await fs.readFile(cachePath, "utf8"));
     await ensureDocumentMarkdown(markdownPath, cached);
@@ -457,11 +524,7 @@ async function renderPdfPageImagesForVlm(workspaceRoot, absolutePath, relativePa
   const python = await documentWorkerPython();
   const maxPages = clampNumber(config.maxPages, 1, 200, 40);
   const dpi = clampNumber(config.dpi, 96, 240, 150);
-  const renderDir = path.join(
-    documentIngestCacheDirectory(workspaceRoot),
-    "vlm-pages",
-    crypto.createHash("sha256").update(`${relativePath}\n${absolutePath}`).digest("hex").slice(0, 16)
-  );
+  const renderDir = documentVlmRenderDirectory(workspaceRoot, relativePath);
   await fs.rm(renderDir, { recursive: true, force: true });
   await fs.mkdir(renderDir, { recursive: true });
   const script = `
@@ -508,6 +571,20 @@ print(json.dumps(items))
     });
   }
   return inputs;
+}
+
+function documentVlmRenderDirectory(workspaceRoot, relativePath) {
+  const normalized = normalizeDocumentPath(relativePath);
+  const absolutePath = path.join(workspaceRoot, ...normalized.split("/"));
+  return path.join(
+    documentIngestCacheDirectory(workspaceRoot),
+    "vlm-pages",
+    crypto.createHash("sha256").update(`${normalized}\n${absolutePath}`).digest("hex").slice(0, 16)
+  );
+}
+
+function normalizeDocumentPath(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
 async function callConfiguredVlm(config, input) {

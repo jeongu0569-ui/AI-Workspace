@@ -5,7 +5,9 @@ import { fileKind, resolveWorkspacePath } from "./path-utils.mjs";
 import {
   extractAndCacheDocument,
   extractDocumentAnnotationBlocks,
-  isDocumentIngestFile
+  isDocumentIngestFile,
+  pruneDocumentIngestCacheFiles,
+  removeDocumentIngestCacheFiles
 } from "./document-ingest.mjs";
 import { searchConversationIndex } from "./runtime/conversation-index.mjs";
 
@@ -243,10 +245,18 @@ export async function buildSearchIndex(workspaceRoot, options = {}) {
   const filePath = searchIndexPath(workspaceRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(index, null, 2) + "\n", "utf8");
+  await pruneDocumentIngestCacheFiles(workspaceRoot);
   return index;
 }
 
 export async function updateSearchIndex(workspaceRoot, changedPaths = [], options = {}) {
+  for (const changedPath of [].concat(changedPaths || [])) {
+    const rel = String(changedPath || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    if (!rel || isInternalSearchPath(rel)) continue;
+    const resolved = resolveWorkspacePath(workspaceRoot, rel);
+    const stat = await fs.stat(resolved.absolutePath).catch(() => null);
+    if (!stat) await removeDocumentIngestCacheFiles(workspaceRoot, [rel]);
+  }
   const current = await readSearchIndex(workspaceRoot);
   if (!current) return await buildSearchIndex(workspaceRoot, options);
   const itemByPath = new Map((current.items || []).map((item) => [item.path, item]));

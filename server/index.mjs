@@ -27,7 +27,8 @@ import { buildSearchIndex, globalSearch, searchStatus, searchWorkspace, updateSe
 import {
   annotationsPathForDocument,
   contentScopedAnnotationsPathForDocument,
-  legacyAnnotationsPathForDocument
+  legacyAnnotationsPathForDocument,
+  removeDocumentIngestCacheFiles
 } from "./lib/document-ingest.mjs";
 import { readAuditSummary } from "./lib/runtime/audit-log.mjs";
 import {
@@ -1040,6 +1041,7 @@ async function movePath(req) {
   await fs.mkdir(path.dirname(to.absolutePath), { recursive: true });
   await fs.rename(from.absolutePath, to.absolutePath);
   await transferDocumentStateFiles(movedDocuments, { mode: "move" });
+  await removeDocumentIngestCacheFiles(WORKSPACE_ROOT, movedDocuments.map((transition) => transition.from));
   await refreshSearchIndexPaths([from.relativePath, to.relativePath]);
   return { ok: true, from: from.relativePath, to: to.relativePath };
 }
@@ -1323,6 +1325,7 @@ async function transferDocumentStateFiles(transitions, { mode }) {
 }
 
 async function removeDocumentStateFiles(relativePaths) {
+  await removeDocumentIngestCacheFiles(WORKSPACE_ROOT, relativePaths);
   for (const relativePath of relativePaths) {
     await removeAnnotationStateForPath(relativePath);
   }

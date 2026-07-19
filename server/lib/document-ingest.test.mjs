@@ -14,7 +14,9 @@ import {
   documentIngestMarkdownPath,
   getDocumentIngestMetadata,
   isDocumentIngestFile,
-  legacyAnnotationsPathForDocument
+  legacyAnnotationsPathForDocument,
+  pruneDocumentIngestCacheFiles,
+  removeDocumentIngestCacheFiles
 } from "./document-ingest.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -67,6 +69,43 @@ test("document ingest stores structured PDF tables and a Markdown sidecar", asyn
   const metadata = await getDocumentIngestMetadata(root, pdfPath, relativePath, stat);
   assert.ok(metadata.tableCount >= 1);
   assert.match(metadata.markdownPath, /\.md$/);
+});
+
+test("document ingest removes stale and deleted document cache files", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-ingest-cleanup-"));
+  await fs.mkdir(path.join(root, "Documents"), { recursive: true });
+  const relativePath = "Documents/manual.pdf";
+  const pdfPath = path.join(root, relativePath);
+
+  await createMinimalPdf(pdfPath, "first cache version");
+  await extractAndCacheDocument(root, pdfPath, relativePath);
+  assert.equal((await cacheFileNames(root)).length, 2);
+
+  await fs.rm(pdfPath);
+  await createMinimalPdf(pdfPath, "second cache version with a different size");
+  await extractAndCacheDocument(root, pdfPath, relativePath);
+  const refreshedEntries = await cacheFileNames(root);
+  assert.equal(refreshedEntries.length, 2);
+  assert.equal(refreshedEntries.filter((entry) => entry.endsWith(".json")).length, 1);
+  assert.equal(refreshedEntries.filter((entry) => entry.endsWith(".md")).length, 1);
+
+  await removeDocumentIngestCacheFiles(root, [relativePath]);
+  assert.deepEqual(await cacheFileNames(root), []);
+});
+
+test("document ingest prunes orphaned cache files", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-ingest-prune-"));
+  await fs.mkdir(path.join(root, "Documents"), { recursive: true });
+  const relativePath = "Documents/deleted.pdf";
+  const pdfPath = path.join(root, relativePath);
+
+  await createMinimalPdf(pdfPath, "orphaned cache marker");
+  await extractAndCacheDocument(root, pdfPath, relativePath);
+  await fs.rm(pdfPath);
+  assert.equal((await cacheFileNames(root)).length, 2);
+
+  await pruneDocumentIngestCacheFiles(root);
+  assert.deepEqual(await cacheFileNames(root), []);
 });
 
 test("document ingest extracts DOCX text without LibreOffice through OpenXML", async () => {
@@ -341,6 +380,10 @@ page.insert_text((72, 72), text, fontsize=14)
 doc.save(path)
 `;
   await execFileAsync(process.env.CODMES_PYTHON || ".codmes-runtime/bin/python", ["-c", script, filePath, text]);
+}
+
+async function cacheFileNames(root) {
+  return await fs.readdir(path.join(root, ".codmes", "index", "documents")).catch(() => []);
 }
 
 async function createTablePdf(filePath) {

@@ -313,6 +313,11 @@ test("searches extracted PDF text and caches it", async () => {
   assert.equal(cacheEntries.length, 2);
   assert.equal(cacheEntries.filter((entry) => entry.endsWith(".json")).length, 1);
   assert.equal(cacheEntries.filter((entry) => entry.endsWith(".md")).length, 1);
+
+  await fs.rm(path.join(root, "Documents", "manual.pdf"));
+  const updated = await updateSearchIndex(root, ["Documents/manual.pdf"]);
+  assert.equal(updated.items.some((item) => item.path === "Documents/manual.pdf"), false);
+  assert.deepEqual(await fs.readdir(path.join(root, ".codmes", "index", "documents")), []);
 });
 
 test("indexes searchable PDF annotation text and image OCR blocks", async () => {
