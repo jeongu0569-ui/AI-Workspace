@@ -63,13 +63,6 @@ fileprivate enum PDFMarkupTool: String, CaseIterable, Identifiable {
     }
 }
 
-fileprivate enum PDFLayerAction {
-    case backward
-    case forward
-    case back
-    case front
-}
-
 fileprivate struct PDFExportShare: Identifiable {
     let id = UUID()
     let urls: [URL]
@@ -169,7 +162,6 @@ struct PDFWorkspaceView: View {
     @State private var selectedObjectId: String?
     @State private var lassoSelection: PDFLassoSelectionSummary?
     @State private var textEditRequest = 0
-    @State private var isInspectorPresented = false
     @State private var isExportScopePresented = false
     @State private var isExportOptionsPresented = false
     @State private var exportPageScope = PDFExportPageScope.allPages
@@ -193,7 +185,6 @@ struct PDFWorkspaceView: View {
     @State private var macSelectedObjectId: String?
     @State private var macLassoSelection: PDFLassoSelectionSummary?
     @State private var macTextEditRequest = 0
-    @State private var isMacInspectorPresented = false
     #endif
 
     var body: some View {
@@ -277,8 +268,6 @@ struct PDFWorkspaceView: View {
                         isMacWritingMode = true
                         macMarkupTool = .text
                         macTextEditRequest += 1
-                    } else {
-                        isMacInspectorPresented = true
                     }
                 }
                     )
@@ -349,30 +338,6 @@ struct PDFWorkspaceView: View {
                 statusText = "Image import failed"
             }
         }
-        .sheet(isPresented: $isInspectorPresented) {
-            if let object = selectedAnnotationObject {
-                PDFAnnotationInspectorView(
-                    object: object,
-                    onChange: updateAnnotationObject(_:),
-                    onDuplicate: duplicateAnnotationObject(_:),
-                    onDelete: deleteAnnotationObject(_:),
-                    onLayerAction: moveAnnotationObject(_:action:)
-                )
-                .presentationDetents([.medium, .large])
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "hand.tap")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("Select a text box or image first.")
-                        .font(.headline)
-                    Text("Use Move mode, then tap an object on the PDF.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding()
-            }
-        }
         .sheet(item: $exportedPDFShare) { item in
             PDFShareSheet(urls: item.urls)
         }
@@ -403,30 +368,6 @@ struct PDFWorkspaceView: View {
                 importPDFPages(from: urls)
             case .failure:
                 statusText = "PDF import failed"
-            }
-        }
-        #elseif os(macOS)
-        .sheet(isPresented: $isMacInspectorPresented) {
-            if let object = selectedMacAnnotationObject {
-                MacPDFAnnotationInspectorView(
-                    object: object,
-                    onChange: updateMacAnnotationObject(_:),
-                    onDelete: deleteMacAnnotationObject(_:)
-                )
-                .frame(minWidth: 360, minHeight: 320)
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "hand.tap")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("Select a text box or image first.")
-                        .font(.headline)
-                    Text("Use Move mode, then click an object on the PDF.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(28)
-                .frame(minWidth: 320, minHeight: 220)
             }
         }
         #endif
@@ -537,16 +478,6 @@ struct PDFWorkspaceView: View {
             .accessibilityLabel("Attach image")
 
             Button {
-                isWritingMode = true
-                markupTool = .lasso
-                isInspectorPresented = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Annotation inspector")
-
-            Button {
                 exportPageCount = PDFDocument(url: rawFile.url)?.pageCount ?? 0
                 isExportScopePresented = true
             } label: {
@@ -599,18 +530,6 @@ struct PDFWorkspaceView: View {
                 .frame(width: 260)
                 .padding(14)
             }
-            Button {
-                isMacWritingMode = true
-                macMarkupTool = .lasso
-                isMacInspectorPresented = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.secondary)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Annotation inspector")
             #endif
         }
         .padding(.horizontal, 16)
@@ -1141,17 +1060,6 @@ struct PDFWorkspaceView: View {
         commitAnnotationDocument(next)
     }
 
-    private var selectedMacAnnotationObject: PDFAnnotationObject? {
-        guard let macSelectedObjectId else { return nil }
-        if let annotations {
-            for page in annotations.pages {
-                if let object = annotations.noteObjects(pageIndex: page.pageIndex).first(where: { $0.id == macSelectedObjectId }) {
-                    return object
-                }
-            }
-        }
-        return annotations?.objects.first(where: { $0.id == macSelectedObjectId })
-    }
     #endif
 
     private func loadAnnotations() async {
@@ -1417,66 +1325,6 @@ struct PDFWorkspaceView: View {
             next.pages.sort { $0.pageIndex < $1.pageIndex }
         }
         commitAnnotationDocument(next)
-    }
-
-    private var selectedAnnotationObject: PDFAnnotationObject? {
-        guard let selectedObjectId else { return nil }
-        return annotationObject(with: selectedObjectId)
-    }
-
-    private func annotationObject(with id: String) -> PDFAnnotationObject? {
-        if let annotations {
-            for page in annotations.pages {
-                if let object = annotations.noteObjects(pageIndex: page.pageIndex).first(where: { $0.id == id }) {
-                    return object
-                }
-            }
-            if let object = annotations.objects.first(where: { $0.id == id }) {
-                return object
-            }
-        }
-        return nil
-    }
-
-    private func duplicateAnnotationObject(_ object: PDFAnnotationObject) {
-        var copy = object
-        copy.id = UUID().uuidString
-        if let box = object.bbox?.normalizedOrSelf {
-            copy.bbox = AnnotationBoundingBox(
-                x: min(0.92, box.x + 0.035),
-                y: min(0.92, box.y + 0.035),
-                width: box.width,
-                height: box.height,
-                normalized: nil
-            )
-        }
-        updateAnnotationObject(copy)
-        selectedObjectId = copy.id
-    }
-
-    private func moveAnnotationObject(_ object: PDFAnnotationObject, action: PDFLayerAction) {
-        guard let pageIndex = object.pageIndex else { return }
-        var next = annotations ?? emptyAnnotationDocument()
-        guard let pageOffset = next.pages.firstIndex(where: { $0.pageIndex == pageIndex }) else { return }
-        var objects = next.pages[pageOffset].objects ?? []
-        guard let index = objects.firstIndex(where: { $0.id == object.id }) else { return }
-        let item = objects.remove(at: index)
-        switch action {
-        case .back:
-            objects.insert(item, at: 0)
-        case .front:
-            objects.append(item)
-        case .backward:
-            objects.insert(item, at: max(0, index - 1))
-        case .forward:
-            objects.insert(item, at: min(objects.count, index + 1))
-        }
-        next.pages[pageOffset].objects = objects
-        var synced = next
-        synced.syncNoteElementsFromLegacy()
-        annotations = synced
-        selectedObjectId = object.id
-        scheduleSave(synced)
     }
 
     private func deleteAnnotationObject(_ object: PDFAnnotationObject) {
@@ -4125,132 +3973,6 @@ private final class CodmesMacPDFView: PDFView {
 #endif
 
 #if os(macOS)
-private struct MacPDFAnnotationInspectorView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var draft: PDFAnnotationObject
-    var onChange: (PDFAnnotationObject) -> Void
-    var onDelete: (PDFAnnotationObject) -> Void
-
-    init(
-        object: PDFAnnotationObject,
-        onChange: @escaping (PDFAnnotationObject) -> Void,
-        onDelete: @escaping (PDFAnnotationObject) -> Void
-    ) {
-        self._draft = State(initialValue: object)
-        self.onChange = onChange
-        self.onDelete = onDelete
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("Annotation", systemImage: draft.type.lowercased().contains("image") ? "photo" : "textformat")
-                    .font(.headline)
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-
-            Form {
-                Section("Object") {
-                    LabeledContent("Type", value: draft.type.capitalized)
-                    LabeledContent("Page", value: String((draft.pageIndex ?? 0) + 1))
-                }
-
-                if draft.type.lowercased().contains("text") {
-                    Section("Text") {
-                        TextEditor(text: Binding(
-                            get: { draft.text ?? "" },
-                            set: {
-                                draft.text = $0
-                                commit()
-                            }
-                        ))
-                        .font(.body)
-                        .frame(minHeight: 90)
-
-                        Stepper(value: fontSizeBinding, in: 8...72, step: 1) {
-                            Text("Font size \(Int(fontSizeBinding.wrappedValue))")
-                        }
-                    }
-                }
-
-                Section("Frame") {
-                    if draft.bbox?.normalizedOrSelf != nil {
-                        SliderRow(label: "X", value: frameBinding(\.x), range: 0...1)
-                        SliderRow(label: "Y", value: frameBinding(\.y), range: 0...1)
-                        SliderRow(label: "Width", value: frameBinding(\.width), range: 0.03...1)
-                        SliderRow(label: "Height", value: frameBinding(\.height), range: 0.025...1)
-                    } else {
-                        Text("No frame data")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Actions") {
-                    Button(role: .destructive) {
-                        onDelete(draft)
-                        dismiss()
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-            }
-        }
-        .padding(18)
-    }
-
-    private var fontSizeBinding: Binding<Double> {
-        Binding(
-            get: { Double(draft.metadata?["fontSize"] ?? "16") ?? 16 },
-            set: {
-                var metadata = draft.metadata ?? [:]
-                metadata["fontSize"] = String(Int($0))
-                draft.metadata = metadata
-                commit()
-            }
-        )
-    }
-
-    private func frameBinding(_ keyPath: WritableKeyPath<NormalizedBoundingBox, Double>) -> Binding<Double> {
-        Binding(
-            get: { draft.bbox?.normalizedOrSelf?[keyPath: keyPath] ?? 0 },
-            set: { newValue in
-                var box = draft.bbox?.normalizedOrSelf ?? NormalizedBoundingBox(x: 0.2, y: 0.2, width: 0.3, height: 0.12)
-                box[keyPath: keyPath] = newValue
-                box.width = min(max(box.width, 0.03), 1 - box.x)
-                box.height = min(max(box.height, 0.025), 1 - box.y)
-                box.x = min(max(box.x, 0), 1 - box.width)
-                box.y = min(max(box.y, 0), 1 - box.height)
-                draft.bbox = AnnotationBoundingBox(x: box.x, y: box.y, width: box.width, height: box.height, normalized: nil)
-                commit()
-            }
-        )
-    }
-
-    private func commit() {
-        onChange(draft)
-    }
-}
-
-private struct SliderRow: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .frame(width: 52, alignment: .leading)
-            Slider(value: $value, in: range)
-            Text("\(Int((value * 100).rounded()))%")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
-        }
-    }
-}
-
 private extension NSColor {
     convenience init?(hexString: String) {
         let clean = hexString.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
@@ -8344,112 +8066,6 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             overlay.addSubview(highlight)
             highlightViews[pageIndex] = highlight
         }
-    }
-}
-
-private struct PDFAnnotationInspectorView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var draft: PDFAnnotationObject
-    var onChange: (PDFAnnotationObject) -> Void
-    var onDuplicate: (PDFAnnotationObject) -> Void
-    var onDelete: (PDFAnnotationObject) -> Void
-    var onLayerAction: (PDFAnnotationObject, PDFLayerAction) -> Void
-
-    init(
-        object: PDFAnnotationObject,
-        onChange: @escaping (PDFAnnotationObject) -> Void,
-        onDuplicate: @escaping (PDFAnnotationObject) -> Void,
-        onDelete: @escaping (PDFAnnotationObject) -> Void,
-        onLayerAction: @escaping (PDFAnnotationObject, PDFLayerAction) -> Void
-    ) {
-        self._draft = State(initialValue: object)
-        self.onChange = onChange
-        self.onDuplicate = onDuplicate
-        self.onDelete = onDelete
-        self.onLayerAction = onLayerAction
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Object") {
-                    LabeledContent("Type", value: draft.type.capitalized)
-                    LabeledContent("Page", value: String((draft.pageIndex ?? 0) + 1))
-                    if let box = draft.bbox?.normalizedOrSelf {
-                        LabeledContent("Position", value: "x \(percent(box.x)), y \(percent(box.y))")
-                        LabeledContent("Size", value: "\(percent(box.width)) x \(percent(box.height))")
-                    }
-                }
-
-                if draft.type.lowercased().contains("text") {
-                    Section("Text") {
-                        TextEditor(text: Binding(
-                            get: { draft.text ?? "" },
-                            set: {
-                                draft.text = $0
-                                commit()
-                            }
-                        ))
-                        .frame(minHeight: 90)
-
-                        Stepper(value: fontSizeBinding, in: 8...48, step: 1) {
-                            Text("Font size \(Int(fontSizeBinding.wrappedValue))")
-                        }
-                    }
-                }
-
-                Section("Layer") {
-                    HStack {
-                        Button("Back") { onLayerAction(draft, .back) }
-                        Button("Backward") { onLayerAction(draft, .backward) }
-                        Button("Forward") { onLayerAction(draft, .forward) }
-                        Button("Front") { onLayerAction(draft, .front) }
-                    }
-                    .buttonStyle(.borderless)
-                }
-
-                Section("Actions") {
-                    Button {
-                        onDuplicate(draft)
-                    } label: {
-                        Label("Duplicate", systemImage: "plus.square.on.square")
-                    }
-
-                    Button(role: .destructive) {
-                        onDelete(draft)
-                        dismiss()
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-            }
-            .navigationTitle("Annotation")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private var fontSizeBinding: Binding<Double> {
-        Binding(
-            get: { Double(draft.metadata?["fontSize"] ?? "16") ?? 16 },
-            set: {
-                var metadata = draft.metadata ?? [:]
-                metadata["fontSize"] = String(Int($0))
-                draft.metadata = metadata
-                commit()
-            }
-        )
-    }
-
-    private func commit() {
-        onChange(draft)
-    }
-
-    private func percent(_ value: Double) -> String {
-        "\(Int((value * 100).rounded()))%"
     }
 }
 
