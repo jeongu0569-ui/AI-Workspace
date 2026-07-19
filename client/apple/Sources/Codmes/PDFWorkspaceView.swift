@@ -4051,6 +4051,8 @@ fileprivate final class AnnotatedPDFView: PDFView {
     private var lastReadingViewportSize = CGSize.zero
     private var observedPinchRecognizers = Set<ObjectIdentifier>()
     private var isApplyingReadingScale = false
+    // The keyboard changes the viewport height; that must not reset the reader's zoom.
+    var isEditingText = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -4082,6 +4084,7 @@ fileprivate final class AnnotatedPDFView: PDFView {
 
     func applyReadingScaleIfNeeded(force: Bool = false) {
         guard !isApplyingReadingScale,
+              !isEditingText,
               let document,
               let page = currentPage ?? document.page(at: 0),
               bounds.width > 1,
@@ -4124,6 +4127,53 @@ fileprivate final class AnnotatedPDFView: PDFView {
         var offset = scrollView.contentOffset
         offset.y = min(max(offset.y + delta, minimumY), maximumY)
         scrollView.setContentOffset(offset, animated: false)
+    }
+
+    func finishTextEditingTransition() {
+        guard !containsFirstResponder(in: self) else { return }
+        // Accept the restored viewport without applying its fitted scale over the user's zoom.
+        lastReadingViewportSize = bounds.size
+        isEditingText = false
+    }
+
+    func centerTextEditor(_ textView: UITextView, aboveKeyboardFrame keyboardFrame: CGRect, duration: TimeInterval) {
+        guard let window,
+              let scrollView = descendantScrollViews
+                .filter({ $0.isScrollEnabled })
+                .max(by: { $0.contentSize.height < $1.contentSize.height }) else { return }
+
+        layoutIfNeeded()
+        let keyboardFrameInWindow = window.convert(keyboardFrame, from: window.screen.coordinateSpace)
+        let keyboardFrameInView = convert(keyboardFrameInWindow, from: window)
+        let keyboardIntersection = bounds.intersection(keyboardFrameInView)
+        let visibleTop = safeAreaInsets.top
+        let visibleBottom = keyboardIntersection.isNull
+            ? bounds.maxY - safeAreaInsets.bottom
+            : min(bounds.maxY - safeAreaInsets.bottom, keyboardIntersection.minY)
+        guard visibleBottom > visibleTop else { return }
+
+        let editorFrame = textView.convert(textView.bounds, to: self)
+        let targetCenterY = (visibleTop + visibleBottom) / 2
+        let minimumY = -scrollView.adjustedContentInset.top
+        let maximumY = max(
+            minimumY,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+        var offset = scrollView.contentOffset
+        offset.y = min(max(offset.y + editorFrame.midY - targetCenterY, minimumY), maximumY)
+
+        UIView.animate(
+            withDuration: max(duration, 0.2),
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+        ) {
+            scrollView.setContentOffset(offset, animated: false)
+        }
+    }
+
+    private func containsFirstResponder(in view: UIView) -> Bool {
+        if view is UITextView, view.isFirstResponder { return true }
+        return view.subviews.contains { containsFirstResponder(in: $0) }
     }
 
     private func installReadingZoomBehavior() {
@@ -4723,6 +4773,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         private var activeTextResizeEdge: PDFTextResizeHandleView.Edge?
         private var editingTextObjectId: String?
         private var pendingFocusTextObjectId: String?
+        private weak var activeTextView: UITextView?
+        private var lastKeyboardFrame: CGRect?
         private var lastTextEditRequest = 0
         private let textDraftMetadataKey = "draft"
         private let textManualWidthMetadataKey = "manualWidth"
@@ -4745,6 +4797,19 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             self.onObjectDeleted = onObjectDeleted
             self.onLassoSelectionChanged = onLassoSelectionChanged
             self.onFocusCleared = onFocusCleared
+            super.init()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(keyboardDidHide(_:)),
+                name: UIResponder.keyboardDidHideNotification,
+                object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(keyboardWillChangeFrame(_:)),
+                name: UIResponder.keyboardWillChangeFrameNotification,
+                object: nil
+            )
         }
 
         deinit {
@@ -4754,6 +4819,25 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         @objc func visiblePageChanged(_ notification: Notification) {
             guard let pdfView, let page = pdfView.currentPage, let index = pdfView.document?.index(for: page), index >= 0 else { return }
             onCurrentPageChanged(index)
+        }
+
+        @objc private func keyboardDidHide(_ notification: Notification) {
+            lastKeyboardFrame = nil
+            pdfView?.finishTextEditingTransition()
+        }
+
+        @objc private func keyboardWillChangeFrame(_ notification: Notification) {
+            guard let pdfView,
+                  let textView = activeTextView,
+                  let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+                  let screenMaxY = pdfView.window?.screen.bounds.maxY,
+                  keyboardFrame.minY < screenMaxY else { return }
+            lastKeyboardFrame = keyboardFrame
+            let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval ?? 0.25
+            DispatchQueue.main.async { [weak pdfView, weak textView] in
+                guard let pdfView, let textView else { return }
+                pdfView.centerTextEditor(textView, aboveKeyboardFrame: keyboardFrame, duration: duration)
+            }
         }
 
         func syncExternalLassoSelection(_ external: PDFLassoSelectionSummary?) {
@@ -7943,6 +8027,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         func textViewDidBeginEditing(_ textView: UITextView) {
             guard let id = textView.accessibilityIdentifier,
                   let object = object(with: id) else { return }
+            pdfView?.isEditingText = true
+            activeTextView = textView
             selectedObjectId = id
             editingTextObjectId = id
             if let pageIndex = object.pageIndex, let box = object.bbox {
@@ -7957,9 +8043,21 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             }
             onObjectSelected(object)
             configureObjectView(textView, object: object)
+            if let keyboardFrame = lastKeyboardFrame {
+                DispatchQueue.main.async { [weak pdfView, weak textView] in
+                    guard let pdfView, let textView else { return }
+                    pdfView.centerTextEditor(textView, aboveKeyboardFrame: keyboardFrame, duration: 0.2)
+                }
+            }
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            if activeTextView === textView {
+                activeTextView = nil
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak pdfView] in
+                pdfView?.finishTextEditingTransition()
+            }
             guard let id = textView.accessibilityIdentifier,
                   var object = object(with: id),
                   object.type.lowercased().contains("text") else { return }
