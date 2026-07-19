@@ -23,7 +23,7 @@ import {
 import { buildWorkspaceContext } from "./lib/context-router.mjs";
 import { buildIndex, readFileMetadata, readIndex } from "./lib/file-index.mjs";
 import { renderCodeDocument, renderMarkdownDocument } from "./lib/render-service.mjs";
-import { buildSearchIndex, searchStatus, searchWorkspace, updateSearchIndex } from "./lib/search-service.mjs";
+import { buildSearchIndex, globalSearch, searchStatus, searchWorkspace, updateSearchIndex } from "./lib/search-service.mjs";
 import {
   annotationsPathForDocument,
   contentScopedAnnotationsPathForDocument,
@@ -274,6 +274,9 @@ async function handleRequest(req, res) {
     if (req.method === "GET" && url.pathname === "/api/raw") {
       return streamRawFile(res, url);
     }
+    if (req.method === "GET" && url.pathname === "/api/pdf-thumbnail") {
+      return streamPdfThumbnail(res, url);
+    }
     if (req.method === "PUT" && url.pathname === "/api/file") {
       return sendJson(res, await writeTextFile(req, url));
     }
@@ -333,6 +336,9 @@ async function handleRequest(req, res) {
     }
     if (req.method === "GET" && url.pathname === "/api/search/status") {
       return sendJson(res, searchStatus(WORKSPACE_ROOT));
+    }
+    if (req.method === "GET" && url.pathname === "/api/global-search") {
+      return sendJson(res, await runGlobalSearch(url));
     }
     if (req.method === "POST" && url.pathname === "/api/search") {
       return sendJson(res, await runSearch(req));
@@ -874,6 +880,69 @@ async function streamRawFile(res, url) {
   createReadStream(absolutePath).pipe(res);
 }
 
+async function streamPdfThumbnail(res, url) {
+  const filePath = requireQuery(url, "path");
+  const page = Math.max(1, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1);
+  const { relativePath, absolutePath } = resolveWorkspacePath(WORKSPACE_ROOT, filePath);
+  if (path.extname(relativePath).toLowerCase() !== ".pdf") {
+    throw Object.assign(new Error("PDF thumbnail source must be a PDF file."), { status: 400 });
+  }
+  const stat = await fs.stat(absolutePath);
+  if (stat.isDirectory()) throw Object.assign(new Error("Cannot render a folder."), { status: 400 });
+  const thumbnailPath = await renderPdfThumbnail(absolutePath, relativePath, stat, page);
+  const thumbnailStat = await fs.stat(thumbnailPath);
+  res.writeHead(200, {
+    "cache-control": "public, max-age=86400",
+    "content-length": String(thumbnailStat.size),
+    "content-type": "image/png"
+  });
+  createReadStream(thumbnailPath).pipe(res);
+}
+
+async function renderPdfThumbnail(absolutePath, relativePath, stat, page) {
+  const key = Buffer.from(`${relativePath}\n${stat.size}:${stat.mtimeMs}\n${page}`, "utf8").toString("base64url");
+  const outputPath = path.join(WORKSPACE_ROOT, ".codmes", "index", "thumbnails", `${key}.png`);
+  try {
+    await fs.access(outputPath);
+    return outputPath;
+  } catch {}
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const python = await documentWorkerPython();
+  const script = `
+import fitz, sys
+pdf_path, out_path, page_number = sys.argv[1], sys.argv[2], int(sys.argv[3])
+doc = fitz.open(pdf_path)
+page_index = max(0, min(page_number - 1, doc.page_count - 1))
+page = doc.load_page(page_index)
+matrix = fitz.Matrix(0.45, 0.45)
+pix = page.get_pixmap(matrix=matrix, alpha=False)
+pix.save(out_path)
+doc.close()
+`;
+  await runPythonScript(python, script, [absolutePath, outputPath, String(page)]);
+  return outputPath;
+}
+
+async function runPythonScript(python, script, args) {
+  const { spawn } = await import("node:child_process");
+  const stdout = [];
+  const stderr = [];
+  const child = spawn(python, ["-c", script, ...args], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env
+  });
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  const code = await new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", resolve);
+  });
+  if (code !== 0) {
+    throw new Error(Buffer.concat(stderr).toString("utf8").trim() || `Python exited with ${code}`);
+  }
+  return Buffer.concat(stdout).toString("utf8");
+}
+
 async function writeTextFile(req, url) {
   const filePath = requireQuery(url, "path");
   const body = await readJsonBody(req);
@@ -1306,6 +1375,14 @@ async function rebuildIndex() {
 async function runSearch(req) {
   const body = await readJsonBody(req);
   return await searchWorkspace(WORKSPACE_ROOT, body);
+}
+
+async function runGlobalSearch(url) {
+  return await globalSearch(WORKSPACE_ROOT, {
+    query: url.searchParams.get("q") || url.searchParams.get("query") || "",
+    surface: url.searchParams.get("surface") || "all",
+    maxResults: url.searchParams.get("limit") || url.searchParams.get("maxResults") || 40
+  });
 }
 
 async function skillsList() {

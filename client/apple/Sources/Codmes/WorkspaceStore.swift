@@ -15,6 +15,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var editorText = ""
     @Published var isEditingFile = false
     @Published var searchResponse: SearchResponse?
+    @Published var globalSearchResponse: GlobalSearchResponse?
     @Published var chatLines: [ChatLine] = [
         ChatLine(role: "system", text: "Connect to the Workspace Server, then start a live session.")
     ]
@@ -1230,6 +1231,56 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
+    func openGlobalSearchResult(_ result: GlobalSearchResult) async {
+        if let path = result.target.path {
+            let kind = WorkspaceStore.kindForSearchPath(path, fallback: result.kind)
+            let item = WorkspaceItem(
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                path: path,
+                kind: kind,
+                isDirectory: false,
+                size: 0,
+                modifiedAt: result.updatedAt ?? ""
+            )
+            if kind == "pdf" {
+                selectedPDFFocus = PDFDocumentFocus(path: path, page: result.target.page, bbox: result.target.bbox)
+            }
+            await loadFile(item)
+            if kind == "pdf" {
+                selectedPDFFocus = PDFDocumentFocus(path: path, page: result.target.page, bbox: result.target.bbox)
+            }
+            return
+        }
+        if let sessionId = result.target.sessionId {
+            await resumeHermesSession(
+                HermesSessionSummary(
+                    id: sessionId,
+                    title: result.title,
+                    updatedAt: result.updatedAt,
+                    folderId: nil,
+                    folderTitle: nil,
+                    projectId: result.target.projectId,
+                    projectTitle: nil
+                )
+            )
+            if let messageId = result.target.messageId {
+                statusMessage = "Opened \(result.title) near message \(messageId)"
+            }
+        }
+    }
+
+    private static func kindForSearchPath(_ path: String, fallback: String) -> String {
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        if ext == "pdf" { return "pdf" }
+        if ["png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff", "bmp"].contains(ext) { return "image" }
+        if ["md", "markdown"].contains(ext) { return "markdown" }
+        if ["swift", "js", "jsx", "ts", "tsx", "py", "go", "rs", "java", "c", "cc", "cpp", "h", "hpp", "html", "css", "sh"].contains(ext) {
+            return "code"
+        }
+        if fallback.contains("pdf") { return "pdf" }
+        return "file"
+    }
+
     var selectedFileIsDirty: Bool {
         guard let selectedFile else { return false }
         return editorText != selectedFile.content
@@ -1385,6 +1436,18 @@ final class WorkspaceStore: ObservableObject {
         do {
             searchResponse = try await api.search(query: query, scopePath: scopePath)
             statusMessage = "\(searchResponse?.resultCount ?? 0) results"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func runGlobalSearch(query: String, surface: String) async {
+        guard let api else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            globalSearchResponse = try await api.globalSearch(query: query, surface: surface)
+            statusMessage = "\(globalSearchResponse?.resultCount ?? 0) global results"
         } catch {
             statusMessage = error.localizedDescription
         }

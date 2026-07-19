@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
   buildSearchIndex,
+  globalSearch,
   readSearchIndex,
   searchStatus,
   searchWorkspace,
@@ -149,6 +150,21 @@ test("full workspace indexing skips private Codmes config state", async () => {
   assert.equal(result.resultCount, 0);
   const annotationStateResult = await searchWorkspace(root, { query: "annotation-state-leak-marker", scopePath: "Documents" });
   assert.equal(annotationStateResult.resultCount, 0);
+});
+
+test("global search returns public common results and hides internal files", async () => {
+  const root = await fixtureWorkspace();
+  await fs.mkdir(path.join(root, "Notes", ".codmes", "cache"), { recursive: true });
+  await fs.writeFile(path.join(root, "Notes", ".codmes", "cache", "hidden.md"), "scheduler leak", "utf8");
+  await buildSearchIndex(root, { roots: [""] });
+
+  const result = await globalSearch(root, { query: "scheduler", surface: "all" });
+  assert.equal(result.provider, "codmes-global-search");
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].surface, "notes");
+  assert.equal(result.results[0].kind, "markdown_chunk");
+  assert.equal(result.results[0].target.path, "Notes/os.md");
+  assert.equal(result.results.some((hit) => String(hit.target.path || "").includes(".codmes")), false);
 });
 
 test("searches extracted PDF text and caches it", async () => {

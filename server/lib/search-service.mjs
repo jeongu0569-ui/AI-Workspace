@@ -7,6 +7,7 @@ import {
   extractDocumentAnnotationBlocks,
   isDocumentIngestFile
 } from "./document-ingest.mjs";
+import { searchConversationIndex } from "./runtime/conversation-index.mjs";
 
 const DEFAULT_MAX_RESULTS = 20;
 const DEFAULT_MAX_SCAN_FILES = 1000;
@@ -134,6 +135,32 @@ export async function searchWorkspace(workspaceRoot, request = {}) {
   };
 }
 
+export async function globalSearch(workspaceRoot, request = {}) {
+  const query = String(request.query || request.q || "").trim();
+  if (!query) throw Object.assign(new Error("Missing search query."), { status: 400 });
+  const surface = normalizeGlobalSurface(request.surface || "all");
+  const maxResults = clampNumber(request.maxResults || request.limit, 1, 100, 40);
+  const fileResults = await searchGlobalFileIndex(workspaceRoot, { query, surface, maxResults: maxResults * 2 });
+  const conversationResults = await searchGlobalConversations(workspaceRoot, {
+    query,
+    surface,
+    maxResults: maxResults * 2
+  });
+  const results = [...fileResults, ...conversationResults]
+    .filter((result) => result.surface && surfaceMatches(result.surface, surface))
+    .filter((result) => !isInternalSearchPath(result.target?.path || ""))
+    .sort((a, b) => b.score - a.score || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, maxResults);
+  return {
+    provider: "codmes-global-search",
+    query,
+    surface,
+    scope: { type: "global" },
+    resultCount: results.length,
+    results
+  };
+}
+
 export function searchIndexPath(workspaceRoot) {
   return path.join(workspaceRoot, ".codmes", "index", "search.json");
 }
@@ -191,7 +218,7 @@ export async function updateSearchIndex(workspaceRoot, changedPaths = [], option
   }
   for (const changedPath of [].concat(changedPaths || [])) {
     const rel = String(changedPath || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
-    if (!rel || rel.startsWith(".codmes/")) continue;
+    if (!rel || isInternalSearchPath(rel)) continue;
     const resolved = resolveWorkspacePath(workspaceRoot, rel);
     const stat = await fs.stat(resolved.absolutePath).catch(() => null);
     if (!stat) {
@@ -260,7 +287,7 @@ async function searchBuiltIndex(workspaceRoot, request) {
   const query = String(request.query || "").trim();
   const scopePath = String(request.scopePath || "").replace(/^\/+|\/+$/g, "");
   const maxResults = clampNumber(request.maxResults, 1, 100, DEFAULT_MAX_RESULTS);
-  const chunks = index.chunks.filter((chunk) => inScope(chunk.path, scopePath));
+  const chunks = index.chunks.filter((chunk) => inScope(chunk.path, scopePath) && !isInternalSearchPath(chunk.path));
   const kinds = requestedKinds(request);
   const scored = [];
   for (const chunk of chunks) {
@@ -297,6 +324,287 @@ async function searchBuiltIndex(workspaceRoot, request) {
     resultCount: deduped.length,
     results: deduped
   };
+}
+
+async function searchGlobalFileIndex(workspaceRoot, request) {
+  const index = await readSearchIndex(workspaceRoot);
+  if (!index || !Array.isArray(index.chunks)) {
+    return searchGlobalFileScan(workspaceRoot, request);
+  }
+  const query = String(request.query || "").trim();
+  const itemByPath = new Map((index.items || []).map((item) => [item.path, item]));
+  const scored = [];
+  for (const item of itemByPath.values()) {
+    if (isInternalSearchPath(item.path)) continue;
+    const resultSurface = surfaceForPath(item.path);
+    if (!surfaceMatches(resultSurface, request.surface)) continue;
+    const itemMatch = scoreGlobalItem(item, query);
+    if (itemMatch.score <= 0) continue;
+    scored.push(toGlobalItemResult(item, resultSurface, itemMatch));
+  }
+  for (const chunk of index.chunks) {
+    if (isInternalSearchPath(chunk.path)) continue;
+    const resultSurface = surfaceForPath(chunk.path);
+    if (!surfaceMatches(resultSurface, request.surface)) continue;
+    const item = itemByPath.get(chunk.path) || {};
+    const match = scoreGlobalChunk(chunk, item, query);
+    if (match.score <= 0) continue;
+    scored.push(toGlobalFileResult(chunk, item, resultSurface, match, query));
+  }
+  return dedupeGlobalResults(scored, request.maxResults);
+}
+
+async function searchGlobalFileScan(workspaceRoot, request) {
+  const scopePath = request.surface === "notes" ? "Notes" : request.surface === "codes" ? "Codes" : "";
+  const legacy = await searchWorkspace(workspaceRoot, {
+    query: request.query,
+    scopePath,
+    maxResults: request.maxResults,
+    forceScan: true
+  }).catch(() => ({ results: [] }));
+  return (legacy.results || [])
+    .filter((result) => !isInternalSearchPath(result.path))
+    .map((result) => {
+      const resultSurface = surfaceForPath(result.path);
+      return {
+        id: stableResultId("file", result.path, result.page ?? "", result.snippet || ""),
+        surface: resultSurface,
+        kind: globalFileKind(result.path, result.kind, result.source),
+        title: path.basename(result.path),
+        subtitle: subtitleForPath(result.path, result.page),
+        snippet: result.snippet || result.path,
+        score: normalizeLegacyScore(result.score),
+        updatedAt: result.modifiedAt || null,
+        target: {
+          path: result.path,
+          page: normalizedPage(result.page),
+          sessionId: null,
+          messageId: null,
+          projectId: null,
+          line: null,
+          bbox: result.bbox || null
+        }
+      };
+    })
+    .filter((result) => surfaceMatches(result.surface, request.surface));
+}
+
+async function searchGlobalConversations(workspaceRoot, request) {
+  const sessionsById = await readConversationSessionsById(workspaceRoot);
+  const hits = await searchConversationIndex(workspaceRoot, request.query, {
+    maxResults: request.maxResults,
+    includeArchived: false
+  }).catch(() => []);
+  return hits
+    .map((hit) => {
+      const session = sessionsById.get(hit.sessionId) || {};
+      const resultSurface = conversationSurface(session, hit);
+      if (!surfaceMatches(resultSurface, request.surface)) return null;
+      const isMessage = hit.type === "session_message";
+      const title = session.title || hit.title || `Session ${hit.sessionId}`;
+      const messageId = Array.isArray(hit.sourceMessageIds) ? hit.sourceMessageIds[0] : null;
+      return {
+        id: stableResultId("conversation", hit.sessionId, messageId || "", hit.type || ""),
+        surface: resultSurface,
+        kind: resultSurface === "codes"
+          ? (isMessage ? "code_message" : "code_session")
+          : (isMessage ? "chat_message" : "chat_session"),
+        title,
+        subtitle: conversationSubtitle(session, hit, resultSurface),
+        snippet: hit.snippet || hit.summary || title,
+        score: normalizeLegacyScore(hit.score) + (isMessage ? 5 : 12),
+        updatedAt: session.updatedAt || hit.createdAt || null,
+        target: {
+          path: null,
+          page: null,
+          sessionId: hit.sessionId || null,
+          messageId: messageId || null,
+          projectId: session.projectId || hit.projectId || null,
+          line: null
+        }
+      };
+    })
+    .filter(Boolean);
+}
+
+async function readConversationSessionsById(workspaceRoot) {
+  const filePath = path.join(workspaceRoot, ".codmes", "conversation-index", "sessions.jsonl");
+  const sessions = new Map();
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const session = JSON.parse(line);
+      sessions.set(session.id, session);
+    }
+  } catch {}
+  return sessions;
+}
+
+function toGlobalFileResult(chunk, item, surface, match) {
+  const page = normalizedPage(chunk.page);
+  return {
+    id: stableResultId("file", chunk.id || chunk.path, page ?? "", chunk.chunkIndex ?? ""),
+    surface,
+    kind: globalFileKind(chunk.path, chunk.kind, chunk.source),
+    title: path.basename(chunk.path),
+    subtitle: subtitleForPath(chunk.path, page),
+    snippet: match.snippet,
+    score: match.score,
+    updatedAt: item.modifiedAt || null,
+    target: {
+      path: chunk.path,
+      page,
+      sessionId: null,
+      messageId: null,
+      projectId: null,
+      line: null,
+      bbox: chunk.bbox || null
+    }
+  };
+}
+
+function toGlobalItemResult(item, surface, match) {
+  return {
+    id: stableResultId("item", item.path),
+    surface,
+    kind: surface === "notes" ? "note_file" : "code_file",
+    title: path.basename(item.path),
+    subtitle: item.path,
+    snippet: item.path,
+    score: match.score,
+    updatedAt: item.modifiedAt || null,
+    target: {
+      path: item.path,
+      page: null,
+      sessionId: null,
+      messageId: null,
+      projectId: null,
+      line: null,
+      bbox: null
+    }
+  };
+}
+
+function scoreGlobalItem(item, query) {
+  const fileName = path.basename(item.path || "");
+  const lowerFileName = fileName.toLocaleLowerCase();
+  const lowerTitle = lowerFileName.replace(path.extname(lowerFileName), "");
+  const phrase = query.toLocaleLowerCase();
+  let score = 0;
+  if (lowerTitle === phrase || lowerFileName === phrase) score += 100;
+  if (lowerTitle.startsWith(phrase) || lowerFileName.startsWith(phrase)) score += 70;
+  if (lowerFileName.includes(phrase)) score += 60;
+  if (score <= 0) return { score: 0 };
+  if (isRecent(item.modifiedAt)) score += 10;
+  return { score };
+}
+
+function scoreGlobalChunk(chunk, item, query) {
+  const text = String(chunk.text || "");
+  const lowerText = text.toLocaleLowerCase();
+  const phrase = query.toLocaleLowerCase();
+  let score = 0;
+  const exactIndex = lowerText.indexOf(phrase);
+  if (exactIndex >= 0) score += 30;
+  const tokens = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  let tokenHits = 0;
+  for (const token of tokens) {
+    if (lowerText.includes(token)) tokenHits += 1;
+  }
+  if (tokens.length) score += Math.round((tokenHits / tokens.length) * 25);
+  if (score <= 0) return { score: 0, snippet: "" };
+  if (isRecent(item.modifiedAt)) score += 10;
+  const index = exactIndex >= 0 ? exactIndex : firstTokenIndex(lowerText, tokens);
+  return {
+    score,
+    snippet: index >= 0 ? snippet(text, index, query.length) : chunk.path
+  };
+}
+
+function dedupeGlobalResults(results, maxResults) {
+  const seen = new Set();
+  const deduped = [];
+  for (const result of results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))) {
+    const key = `${result.kind}:${result.target.path || ""}:${result.target.page ?? ""}:${result.snippet}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(result);
+    if (deduped.length >= maxResults) break;
+  }
+  return deduped;
+}
+
+function normalizeGlobalSurface(value) {
+  const surface = String(value || "all").toLowerCase();
+  return ["all", "notes", "codes", "chat"].includes(surface) ? surface : "all";
+}
+
+function surfaceMatches(surface, filter) {
+  return filter === "all" || surface === filter;
+}
+
+function surfaceForPath(relativePath) {
+  const first = String(relativePath || "").split("/")[0]?.toLowerCase();
+  if (first === "notes" || first === "documents") return "notes";
+  if (first === "codes" || first === "code" || first === "projects") return "codes";
+  return "codes";
+}
+
+function globalFileKind(relativePath, kind, source) {
+  const ext = path.extname(relativePath || "").toLowerCase();
+  const normalizedSource = String(source || "").toLowerCase();
+  if (normalizedSource.includes("annotation")) return "pdf_annotation";
+  if (ext === ".pdf" || kind === "pdf") return "pdf_chunk";
+  if (ext === ".md" || ext === ".markdown" || kind === "markdown") return "markdown_chunk";
+  if (surfaceForPath(relativePath) === "notes") return "note_file";
+  return "code_chunk";
+}
+
+function subtitleForPath(relativePath, page) {
+  const normalized = normalizedPage(page);
+  const pageText = normalized ? ` · ${normalized} page` : "";
+  return `${relativePath}${pageText}`;
+}
+
+function normalizedPage(page) {
+  const value = Number(page);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function conversationSurface(session, hit) {
+  const surface = String(session.surface || "").toLowerCase();
+  if (surface === "code" || surface === "codes") return "codes";
+  if (surface === "chat") return "chat";
+  if (session.projectId || hit.projectId) return "codes";
+  return "chat";
+}
+
+function conversationSubtitle(session, hit, surface) {
+  if (surface === "codes") {
+    return [session.projectId || hit.projectId || "Code session", session.folderId].filter(Boolean).join(" · ");
+  }
+  return [session.folderId || "Chat session", session.updatedAt || hit.createdAt].filter(Boolean).join(" · ");
+}
+
+function normalizeLegacyScore(score) {
+  const value = Number(score || 0);
+  if (!Number.isFinite(value)) return 0;
+  return value <= 1 ? Math.round(value * 100) : value;
+}
+
+function isRecent(value) {
+  const time = Date.parse(value || "");
+  if (!Number.isFinite(time)) return false;
+  return Date.now() - time <= 7 * 24 * 60 * 60 * 1000;
+}
+
+function firstTokenIndex(text, tokens) {
+  for (const token of tokens) {
+    const index = text.indexOf(token);
+    if (index >= 0) return index;
+  }
+  return -1;
 }
 
 async function indexFile(workspaceRoot, file, options = {}) {
@@ -414,9 +722,8 @@ async function listSearchableFiles(workspaceRoot, relativePath, options) {
 }
 
 function shouldSkipDirectoryEntry(workspaceRoot, parentAbsolutePath, entryName) {
-  if (entryName === ".git" || entryName === "node_modules") return true;
+  if (INTERNAL_DIRECTORY_NAMES.has(entryName)) return true;
   const parentRel = path.relative(workspaceRoot, parentAbsolutePath).replace(/\\/g, "/");
-  if (entryName === ".codmes") return true;
   return false;
 }
 
@@ -510,10 +817,32 @@ function parseDate(value) {
 }
 
 function isSearchableTextFile(relativePath) {
-  if (String(relativePath || "").toLowerCase().endsWith(".codmes.json")) return false;
+  if (isInternalSearchPath(relativePath)) return false;
   const ext = path.extname(relativePath).toLowerCase();
   if (SEARCHABLE_EXTENSIONS.has(ext)) return true;
   return SEARCHABLE_KINDS.has(fileKind(relativePath));
+}
+
+const INTERNAL_DIRECTORY_NAMES = new Set([
+  ".codmes",
+  ".git",
+  "node_modules",
+  ".build",
+  "DerivedData",
+  "dist",
+  "vendor",
+  "cache",
+  "thumbnails"
+]);
+
+function isInternalSearchPath(relativePath) {
+  const value = String(relativePath || "").replace(/\\/g, "/");
+  if (!value) return false;
+  const lower = value.toLowerCase();
+  if (lower.endsWith(".codmes.json")) return true;
+  if (lower.endsWith(".tmp") || lower.endsWith(".part") || lower.endsWith(".cache")) return true;
+  const segments = value.split("/").filter(Boolean);
+  return segments.some((segment) => INTERNAL_DIRECTORY_NAMES.has(segment));
 }
 
 function snippet(text, index, length) {
@@ -608,6 +937,10 @@ function stableChunkId(...parts) {
     hash = Math.imul(31, hash) + input.charCodeAt(index) | 0;
   }
   return `chunk-${Math.abs(hash).toString(36)}`;
+}
+
+function stableResultId(...parts) {
+  return stableChunkId(...parts).replace(/^chunk-/, "result-");
 }
 
 function requireTextSync(filePath) {

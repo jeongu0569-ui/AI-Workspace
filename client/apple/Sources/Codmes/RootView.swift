@@ -9,6 +9,7 @@ struct RootView: View {
     @State private var chatPanelDragX: CGFloat = 0
     @State private var isSidebarVisible = false
     @State private var sidebarDragX: CGFloat = 0
+    @State private var showingGlobalSearch = false
     @State private var showingSettings = false
     @State private var isMacSidebarVisible = true
 
@@ -75,6 +76,14 @@ struct RootView: View {
                         }
 
                         Button {
+                            store.selectedPDFFocus = nil
+                            showingGlobalSearch = true
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .help("Global search")
+
+                        Button {
                             showingSettings = true
                         } label: {
                             Image(systemName: "gearshape")
@@ -87,6 +96,10 @@ struct RootView: View {
         .frame(minWidth: 640, idealWidth: 1120, minHeight: 420, idealHeight: 740)
         .sheet(isPresented: $showingSettings) {
             WorkspaceSettingsView(isPresented: $showingSettings)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showingGlobalSearch) {
+            SearchView(onSelectSurface: selectSurfaceFromSearch)
                 .environmentObject(store)
         }
         .task(id: activeSurfaceTaskKey) {
@@ -183,6 +196,10 @@ struct RootView: View {
             WorkspaceSettingsView(isPresented: $showingSettings)
                 .environmentObject(store)
         }
+        .fullScreenCover(isPresented: $showingGlobalSearch) {
+            SearchView(onSelectSurface: selectSurfaceFromSearch)
+                .environmentObject(store)
+        }
         .task(id: activeSurfaceTaskKey) {
             store.activeChatSurface = activeSurfaceId
             await autoRefreshVisibleFileTree()
@@ -230,6 +247,17 @@ struct RootView: View {
             }
 
             Spacer()
+
+            Button {
+                store.selectedPDFFocus = nil
+                showingGlobalSearch = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(width: 34, height: 34)
+            .contentShape(Rectangle())
 
             Button {
                 showingSettings = true
@@ -575,6 +603,20 @@ struct RootView: View {
         store.activeChatSurface = section.runtimeSurfaceId
     }
 
+    private func selectSurfaceFromSearch(_ surface: String) {
+        switch surface {
+        case "notes":
+            selectSection(.notes)
+        case "codes":
+            selectSection(.code)
+        case "chat":
+            selectSection(.chat)
+        default:
+            break
+        }
+        closeSidebarIfNeeded()
+    }
+
     private func selectPluginSurface(_ surface: WorkspaceSurface) {
         selectedPluginSurfaceId = surface.id
         selection = nil
@@ -583,6 +625,12 @@ struct RootView: View {
 
     private func openModelSettings() {
         showingSettings = true
+    }
+
+    private func closeSidebarIfNeeded() {
+        #if os(iOS)
+        closeSidebar()
+        #endif
     }
 
     private func autoRefreshVisibleFileTree() async {

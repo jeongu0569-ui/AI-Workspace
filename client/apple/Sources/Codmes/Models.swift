@@ -71,6 +71,7 @@ struct PDFDocumentFocus: Equatable {
     let path: String
     let page: Int?
     let bbox: AnnotationBoundingBox?
+    let requestId = UUID()
 }
 
 enum UploadStatus: String, Codable {
@@ -744,6 +745,36 @@ struct SearchResponse: Codable {
     let totalCandidates: Int
     let resultCount: Int
     let results: [Result]
+}
+
+struct GlobalSearchResponse: Codable {
+    let provider: String
+    let query: String
+    let surface: String
+    let resultCount: Int
+    let results: [GlobalSearchResult]
+}
+
+struct GlobalSearchResult: Codable, Identifiable {
+    let id: String
+    let surface: String
+    let kind: String
+    let title: String
+    let subtitle: String
+    let snippet: String
+    let score: Double
+    let updatedAt: String?
+    let target: GlobalSearchTarget
+}
+
+struct GlobalSearchTarget: Codable {
+    let path: String?
+    let page: Int?
+    let sessionId: String?
+    let messageId: String?
+    let projectId: String?
+    let line: Int?
+    let bbox: AnnotationBoundingBox?
 }
 
 struct WorkspaceSurfacesResponse: Codable {

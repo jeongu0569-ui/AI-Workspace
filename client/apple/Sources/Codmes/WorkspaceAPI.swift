@@ -53,6 +53,16 @@ struct WorkspaceAPI {
         return url
     }
 
+    func pdfThumbnailURL(path: String, page: Int) throws -> URL {
+        var components = try components("/api/pdf-thumbnail")
+        components.queryItems = authQueryItems([
+            URLQueryItem(name: "path", value: path),
+            URLQueryItem(name: "page", value: String(page))
+        ])
+        guard let url = components.url else { throw WorkspaceAPIError.invalidURL }
+        return url
+    }
+
     func downloadRawFile(path: String, name: String) async throws -> URL {
         let url = try rawURL(path: path)
         var request = URLRequest(url: url)
@@ -191,6 +201,15 @@ struct WorkspaceAPI {
             "scopePath": scopePath
         ]
         return try await post("/api/search", body: body)
+    }
+
+    func globalSearch(query: String, surface: String) async throws -> GlobalSearchResponse {
+        var components = try components("/api/global-search")
+        components.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "surface", value: surface)
+        ]
+        return try await request(components)
     }
 
     func agentTasks(type: String? = "code", limit: Int = 50) async throws -> [AgentTaskSummary] {

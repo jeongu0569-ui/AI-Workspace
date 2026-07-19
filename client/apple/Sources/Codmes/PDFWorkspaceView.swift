@@ -163,7 +163,8 @@ struct PDFWorkspaceView: View {
                 onObjectSelected: { selectedObjectId = $0.id },
                 onObjectChanged: updateAnnotationObject(_:),
                 onObjectDeleted: deleteAnnotationObject(_:),
-                onLassoSelectionChanged: { lassoSelection = $0 }
+                onLassoSelectionChanged: { lassoSelection = $0 },
+                onFocusCleared: { store.selectedPDFFocus = nil }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
@@ -1645,10 +1646,7 @@ private struct MacAnnotatedPDFKitView: NSViewRepresentable {
             view.document = PDFDocument(url: url)
         }
         view.applyCodmesInkAnnotations(annotations)
-        if let pageNumber = focus?.page,
-           let page = view.document?.page(at: max(0, pageNumber - 1)) {
-            view.go(to: page)
-        }
+        context.coordinator.applyFocus(focus, to: view)
         context.coordinator.refreshVisibleOverlays()
     }
 
@@ -1674,6 +1672,7 @@ private struct MacAnnotatedPDFKitView: NSViewRepresentable {
         private var overlays: [Int: MacPDFPageAnnotationOverlay] = [:]
         private var lastTextEditRequest = 0
         private var pendingTextEditObjectId: String?
+        private var lastFocusKey = ""
 
         init(
             annotations: PDFAnnotationDocument?,
@@ -1728,6 +1727,28 @@ private struct MacAnnotatedPDFKitView: NSViewRepresentable {
             lastTextEditRequest = request
             pendingTextEditObjectId = selectedObjectId
             focusPendingTextEditor()
+        }
+
+        func applyFocus(_ focus: PDFDocumentFocus?, to view: CodmesMacPDFView) {
+            guard let focus,
+                  let document = view.document,
+                  let pageNumber = focus.page,
+                  pageNumber > 0,
+                  pageNumber <= document.pageCount,
+                  let page = document.page(at: pageNumber - 1) else { return }
+            let key = "\(focus.requestId.uuidString):\(focus.path):\(pageNumber):\(focus.bbox?.x ?? -1):\(focus.bbox?.y ?? -1)"
+            guard key != lastFocusKey else { return }
+            lastFocusKey = key
+            navigateToFocusedPage(page, in: view)
+        }
+
+        private func navigateToFocusedPage(_ page: PDFPage, in view: PDFView) {
+            view.go(to: page)
+            for delay in [0.05, 0.18] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+                    view?.go(to: page)
+                }
+            }
         }
 
         private func applyObjects(to overlay: MacPDFPageAnnotationOverlay, pageIndex: Int) {
@@ -4216,6 +4237,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
     var onObjectChanged: (PDFAnnotationObject) -> Void
     var onObjectDeleted: (PDFAnnotationObject) -> Void
     var onLassoSelectionChanged: (PDFLassoSelectionSummary?) -> Void
+    var onFocusCleared: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -4225,7 +4247,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             onObjectSelected: onObjectSelected,
             onObjectChanged: onObjectChanged,
             onObjectDeleted: onObjectDeleted,
-            onLassoSelectionChanged: onLassoSelectionChanged
+            onLassoSelectionChanged: onLassoSelectionChanged,
+            onFocusCleared: onFocusCleared
         )
     }
 
@@ -4288,6 +4311,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         context.coordinator.onObjectChanged = onObjectChanged
         context.coordinator.onObjectDeleted = onObjectDeleted
         context.coordinator.onLassoSelectionChanged = onLassoSelectionChanged
+        context.coordinator.onFocusCleared = onFocusCleared
         context.coordinator.annotations = annotations
         context.coordinator.focus = focus
         context.coordinator.tool = tool
@@ -4386,6 +4410,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         var onObjectChanged: (PDFAnnotationObject) -> Void
         var onObjectDeleted: (PDFAnnotationObject) -> Void
         var onLassoSelectionChanged: (PDFLassoSelectionSummary?) -> Void
+        var onFocusCleared: () -> Void
         var overlays: [Int: PDFPageAnnotationOverlay] = [:]
         private var highlightViews: [Int: UIView] = [:]
         private var lastFocusKey = ""
@@ -4429,7 +4454,8 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             onObjectSelected: @escaping (PDFAnnotationObject) -> Void,
             onObjectChanged: @escaping (PDFAnnotationObject) -> Void,
             onObjectDeleted: @escaping (PDFAnnotationObject) -> Void,
-            onLassoSelectionChanged: @escaping (PDFLassoSelectionSummary?) -> Void
+            onLassoSelectionChanged: @escaping (PDFLassoSelectionSummary?) -> Void,
+            onFocusCleared: @escaping () -> Void
         ) {
             self.onCurrentPageChanged = onCurrentPageChanged
             self.onStrokeFinished = onStrokeFinished
@@ -4438,6 +4464,7 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             self.onObjectChanged = onObjectChanged
             self.onObjectDeleted = onObjectDeleted
             self.onLassoSelectionChanged = onLassoSelectionChanged
+            self.onFocusCleared = onFocusCleared
         }
 
         deinit {
@@ -4562,14 +4589,34 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
 
         func applyFocus() {
             guard let pdfView, let document = pdfView.document, let focus else { return }
-            let key = "\(focus.path):\(focus.page ?? -1):\(focus.bbox?.x ?? -1):\(focus.bbox?.y ?? -1)"
+            let key = "\(focus.requestId.uuidString):\(focus.path):\(focus.page ?? -1):\(focus.bbox?.x ?? -1):\(focus.bbox?.y ?? -1)"
             if key != lastFocusKey, let page = focus.page, page > 0, page <= document.pageCount, let pdfPage = document.page(at: page - 1) {
-                pdfView.go(to: pdfPage)
                 lastFocusKey = key
+                navigateToFocusedPage(pdfPage, in: pdfView)
             }
             for (pageIndex, overlay) in overlays {
                 applyHighlight(to: overlay, pageIndex: pageIndex)
             }
+        }
+
+        private func navigateToFocusedPage(_ page: PDFPage, in pdfView: PDFView) {
+            pdfView.go(to: page)
+            for delay in [0.05, 0.18] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak pdfView] in
+                    pdfView?.go(to: page)
+                }
+            }
+        }
+
+        private func clearSearchFocusIfNeeded() {
+            guard focus != nil else { return }
+            focus = nil
+            lastFocusKey = ""
+            for highlightView in highlightViews.values {
+                highlightView.removeFromSuperview()
+            }
+            highlightViews.removeAll()
+            onFocusCleared()
         }
 
         private func applyTool(to overlay: PDFPageAnnotationOverlay) {
@@ -4593,13 +4640,17 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
             switch tool {
             case .pen:
                 canvas.tool = PKInkingTool(.pen, color: UIColor(hexString: penColorHex), width: CGFloat(penWidth))
-                canvas.becomeFirstResponder()
             case .eraser:
                 canvas.tool = PKEraserTool(.vector, width: CGFloat(eraserWidth))
-                canvas.becomeFirstResponder()
             case .lasso:
                 canvas.tool = PKLassoTool()
             case .text:
+                break
+            }
+
+            // Drawing is handled by PDFImmediateDrawingGestureRecognizer, so the
+            // canvas must not take focus from text fields presented above the PDF.
+            if canvas.isFirstResponder {
                 canvas.resignFirstResponder()
             }
         }
@@ -4863,8 +4914,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
         }
 
         @objc func handlePDFTap(_ gesture: UITapGestureRecognizer) {
-            guard gesture.state == .ended,
-                  isWritingMode,
+            guard gesture.state == .ended else { return }
+            clearSearchFocusIfNeeded()
+            guard isWritingMode,
                   let pdfView else { return }
             let viewPoint = gesture.location(in: pdfView)
             guard let page = pdfView.page(for: viewPoint, nearest: true),
@@ -5042,6 +5094,9 @@ private struct AnnotatedPDFKitView: UIViewRepresentable {
                 return isWritingMode && !isTextResizeHandleTouch
             }
             if gestureRecognizer === clearSelectionTapGesture {
+                if focus != nil {
+                    return true
+                }
                 guard !isShapeHandleTouch,
                       !isTextResizeHandleTouch,
                       isWritingMode,
