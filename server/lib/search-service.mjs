@@ -139,7 +139,7 @@ export async function globalSearch(workspaceRoot, request = {}) {
   const query = String(request.query || request.q || "").trim();
   if (!query) throw Object.assign(new Error("Missing search query."), { status: 400 });
   const surface = normalizeGlobalSurface(request.surface || "all");
-  const maxResults = clampNumber(request.maxResults || request.limit, 1, 100, 40);
+  const maxResults = clampNumber(request.maxResults || request.limit, 1, 100, 100);
   const fileResults = await searchGlobalFileIndex(workspaceRoot, { query, surface, maxResults: maxResults * 2 });
   const conversationResults = await searchGlobalConversations(workspaceRoot, {
     query,

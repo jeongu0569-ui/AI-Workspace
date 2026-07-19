@@ -883,13 +883,15 @@ async function streamRawFile(res, url) {
 async function streamPdfThumbnail(res, url) {
   const filePath = requireQuery(url, "path");
   const page = Math.max(1, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1);
+  const crop = pdfThumbnailCrop(url);
+  const highlightQuery = String(url.searchParams.get("highlight") || "").trim().slice(0, 120);
   const { relativePath, absolutePath } = resolveWorkspacePath(WORKSPACE_ROOT, filePath);
   if (path.extname(relativePath).toLowerCase() !== ".pdf") {
     throw Object.assign(new Error("PDF thumbnail source must be a PDF file."), { status: 400 });
   }
   const stat = await fs.stat(absolutePath);
   if (stat.isDirectory()) throw Object.assign(new Error("Cannot render a folder."), { status: 400 });
-  const thumbnailPath = await renderPdfThumbnail(absolutePath, relativePath, stat, page);
+  const thumbnailPath = await renderPdfThumbnail(absolutePath, relativePath, stat, page, crop, highlightQuery);
   const thumbnailStat = await fs.stat(thumbnailPath);
   res.writeHead(200, {
     "cache-control": "public, max-age=86400",
@@ -899,8 +901,9 @@ async function streamPdfThumbnail(res, url) {
   createReadStream(thumbnailPath).pipe(res);
 }
 
-async function renderPdfThumbnail(absolutePath, relativePath, stat, page) {
-  const key = Buffer.from(`${relativePath}\n${stat.size}:${stat.mtimeMs}\n${page}`, "utf8").toString("base64url");
+async function renderPdfThumbnail(absolutePath, relativePath, stat, page, crop, highlightQuery) {
+  const cropKey = crop ? `${crop.x}:${crop.y}:${crop.width}:${crop.height}` : "cover";
+  const key = Buffer.from(`pdf-preview-v3\n${relativePath}\n${stat.size}:${stat.mtimeMs}\n${page}\n${cropKey}\n${highlightQuery.toLocaleLowerCase()}`, "utf8").toString("base64url");
   const outputPath = path.join(WORKSPACE_ROOT, ".codmes", "index", "thumbnails", `${key}.png`);
   try {
     await fs.access(outputPath);
@@ -914,13 +917,61 @@ pdf_path, out_path, page_number = sys.argv[1], sys.argv[2], int(sys.argv[3])
 doc = fitz.open(pdf_path)
 page_index = max(0, min(page_number - 1, doc.page_count - 1))
 page = doc.load_page(page_index)
-matrix = fitz.Matrix(0.45, 0.45)
-pix = page.get_pixmap(matrix=matrix, alpha=False)
+crop_args = sys.argv[4:8]
+crop_values = [float(value) for value in crop_args] if len(crop_args) == 4 and all(crop_args) else []
+highlight_query = sys.argv[8].strip() if len(sys.argv) >= 9 else ""
+page_rect = page.rect
+if highlight_query:
+    matches = page.search_for(highlight_query)
+    if matches:
+        if crop_values:
+            x, y, width, height = crop_values
+            target_x = page_rect.x0 + (x + width / 2) * page_rect.width
+            target_y = page_rect.y0 + (y + height / 2) * page_rect.height
+            match = min(matches, key=lambda rect: (rect.x0 + rect.x1 - 2 * target_x) ** 2 + (rect.y0 + rect.y1 - 2 * target_y) ** 2)
+        else:
+            match = matches[0]
+        annotation = page.add_highlight_annot(match)
+        annotation.set_colors(stroke=(1.0, 0.55, 0.16))
+        annotation.set_opacity(0.45)
+        annotation.update()
+if crop_values:
+    x, y, width, height = crop_values
+    center_x = x + width / 2
+    center_y = y + height / 2
+    crop_width = min(1.0, max(0.55, width + 0.16))
+    landscape_height = crop_width * page_rect.width / (1.8 * page_rect.height)
+    crop_height = min(1.0, max(height + 0.08, landscape_height))
+    left = min(max(0.0, center_x - crop_width / 2), 1.0 - crop_width)
+    top = min(max(0.0, center_y - crop_height / 2), 1.0 - crop_height)
+    clip = fitz.Rect(
+        page_rect.x0 + left * page_rect.width,
+        page_rect.y0 + top * page_rect.height,
+        page_rect.x0 + (left + crop_width) * page_rect.width,
+        page_rect.y0 + (top + crop_height) * page_rect.height
+    )
+    pix = page.get_pixmap(matrix=fitz.Matrix(0.9, 0.9), clip=clip, alpha=False)
+else:
+    pix = page.get_pixmap(matrix=fitz.Matrix(0.45, 0.45), alpha=False)
 pix.save(out_path)
 doc.close()
 `;
-  await runPythonScript(python, script, [absolutePath, outputPath, String(page)]);
+  const cropArgs = crop ? [crop.x, crop.y, crop.width, crop.height].map(String) : ["", "", "", ""];
+  await runPythonScript(python, script, [absolutePath, outputPath, String(page), ...cropArgs, highlightQuery]);
   return outputPath;
+}
+
+function pdfThumbnailCrop(url) {
+  const values = ["x", "y", "width", "height"].map((name) => Number.parseFloat(url.searchParams.get(name) || ""));
+  if (!values.every(Number.isFinite)) return null;
+  const [x, y, width, height] = values;
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x > 1 || y > 1) return null;
+  return {
+    x: Math.min(1, x),
+    y: Math.min(1, y),
+    width: Math.min(width, 1 - x),
+    height: Math.min(height, 1 - y)
+  };
 }
 
 async function runPythonScript(python, script, args) {
@@ -1381,7 +1432,7 @@ async function runGlobalSearch(url) {
   return await globalSearch(WORKSPACE_ROOT, {
     query: url.searchParams.get("q") || url.searchParams.get("query") || "",
     surface: url.searchParams.get("surface") || "all",
-    maxResults: url.searchParams.get("limit") || url.searchParams.get("maxResults") || 40
+    maxResults: url.searchParams.get("limit") || url.searchParams.get("maxResults") || 100
   });
 }
 

@@ -53,12 +53,29 @@ struct WorkspaceAPI {
         return url
     }
 
-    func pdfThumbnailURL(path: String, page: Int) throws -> URL {
+    func pdfThumbnailURL(
+        path: String,
+        page: Int,
+        crop: NormalizedBoundingBox? = nil,
+        highlightQuery: String? = nil
+    ) throws -> URL {
         var components = try components("/api/pdf-thumbnail")
-        components.queryItems = authQueryItems([
+        var queryItems = [
             URLQueryItem(name: "path", value: path),
             URLQueryItem(name: "page", value: String(page))
-        ])
+        ]
+        if let crop {
+            queryItems.append(contentsOf: [
+                URLQueryItem(name: "x", value: String(crop.x)),
+                URLQueryItem(name: "y", value: String(crop.y)),
+                URLQueryItem(name: "width", value: String(crop.width)),
+                URLQueryItem(name: "height", value: String(crop.height))
+            ])
+        }
+        if let highlightQuery, !highlightQuery.isEmpty {
+            queryItems.append(URLQueryItem(name: "highlight", value: highlightQuery))
+        }
+        components.queryItems = authQueryItems(queryItems)
         guard let url = components.url else { throw WorkspaceAPIError.invalidURL }
         return url
     }
@@ -207,7 +224,8 @@ struct WorkspaceAPI {
         var components = try components("/api/global-search")
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "surface", value: surface)
+            URLQueryItem(name: "surface", value: surface),
+            URLQueryItem(name: "limit", value: "100")
         ]
         return try await request(components)
     }

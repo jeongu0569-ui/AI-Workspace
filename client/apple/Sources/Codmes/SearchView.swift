@@ -299,7 +299,12 @@ struct SearchView: View {
               path.lowercased().hasSuffix(".pdf"),
               let api = store.api else { return nil }
         let page = result.target.page ?? 1
-        return try? api.pdfThumbnailURL(path: path, page: page)
+        return try? api.pdfThumbnailURL(
+            path: path,
+            page: page,
+            crop: result.target.page == nil ? nil : result.target.bbox?.normalizedOrSelf,
+            highlightQuery: result.target.page == nil ? nil : submittedQuery
+        )
     }
 
     private func openResult(_ result: GlobalSearchResult) {
@@ -326,8 +331,38 @@ private struct NoteSearchFileGroupView: View {
     let onOpen: (GlobalSearchResult) -> Void
 
     private var previewResults: [GlobalSearchResult] {
-        let pagedResults = fileGroup.results.filter { $0.target.page != nil }
-        return pagedResults.isEmpty ? fileGroup.results : pagedResults
+        let pageMatches = fileGroup.results
+            .filter { $0.target.page != nil }
+            .sorted(by: sortSearchResults)
+        return [coverResult] + pageMatches
+    }
+
+    private var coverResult: GlobalSearchResult {
+        if let fileMatch = fileGroup.results
+            .filter({ $0.target.page == nil })
+            .max(by: { $0.score < $1.score }) {
+            return fileMatch
+        }
+        let source = fileGroup.results[0]
+        return GlobalSearchResult(
+            id: "cover:\(fileGroup.path)",
+            surface: source.surface,
+            kind: "note_file",
+            title: fileGroup.title,
+            subtitle: fileGroup.path,
+            snippet: fileGroup.path,
+            score: source.score,
+            updatedAt: source.updatedAt,
+            target: GlobalSearchTarget(
+                path: fileGroup.path,
+                page: nil,
+                sessionId: nil,
+                messageId: nil,
+                projectId: nil,
+                line: nil,
+                bbox: nil
+            )
+        )
     }
 
     var body: some View {
@@ -349,8 +384,8 @@ private struct NoteSearchFileGroupView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(previewResults.prefix(12)) { result in
+                LazyHStack(spacing: 10) {
+                    ForEach(previewResults) { result in
                         Button {
                             onOpen(result)
                         } label: {
@@ -384,7 +419,7 @@ private struct NoteSearchPreviewCard: View {
                         case let .success(image):
                             image
                                 .resizable()
-                                .scaledToFill()
+                                .aspectRatio(contentMode: isFileMatch ? .fit : .fill)
                                 .frame(width: 146, height: 120)
                                 .clipped()
                         case .failure:
@@ -423,10 +458,12 @@ private struct NoteSearchPreviewCard: View {
 
     private var pageLabel: String {
         if let page = result.target.page {
-            return "\(page) page"
+            return "p.\(page)"
         }
-        return result.kind.replacingOccurrences(of: "_", with: " ")
+        return result.title
     }
+
+    private var isFileMatch: Bool { result.target.page == nil }
 }
 
 private struct GlobalSearchResultRow: View {

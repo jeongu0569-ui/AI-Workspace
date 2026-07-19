@@ -167,6 +167,55 @@ test("global search returns public common results and hides internal files", asy
   assert.equal(result.results.some((hit) => String(hit.target.path || "").includes(".codmes")), false);
 });
 
+test("global search keeps PDF filename matches and separate content occurrences", async () => {
+  const root = await fixtureWorkspace();
+  const indexPath = path.join(root, ".codmes", "index", "search.json");
+  await fs.mkdir(path.dirname(indexPath), { recursive: true });
+  await fs.writeFile(indexPath, JSON.stringify({
+    builtAt: new Date(0).toISOString(),
+    items: [
+      { path: "Notes/workbook_sw.pdf", kind: "pdf", modifiedAt: new Date(0).toISOString() }
+    ],
+    chunks: [
+      { id: "page-1-a", path: "Notes/workbook_sw.pdf", kind: "pdf", page: 1, chunkIndex: 0, text: "Oracle database" },
+      { id: "page-1-b", path: "Notes/workbook_sw.pdf", kind: "pdf", page: 1, chunkIndex: 1, text: "Oracle client" },
+      { id: "page-2", path: "Notes/workbook_sw.pdf", kind: "pdf", page: 2, chunkIndex: 2, text: "Oracle cloud" }
+    ]
+  }), "utf8");
+
+  const contentResult = await globalSearch(root, { query: "oracle", surface: "notes" });
+  assert.deepEqual(contentResult.results.map((hit) => hit.target.page), [1, 1, 2]);
+
+  const filenameResult = await globalSearch(root, { query: "work", surface: "notes" });
+  assert.equal(filenameResult.results.length, 1);
+  assert.equal(filenameResult.results[0].kind, "note_file");
+  assert.equal(filenameResult.results[0].target.path, "Notes/workbook_sw.pdf");
+  assert.equal(filenameResult.results[0].target.page, null);
+});
+
+test("global search returns PDF occurrences beyond the former 40-result limit", async () => {
+  const root = await fixtureWorkspace();
+  const indexPath = path.join(root, ".codmes", "index", "search.json");
+  const chunks = Array.from({ length: 56 }, (_, index) => ({
+    id: `oracle-${index}`,
+    path: "Notes/database.pdf",
+    kind: "pdf",
+    page: index + 1,
+    chunkIndex: index,
+    text: `Oracle result ${index + 1}`
+  }));
+  await fs.mkdir(path.dirname(indexPath), { recursive: true });
+  await fs.writeFile(indexPath, JSON.stringify({
+    builtAt: new Date(0).toISOString(),
+    items: [{ path: "Notes/database.pdf", kind: "pdf", modifiedAt: new Date(0).toISOString() }],
+    chunks
+  }), "utf8");
+
+  const result = await globalSearch(root, { query: "oracle", surface: "notes" });
+  assert.equal(result.resultCount, 56);
+  assert.equal(result.results.at(-1).target.page, 56);
+});
+
 test("searches extracted PDF text and caches it", async () => {
   const root = await fixtureWorkspace();
   await fs.mkdir(path.join(root, "Documents"), { recursive: true });
