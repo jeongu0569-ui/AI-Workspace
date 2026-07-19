@@ -160,6 +160,21 @@ struct WorkspaceAPI {
         ))
     }
 
+    func exportCodmesPDFPackage(name: String, pdfData: Data, codmesData: Data) async throws -> CodmesPDFExportResponse {
+        try await post("/api/file/export-codmes-pdf", body: CodmesPDFExportBody(
+            name: name,
+            pdfDataBase64: pdfData.base64EncodedString(),
+            codmesDataBase64: codmesData.base64EncodedString()
+        ))
+    }
+
+    func importCodmesPDFPackage(path: String, packageData: Data) async throws -> CodmesPDFImportResponse {
+        try await post("/api/file/import-codmes-pdf-package", body: CodmesPDFPackageImportBody(
+            path: path,
+            packageDataBase64: packageData.base64EncodedString()
+        ))
+    }
+
     func startChunkedUpload(path: String, size: Int64) async throws -> UploadStartResponse {
         try await post("/api/file/upload/start", body: ChunkedUploadStartBody(path: path, size: size))
     }
@@ -577,10 +592,27 @@ struct CodmesPDFImportResponse: Codable {
     let annotationsImported: Bool
 }
 
+struct CodmesPDFExportResponse: Codable {
+    let ok: Bool
+    let fileName: String
+    let dataBase64: String
+}
+
 private struct CodmesPDFImportBody: Encodable {
     let path: String
     let pdfDataBase64: String
     let codmesDataBase64: String?
+}
+
+private struct CodmesPDFExportBody: Encodable {
+    let name: String
+    let pdfDataBase64: String
+    let codmesDataBase64: String
+}
+
+private struct CodmesPDFPackageImportBody: Encodable {
+    let path: String
+    let packageDataBase64: String
 }
 
 private struct ChunkedUploadStartBody: Encodable {

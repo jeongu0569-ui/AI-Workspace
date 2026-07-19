@@ -153,6 +153,65 @@ test("workspace server protects APIs with CODMES_SERVER_TOKEN and exposes manage
     assert.equal(importedAnnotations.documentPath, "Documents/imported 2.pdf");
     assert.equal(importedAnnotations.pages[0].objects[0].text, "portable import marker");
 
+    const editableExport = await fetchJson(`${baseUrl}/api/file/export-codmes-pdf`, {
+      token,
+      method: "POST",
+      body: {
+        name: "portable.pdf",
+        pdfDataBase64: Buffer.from("%PDF-1.4\nportable package\n%%EOF", "utf8").toString("base64"),
+        codmesDataBase64: Buffer.from(JSON.stringify({
+          schemaVersion: 2,
+          documentPath: "Documents/original.pdf",
+          pages: [{
+            pageIndex: 0,
+            objects: [{ id: "package-text", type: "text", text: "editable package marker" }]
+          }],
+          objects: [],
+          elements: []
+        }), "utf8").toString("base64")
+      }
+    });
+    assert.equal(editableExport.fileName, "portable.codmespdf");
+
+    const restoredPackage = await fetchJson(`${baseUrl}/api/file/import-codmes-pdf-package`, {
+      token,
+      method: "POST",
+      body: {
+        path: "Documents/portable.pdf",
+        packageDataBase64: editableExport.dataBase64
+      }
+    });
+    assert.equal(restoredPackage.path, "Documents/portable.pdf");
+    assert.equal(restoredPackage.annotationsImported, true);
+    const restoredAnnotations = await fetchJson(`${baseUrl}/api/file/annotations?path=Documents/portable.pdf`, { token });
+    assert.equal(restoredAnnotations.documentPath, "Documents/portable.pdf");
+    assert.equal(restoredAnnotations.pages[0].objects[0].text, "editable package marker");
+
+    const restoredCollision = await fetchJson(`${baseUrl}/api/file/import-codmes-pdf-package`, {
+      token,
+      method: "POST",
+      body: {
+        path: "Documents/portable.pdf",
+        packageDataBase64: editableExport.dataBase64
+      }
+    });
+    assert.equal(restoredCollision.path, "Documents/portable 2.pdf");
+    assert.equal(restoredCollision.renamed, true);
+
+    const invalidPackageResponse = await fetch(`${baseUrl}/api/file/import-codmes-pdf-package`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        path: "Documents/broken.pdf",
+        packageDataBase64: Buffer.from("not a zip", "utf8").toString("base64")
+      })
+    });
+    assert.equal(invalidPackageResponse.status, 400);
+    await assert.rejects(fs.access(path.join(workspaceRoot, "Documents", "broken.pdf")), { code: "ENOENT" });
+
     await fs.mkdir(path.join(workspaceRoot, "Documents", ".codmes", "annotations"), { recursive: true });
     await fs.writeFile(path.join(workspaceRoot, "Documents", ".codmes", "annotations", "later.codmes.json"), JSON.stringify({
       schemaVersion: 1,

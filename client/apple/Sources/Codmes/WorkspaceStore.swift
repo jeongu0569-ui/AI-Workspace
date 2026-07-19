@@ -839,7 +839,54 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func importCodmesPDFPackage(root: String, fileURLs: [URL]) async {
+    func importLocalFiles(root: String, fileURLs: [URL]) async {
+        let packages = fileURLs.filter { $0.pathExtension.lowercased() == "codmespdf" }
+        for packageURL in packages {
+            await importCodmesPDFPackage(root: root, fileURL: packageURL)
+        }
+
+        let regularFiles = fileURLs.filter { $0.pathExtension.lowercased() != "codmespdf" }
+        let hasLegacyState = regularFiles.contains { $0.lastPathComponent.lowercased().hasSuffix(".codmes.json") }
+        let hasLegacyPDF = regularFiles.contains { $0.pathExtension.lowercased() == "pdf" }
+        if hasLegacyState && hasLegacyPDF {
+            await importLegacyCodmesPDF(root: root, fileURLs: regularFiles)
+        } else {
+            await uploadLocalFiles(root: root, fileURLs: regularFiles)
+        }
+    }
+
+    private func importCodmesPDFPackage(root: String, fileURL: URL) async {
+        guard let api else { return }
+        let didAccess = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { fileURL.stopAccessingSecurityScopedResource() }
+        }
+        let baseName = (fileURL.lastPathComponent as NSString).deletingPathExtension
+        let pdfName = "\(baseName.isEmpty ? "document" : baseName).pdf"
+        let destination = workspacePathForNewItem(root: root, name: pdfName)
+        let uploadId = UUID()
+        addUploadItem(id: uploadId, root: root, fileURL: fileURL, destination: destination)
+        do {
+            updateUploadItem(uploadId, status: .reading, progress: 0.1, message: "Reading editable Codmes PDF")
+            let packageData = try Data(contentsOf: fileURL)
+            let totalBytes = Int64(packageData.count)
+            updateUploadItem(uploadId, status: .uploading, progress: 0.45, bytesSent: totalBytes, totalBytes: totalBytes, message: "Restoring PDF and annotations")
+            let response = try await api.importCodmesPDFPackage(path: destination, packageData: packageData)
+            updateUploadItem(uploadId, status: .completed, progress: 1, bytesSent: totalBytes, totalBytes: totalBytes, message: response.renamed ? "Imported as \(response.path)" : "Imported")
+            await loadTree(root: root, path: currentPath(for: root))
+            if let item = items(for: root).first(where: { $0.path == response.path }) {
+                await loadFile(item)
+            }
+            statusMessage = response.renamed
+                ? "Restored editable PDF as \(response.path)"
+                : "Restored editable PDF with Codmes annotations"
+        } catch {
+            updateUploadItem(uploadId, status: .failed, message: uploadErrorMessage(error))
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func importLegacyCodmesPDF(root: String, fileURLs: [URL]) async {
         guard let api else { return }
         let scoped = fileURLs.map { url in
             (url, url.startAccessingSecurityScopedResource())

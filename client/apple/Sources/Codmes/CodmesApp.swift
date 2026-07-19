@@ -33,6 +33,12 @@ struct CodmesApp: App {
             .task {
                 await store.refreshWorkspace()
             }
+            .onOpenURL { url in
+                guard url.pathExtension.lowercased() == "codmespdf" else { return }
+                Task {
+                    await store.importLocalFiles(root: "notes", fileURLs: [url])
+                }
+            }
     }
 }
 

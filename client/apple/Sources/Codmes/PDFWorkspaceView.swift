@@ -1359,40 +1359,48 @@ struct PDFWorkspaceView: View {
     }
 
     private func exportPDFWithCodmesState() {
+        guard let api = store.api else {
+            statusText = "Connect to the workspace server first."
+            return
+        }
         isExportingPDF = true
         statusText = "Exporting..."
         let annotations = annotations ?? emptyAnnotationDocument()
         let sourceURL = rawFile.url
-        let outputDirectory = exportDirectory()
-            .appendingPathComponent("\(basePDFName())-codmes", isDirectory: true)
-        let pdfDirectory = outputDirectory.appendingPathComponent("PDF", isDirectory: true)
-        let codmesDirectory = outputDirectory.appendingPathComponent("Codmes", isDirectory: true)
-        let pdfURL = pdfDirectory.appendingPathComponent(rawFile.name)
-        let stateURL = codmesDirectory.appendingPathComponent("\(basePDFName()).codmes.json")
         let requestedPages = selectedPageIndexes()
+        let packageBaseName = "\(basePDFName())\(requestedPages.isEmpty ? "" : "-pages")"
+        let outputDirectory = exportDirectory()
 
         Task.detached {
             do {
-                try FileManager.default.createDirectory(at: pdfDirectory, withIntermediateDirectories: true)
-                try FileManager.default.createDirectory(at: codmesDirectory, withIntermediateDirectories: true)
                 guard let sourceDocument = PDFDocument(url: sourceURL) else { throw CocoaError(.fileNoSuchFile) }
                 let pages = normalizedPageIndexes(requestedPages, pageCount: sourceDocument.pageCount)
                 let exportDocument = try copyPDFDocument(sourceDocument, pageIndexes: pages)
-                guard exportDocument.write(to: pdfURL) else { throw CocoaError(.fileWriteUnknown) }
-                let exportAnnotations = annotations.sliced(to: pages, documentPath: pdfURL.lastPathComponent)
+                guard let pdfData = exportDocument.dataRepresentation() else { throw CocoaError(.fileWriteUnknown) }
+                let exportAnnotations = annotations.sliced(to: pages, documentPath: "\(packageBaseName).pdf")
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let data = try encoder.encode(exportAnnotations)
-                try data.write(to: stateURL, options: .atomic)
+                let annotationData = try encoder.encode(exportAnnotations)
+                let response = try await api.exportCodmesPDFPackage(
+                    name: packageBaseName,
+                    pdfData: pdfData,
+                    codmesData: annotationData
+                )
+                guard let packageData = Data(base64Encoded: response.dataBase64) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                let outputURL = outputDirectory.appendingPathComponent(response.fileName)
+                try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try packageData.write(to: outputURL, options: .atomic)
                 await MainActor.run {
                     isExportingPDF = false
-                    statusText = "Codmes export ready"
-                    exportedPDFShare = PDFExportShare(urls: [pdfURL, stateURL])
+                    statusText = "Editable Codmes PDF ready"
+                    exportedPDFShare = PDFExportShare(urls: [outputURL])
                 }
             } catch {
                 await MainActor.run {
                     isExportingPDF = false
-                    statusText = "Export failed"
+                    statusText = "Export failed: \(error.localizedDescription)"
                 }
             }
         }
@@ -7979,13 +7987,13 @@ private struct PDFExportOptionsView: View {
                 Button {
                     onExportCodmesState()
                 } label: {
-                    Label("Export PDF + Codmes state", systemImage: "shippingbox")
+                    Label("Export editable Codmes PDF", systemImage: "shippingbox")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.bordered)
                 .disabled(isExporting)
 
-                Text("Leave pages empty to export the full PDF. Codmes state exports a portable folder with separate PDF and Codmes state sections, so another Codmes workspace can restore editable handwriting, text boxes, and image objects.")
+                Text("Leave pages empty to export the full PDF. An editable Codmes PDF is one portable .codmespdf file that restores the PDF with editable handwriting, text boxes, and image objects on another device.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 

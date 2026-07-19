@@ -34,6 +34,7 @@ import {
   removeDocumentIngestCacheFiles
 } from "./lib/document-ingest.mjs";
 import { readAuditSummary } from "./lib/runtime/audit-log.mjs";
+import { createCodmesPdfPackage, readCodmesPdfPackage } from "./lib/codmes-pdf-package.mjs";
 import {
   BUILTIN_PROVIDERS,
   listCredentialStatus,
@@ -304,6 +305,12 @@ async function handleRequest(req, res) {
     }
     if (req.method === "POST" && url.pathname === "/api/file/import-codmes-pdf") {
       return sendJson(res, await importCodmesPdf(req), 201);
+    }
+    if (req.method === "POST" && url.pathname === "/api/file/export-codmes-pdf") {
+      return sendJson(res, await exportCodmesPdfPackage(req));
+    }
+    if (req.method === "POST" && url.pathname === "/api/file/import-codmes-pdf-package") {
+      return sendJson(res, await importCodmesPdfPackage(req), 201);
     }
     if (req.method === "POST" && url.pathname === "/api/file/upload/start") {
       return sendJson(res, await startChunkedUpload(req), 201);
@@ -1126,6 +1133,80 @@ async function importCodmesPdf(req) {
     renamed: target.relativePath !== requested.relativePath,
     annotationsImported: Boolean(annotations)
   };
+}
+
+async function exportCodmesPdfPackage(req) {
+  const body = await readJsonBody(req);
+  if (typeof body.pdfDataBase64 !== "string") {
+    throw Object.assign(new Error("Missing PDF data."), { status: 400 });
+  }
+  if (typeof body.codmesDataBase64 !== "string") {
+    throw Object.assign(new Error("Missing Codmes annotation data."), { status: 400 });
+  }
+  let annotations;
+  try {
+    annotations = JSON.parse(Buffer.from(body.codmesDataBase64, "base64").toString("utf8"));
+  } catch {
+    throw Object.assign(new Error("Codmes annotation data is invalid."), { status: 400 });
+  }
+  const title = codmesPdfBaseName(body.name);
+  const result = createCodmesPdfPackage({
+    pdfData: Buffer.from(body.pdfDataBase64, "base64"),
+    annotations,
+    title
+  });
+  return {
+    ok: true,
+    fileName: `${title}.codmespdf`,
+    dataBase64: result.data.toString("base64"),
+    manifest: result.manifest
+  };
+}
+
+async function importCodmesPdfPackage(req) {
+  const body = await readJsonBody(req);
+  if (typeof body.packageDataBase64 !== "string") {
+    throw Object.assign(new Error("Missing Codmes PDF package data."), { status: 400 });
+  }
+  const packageContents = readCodmesPdfPackage(Buffer.from(body.packageDataBase64, "base64"));
+  const requestedName = body.path || `Documents/${codmesPdfBaseName(packageContents.manifest.title)}.pdf`;
+  const requested = resolveWorkspacePath(WORKSPACE_ROOT, ensurePdfExtension(requestedName));
+  const target = await availableWorkspaceFilePath(requested.relativePath);
+  const stateDirectory = documentStateDirectory(WORKSPACE_ROOT, target.relativePath);
+  try {
+    await fs.rm(stateDirectory, { recursive: true, force: true });
+    await fs.mkdir(path.dirname(target.absolutePath), { recursive: true });
+    await fs.writeFile(target.absolutePath, packageContents.pdfData, { flag: "wx" });
+    const annotations = normalizeAnnotations(target.relativePath, packageContents.annotations);
+    const targetAnnotationPath = annotationsPathForDocument(WORKSPACE_ROOT, target.relativePath);
+    await fs.mkdir(path.dirname(targetAnnotationPath), { recursive: true });
+    await fs.writeFile(targetAnnotationPath, JSON.stringify(annotations, null, 2) + "\n", "utf8");
+    await ensureDocumentStateManifest(WORKSPACE_ROOT, target.relativePath);
+    await refreshSearchIndexPaths([target.relativePath]);
+  } catch (error) {
+    await fs.rm(target.absolutePath, { force: true }).catch(() => {});
+    await fs.rm(stateDirectory, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+  return {
+    ok: true,
+    path: target.relativePath,
+    requestedPath: requested.relativePath,
+    renamed: target.relativePath !== requested.relativePath,
+    annotationsImported: true
+  };
+}
+
+function codmesPdfBaseName(value) {
+  const original = path.posix.basename(String(value || "document").replace(/\\/g, "/"));
+  const withoutPackage = original.replace(/\.codmespdf$/i, "");
+  const withoutPdf = withoutPackage.replace(/\.pdf$/i, "").trim();
+  return withoutPdf || "document";
+}
+
+function ensurePdfExtension(value) {
+  const normalized = String(value || "").replace(/\\/g, "/");
+  return normalized.toLowerCase().endsWith(".pdf") ? normalized : `${normalized}.pdf`;
 }
 
 async function startChunkedUpload(req) {

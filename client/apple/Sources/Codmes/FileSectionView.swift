@@ -53,7 +53,6 @@ struct FileBrowserPane: View {
     @State private var transferAction: WorkspaceTransferAction?
     @State private var transferDestination = ""
     @State private var isImportingFile = false
-    @State private var isImportingCodmesPDF = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,17 +90,7 @@ struct FileBrowserPane: View {
                 .buttonStyle(.plain)
                 .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
-                .help("Attach file")
-
-                Button {
-                    isImportingCodmesPDF = true
-                } label: {
-                    Image(systemName: "shippingbox")
-                }
-                .buttonStyle(.plain)
-                .frame(width: 30, height: 30)
-                .contentShape(Rectangle())
-                .help("Import PDF + Codmes state")
+                .help("Attach or import file")
 
                 Button {
                     Task { await store.goToParent(root: root) }
@@ -188,15 +177,7 @@ struct FileBrowserPane: View {
         .fileImporter(isPresented: $isImportingFile, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case let .success(urls):
-                Task { await store.uploadLocalFiles(root: root, fileURLs: urls) }
-            case let .failure(error):
-                store.statusMessage = error.localizedDescription
-            }
-        }
-        .fileImporter(isPresented: $isImportingCodmesPDF, allowedContentTypes: [.pdf, .json], allowsMultipleSelection: true) { result in
-            switch result {
-            case let .success(urls):
-                Task { await store.importCodmesPDFPackage(root: root, fileURLs: urls) }
+                Task { await store.importLocalFiles(root: root, fileURLs: urls) }
             case let .failure(error):
                 store.statusMessage = error.localizedDescription
             }
