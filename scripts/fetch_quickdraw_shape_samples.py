@@ -75,7 +75,7 @@ def main() -> int:
         default=0,
         help="skip this many converted records per class before writing samples",
     )
-    parser.add_argument("--output", default="docs/notes/shape-recognition-quickdraw-samples.jsonl")
+    parser.add_argument("--output", default="scripts/fixtures/shape-recognition-quickdraw-samples.jsonl")
     parser.add_argument(
         "--include-unrecognized",
         action="store_true",

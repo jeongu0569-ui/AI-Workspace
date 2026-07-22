@@ -285,7 +285,7 @@ async function handleRequest(req, res) {
       return streamRawFile(req, res, url);
     }
     if (req.method === "GET" && url.pathname === "/api/pdf-thumbnail") {
-      return streamPdfThumbnail(res, url);
+      return await streamPdfThumbnail(res, url);
     }
     if (req.method === "GET" && url.pathname === "/api/pdf/metadata") {
       return sendJson(res, await readPdfMetadata(url));
@@ -809,6 +809,7 @@ async function handleRequest(req, res) {
 
     throw Object.assign(new Error("Not found."), { status: 404 });
   } catch (error) {
+    if (res.destroyed || res.writableEnded) return;
     sendError(res, error);
   }
 }
@@ -977,7 +978,27 @@ async function streamPdfThumbnail(res, url) {
   }
   const stat = await fs.stat(absolutePath);
   if (stat.isDirectory()) throw Object.assign(new Error("Cannot render a folder."), { status: 400 });
-  const thumbnailPath = await renderPdfThumbnail(absolutePath, relativePath, stat, page, crop, highlightQuery, scale);
+  const abortController = new AbortController();
+  const abortRender = () => {
+    if (!res.writableEnded) abortController.abort();
+  };
+  res.once("close", abortRender);
+  let thumbnailPath;
+  try {
+    thumbnailPath = await renderPdfThumbnail(
+      absolutePath,
+      relativePath,
+      stat,
+      page,
+      crop,
+      highlightQuery,
+      scale,
+      abortController.signal
+    );
+  } finally {
+    res.off("close", abortRender);
+  }
+  if (abortController.signal.aborted || res.destroyed) return;
   const thumbnailStat = await fs.stat(thumbnailPath);
   res.writeHead(200, {
     "cache-control": "public, max-age=86400",
@@ -1138,15 +1159,16 @@ async function streamPdfArtifact(res, artifactPath) {
   createReadStream(artifactPath).pipe(res);
 }
 
-async function renderPdfThumbnail(absolutePath, relativePath, stat, page, crop, highlightQuery, scale) {
+async function renderPdfThumbnail(absolutePath, relativePath, stat, page, crop, highlightQuery, scale, signal) {
   const cropKey = crop ? `${crop.x}:${crop.y}:${crop.width}:${crop.height}` : "cover";
-  const key = Buffer.from(`pdf-preview-v5\n${relativePath}\n${stat.size}:${stat.mtimeMs}\n${page}\n${cropKey}\n${highlightQuery.toLocaleLowerCase()}\n${scale}`, "utf8").toString("base64url");
+  const key = Buffer.from(`pdf-preview-v6\n${relativePath}\n${stat.size}:${stat.mtimeMs}\n${page}\n${cropKey}\n${highlightQuery.toLocaleLowerCase()}\n${scale}`, "utf8").toString("base64url");
   const outputPath = path.join(WORKSPACE_ROOT, ".codmes", "index", "thumbnails", `${key}.png`);
   try {
     await fs.access(outputPath);
     return outputPath;
   } catch {}
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const temporaryPath = `${outputPath}.${randomUUID()}.tmp.png`;
   const python = await documentWorkerPython();
   const script = `
 import fitz, sys
@@ -1202,7 +1224,17 @@ pix.save(out_path)
 doc.close()
 `;
   const cropArgs = crop ? [crop.x, crop.y, crop.width, crop.height].map(String) : ["", "", "", ""];
-  await runPythonScript(python, script, [absolutePath, outputPath, String(page), ...cropArgs, highlightQuery, String(scale)]);
+  try {
+    await runPythonScript(
+      python,
+      script,
+      [absolutePath, temporaryPath, String(page), ...cropArgs, highlightQuery, String(scale)],
+      { signal }
+    );
+    await fs.rename(temporaryPath, outputPath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true });
+  }
   return outputPath;
 }
 
@@ -1225,24 +1257,38 @@ function pdfThumbnailScale(url) {
   return Math.min(2.5, Math.max(0.35, value));
 }
 
-async function runPythonScript(python, script, args) {
+async function runPythonScript(python, script, args, options = {}) {
   const { spawn } = await import("node:child_process");
+  const signal = options.signal;
+  if (signal?.aborted) throw abortedOperationError();
   const stdout = [];
   const stderr = [];
   const child = spawn(python, ["-c", script, ...args], {
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env
   });
+  const abort = () => child.kill("SIGTERM");
+  signal?.addEventListener("abort", abort, { once: true });
   child.stdout.on("data", (chunk) => stdout.push(chunk));
   child.stderr.on("data", (chunk) => stderr.push(chunk));
-  const code = await new Promise((resolve, reject) => {
-    child.on("error", reject);
-    child.on("close", resolve);
-  });
+  let code;
+  try {
+    code = await new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", resolve);
+    });
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
+  if (signal?.aborted) throw abortedOperationError();
   if (code !== 0) {
     throw new Error(Buffer.concat(stderr).toString("utf8").trim() || `Python exited with ${code}`);
   }
   return Buffer.concat(stdout).toString("utf8");
+}
+
+function abortedOperationError() {
+  return Object.assign(new Error("Operation cancelled."), { code: "ABORT_ERR", status: 499 });
 }
 
 async function writeTextFile(req, url) {

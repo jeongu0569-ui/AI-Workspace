@@ -28,6 +28,9 @@
 | GET | `/api/raw` | binary 원본 읽기 |
 | GET | `/api/file/metadata` | 파일 및 추출 metadata |
 | GET | `/api/pdf-thumbnail` | PDF page thumbnail |
+| GET | `/api/pdf/metadata` | PDF page 수와 streaming metadata |
+| GET | `/api/pdf/skeleton` | page 수를 유지한 작은 skeleton PDF |
+| GET | `/api/pdf/page` | 지정한 PDF page fragment |
 
 업로드:
 
@@ -52,7 +55,7 @@ PUT /api/file/annotations?path=Notes/example.pdf
 ```
 
 저장에 성공하면 해당 문서의 검색 항목도 갱신한다. 상태 형식과 저장 위치는
-[Notes annotation 문서](../notes/common/pdf-annotations.md)를 참고한다.
+[Notes annotation 문서](../notes.md#annotation-data)를 참고한다.
 
 ## Search와 context
 

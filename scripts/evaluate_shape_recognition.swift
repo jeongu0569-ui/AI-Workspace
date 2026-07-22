@@ -25,7 +25,7 @@ private struct ShapeSampleRecord: Decodable {
 }
 
 private struct Options {
-    var corpusPath = "docs/notes/shape-recognition-quickdraw-samples.jsonl"
+    var corpusPath = "scripts/fixtures/shape-recognition-quickdraw-samples.jsonl"
     var minAccuracy = 0.70
     var maxWrong = 16
     var showMismatches = false
@@ -181,7 +181,7 @@ private enum ShapeRecognitionEvaluator {
     private static func printHelp() {
         print("""
         Usage:
-          evaluate_shape_recognition --corpus docs/notes/shape-recognition-quickdraw-samples.jsonl
+          evaluate_shape_recognition --corpus scripts/fixtures/shape-recognition-quickdraw-samples.jsonl
 
         Options:
           --corpus PATH          JSONL corpus with expectedKind and rawPoints

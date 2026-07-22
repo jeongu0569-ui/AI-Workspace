@@ -7,14 +7,15 @@
 
 - [제품 범위](product.md)
 - [남은 작업](roadmap.md)
+- [Chat](chat.md): session, streaming, context와 approval
+- [Notes와 PDF](notes.md): file tree, PDF, annotation과 플랫폼별 구현 차이
+- [Code](code.md): Code surface와 code agent 흐름
 - [Server](server/README.md): architecture, data와 API
 - [Client](client/README.md): Apple 앱의 공통 및 플랫폼 구현
-- [Notes](notes/README.md): Notes, PDF, annotation과 플랫폼별 편집 동작
 - [Search](search/README.md): 사용자 검색, 문서 추출과 LLM 검색
 - [UI/UX](ui-ux/README.md): 화면과 interaction 원칙
-- [Code](code/README.md): Code surface와 code agent 흐름
 - [실행과 검증](runbook.md)
-- [Debug](debug/): 재발 가능한 문제의 원인과 검증 절차
+- [Debug](debug/README.md): 재발 가능한 문제의 원인과 검증 절차
 
 ## 문서 원칙
 
@@ -22,5 +23,5 @@
 2. 계획은 [roadmap.md](roadmap.md)에만 적고 현행 동작과 섞지 않는다.
 3. API의 최종 기준은 `server/index.mjs`, 저장 경로의 최종 기준은
    `server/lib` 구현이다.
-4. 플랫폼 공통 계약과 플랫폼 UI 구현을 분리한다.
+4. 기능별 설명 안에서 공통 계약과 플랫폼 UI 차이를 분명히 구분한다.
 5. 디버깅 문서는 재발 가능성이 있는 원인과 검증 절차만 보존한다.

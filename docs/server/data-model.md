@@ -29,7 +29,9 @@
 |        `- annotation-ocr/
 |- index/
 |  |- files.json
-|  `- search.json
+|  |- search.json
+|  |- pdf-stream/           PDF page fragment cache
+|  `- thumbnails/           PDF thumbnail cache
 |- sessions/
 |- conversation-index/
 |- conversation-folders/
@@ -53,7 +55,7 @@
 | 종류 | 예 | 재생성 가능 |
 | --- | --- | --- |
 | 원본 | 사용자 파일, `annotations.json`, sessions, config | 아니오 |
-| 파생 | `files.json`, `search.json`, `extraction.json`, `content.md`, OCR cache | 예 |
+| 파생 | `files.json`, `search.json`, `extraction.json`, `content.md`, OCR/PDF stream/thumbnail cache | 예 |
 
 파일 API로 문서를 이동하거나 복사하면 문서 상태의 `sourcePath`와 저장 위치도
 함께 갱신된다. 삭제하면 연결된 문서 상태와 검색 항목도 제거된다. 서버 밖에서
@@ -64,4 +66,4 @@
 `annotations.json`은 schema version, document path, 페이지별 stroke, text/image
 object, 공통 element 배열을 저장한다. 좌표는 페이지 기준 정규화 값이므로 화면
 크기와 Apple UI 클래스에 의존하지 않는다. 자세한 계약은
-[Notes 공통 annotation 문서](../notes/common/pdf-annotations.md)를 참고한다.
+[Notes annotation 문서](../notes.md#annotation-data)를 참고한다.

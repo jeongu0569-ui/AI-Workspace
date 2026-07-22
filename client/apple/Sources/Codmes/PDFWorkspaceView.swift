@@ -1862,6 +1862,13 @@ private struct PDFPageThumbnailBrowser: View {
     @State private var pageCount: Int?
     @State private var renderer: PDFPageThumbnailRenderer?
     @State private var didFailToLoad = false
+    @State private var remoteRenderer = PDFRemotePageThumbnailRenderer()
+    @State private var visiblePageIndexes = Set<Int>()
+    @State private var thumbnailImages = [String: PDFPagePreviewImage]()
+    @State private var thumbnailFailures = Set<String>()
+    @State private var thumbnailLoadingKeys = Set<String>()
+    @State private var thumbnailLoadID = ""
+    @State private var thumbnailLoadTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1894,26 +1901,29 @@ private struct PDFPageThumbnailBrowser: View {
                         ScrollView {
                             LazyVGrid(columns: gridColumns(for: proxy.size.width), spacing: 12) {
                                 ForEach(0..<pageCount, id: \.self) { pageIndex in
-                                    if let renderer {
+                                    if let thumbnailKey = thumbnailKey(pageIndex: pageIndex) {
                                         PDFPageThumbnailCell(
-                                            renderer: renderer,
+                                            image: thumbnailImages[thumbnailKey],
+                                            isLoading: thumbnailLoadingKeys.contains(thumbnailKey),
+                                            didFail: thumbnailFailures.contains(thumbnailKey),
                                             pageIndex: pageIndex,
                                             isCurrent: pageIndex == currentPageIndex,
                                             onSelect: { onSelectPage(pageIndex) }
                                         )
                                         .id(pageIndex)
-                                    } else if let streamPath {
-                                        RemotePDFPageThumbnailCell(
-                                            path: streamPath,
-                                            pageIndex: pageIndex,
-                                            isCurrent: pageIndex == currentPageIndex,
-                                            onSelect: { onSelectPage(pageIndex) }
-                                        )
-                                        .id(pageIndex)
+                                        .background { thumbnailFrameReader(pageIndex: pageIndex) }
                                     }
                                 }
                             }
+                            .scrollTargetLayout()
                             .padding(12)
+                        }
+                        .coordinateSpace(name: PDFPageSidebarCoordinateSpace.name)
+                        .modifier(PDFPageSidebarVisibilityModifier { pageIndexes in
+                            updateVisiblePageIndexes(pageIndexes)
+                        })
+                        .onPreferenceChange(PDFPageThumbnailFramePreferenceKey.self) { frames in
+                            updateSidebarAnchor(frames: frames, viewportHeight: proxy.size.height)
                         }
                         .task {
                             await Task.yield()
@@ -1939,9 +1949,15 @@ private struct PDFPageThumbnailBrowser: View {
             pageCount = nil
             renderer = nil
             didFailToLoad = false
+            cancelThumbnailLoading()
+            thumbnailImages.removeAll()
+            thumbnailFailures.removeAll()
+            thumbnailLoadingKeys.removeAll()
 
             if let streamedPageCount {
                 pageCount = streamedPageCount
+                visiblePageIndexes = [currentPageIndex]
+                scheduleThumbnailLoading(around: currentPageIndex)
                 return
             }
 
@@ -1953,8 +1969,168 @@ private struct PDFPageThumbnailBrowser: View {
             guard !Task.isCancelled else { return }
             renderer = nextRenderer
             pageCount = count
-            await nextRenderer.prewarm(pageIndexes: prioritizedPageIndexes(around: currentPageIndex, pageCount: count))
+            visiblePageIndexes = [currentPageIndex]
+            scheduleThumbnailLoading(around: currentPageIndex)
         }
+        .onDisappear {
+            cancelThumbnailLoading()
+        }
+    }
+
+    private func updateSidebarAnchor(frames: [Int: CGRect], viewportHeight: CGFloat) {
+        guard !usesNativeScrollVisibility else { return }
+        guard viewportHeight > 0 else { return }
+        let centerY = viewportHeight / 2
+        let visibleFrames = frames.filter { $0.value.maxY > 0 && $0.value.minY < viewportHeight }
+        let nextVisiblePageIndexes = Set(visibleFrames.keys)
+        if nextVisiblePageIndexes != visiblePageIndexes {
+            visiblePageIndexes = nextVisiblePageIndexes
+        }
+        let centerPage = visibleFrames
+            .min { abs($0.value.midY - centerY) < abs($1.value.midY - centerY) }?
+            .key
+        if let centerPage {
+            scheduleThumbnailLoading(around: centerPage)
+        }
+    }
+
+    private func updateVisiblePageIndexes(_ pageIndexes: [Int]) {
+        let sortedPageIndexes = pageIndexes.sorted()
+        let nextVisiblePageIndexes = Set(sortedPageIndexes)
+        if nextVisiblePageIndexes != visiblePageIndexes {
+            visiblePageIndexes = nextVisiblePageIndexes
+        }
+        if let centerPage = sortedPageIndexes.isEmpty ? nil : sortedPageIndexes[sortedPageIndexes.count / 2] {
+            scheduleThumbnailLoading(around: centerPage)
+        }
+    }
+
+    private func scheduleThumbnailLoading(around centerPageIndex: Int) {
+        guard let pageCount else { return }
+        let visibleIndexes = prioritized(
+            visiblePageIndexes.filter { $0 >= 0 && $0 < pageCount },
+            around: centerPageIndex
+        )
+        let requestedIndexes = Array(
+            Set(visibleIndexes + prioritizedPageIndexes(around: centerPageIndex, pageCount: pageCount))
+        )
+        let prioritizedIndexes = prioritized(requestedIndexes, around: centerPageIndex)
+        guard !prioritizedIndexes.isEmpty else { return }
+
+        let isLocal = renderer != nil
+        let remoteRequests: [PDFRemoteThumbnailRequest]
+        if !isLocal, let streamPath {
+            remoteRequests = prioritizedIndexes.compactMap { pageIndex in
+                guard let url = remoteThumbnailURL(path: streamPath, pageIndex: pageIndex) else { return nil }
+                return PDFRemoteThumbnailRequest(pageIndex: pageIndex, url: url)
+            }
+        } else {
+            remoteRequests = []
+        }
+        guard isLocal || !remoteRequests.isEmpty else { return }
+
+        let orderedKeys = isLocal
+            ? prioritizedIndexes.map(localThumbnailKey(pageIndex:))
+            : remoteRequests.map { $0.url.absoluteString }
+        let requestedKeys = Set(orderedKeys)
+        let loadID = (isLocal ? "local|" : "remote|") + orderedKeys.joined(separator: "|")
+        guard loadID != thumbnailLoadID else { return }
+        thumbnailLoadID = loadID
+        thumbnailLoadTask?.cancel()
+
+        thumbnailImages = thumbnailImages.filter { requestedKeys.contains($0.key) }
+        thumbnailFailures.subtract(requestedKeys)
+        thumbnailLoadingKeys = requestedKeys.subtracting(thumbnailImages.keys)
+        if let renderer {
+            thumbnailLoadTask = Task {
+                for pageIndex in prioritizedIndexes {
+                    guard !Task.isCancelled, thumbnailLoadID == loadID else { return }
+                    let key = localThumbnailKey(pageIndex: pageIndex)
+                    guard thumbnailImages[key] == nil else {
+                        thumbnailLoadingKeys.remove(key)
+                        continue
+                    }
+                    let data = await renderer.thumbnailData(pageIndex: pageIndex)
+                    guard !Task.isCancelled, thumbnailLoadID == loadID else { return }
+                    thumbnailLoadingKeys.remove(key)
+                    if let data, let image = PDFPagePreviewImage(data: data) {
+                        thumbnailImages[key] = image
+                        thumbnailFailures.remove(key)
+                    } else {
+                        thumbnailFailures.insert(key)
+                    }
+                }
+            }
+        } else {
+            let remoteRenderer = remoteRenderer
+            thumbnailLoadTask = Task {
+                await withTaskGroup(of: PDFRemoteThumbnailResult.self) { group in
+                    for request in remoteRequests where thumbnailImages[request.url.absoluteString] == nil {
+                        group.addTask {
+                            let data = await remoteRenderer.thumbnailData(pageIndex: request.pageIndex, url: request.url)
+                            return PDFRemoteThumbnailResult(request: request, data: data)
+                        }
+                    }
+
+                    for await result in group {
+                        guard !Task.isCancelled, thumbnailLoadID == loadID else { continue }
+                        let key = result.request.url.absoluteString
+                        thumbnailLoadingKeys.remove(key)
+                        if let data = result.data, let image = PDFPagePreviewImage(data: data) {
+                            thumbnailImages[key] = image
+                            thumbnailFailures.remove(key)
+                        } else {
+                            thumbnailFailures.insert(key)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func cancelThumbnailLoading() {
+        thumbnailLoadTask?.cancel()
+        thumbnailLoadTask = nil
+        thumbnailLoadID = ""
+    }
+
+    private var usesNativeScrollVisibility: Bool {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            return true
+        }
+        return false
+    }
+
+    private func thumbnailFrameReader(pageIndex: Int) -> some View {
+        Group {
+            if #available(iOS 18.0, macOS 15.0, *) {
+                Color.clear
+            } else {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: PDFPageThumbnailFramePreferenceKey.self,
+                        value: [pageIndex: proxy.frame(in: .named(PDFPageSidebarCoordinateSpace.name))]
+                    )
+                }
+            }
+        }
+    }
+
+    private func remoteThumbnailURL(path: String, pageIndex: Int) -> URL? {
+        guard let api = store.api else { return nil }
+        return try? api.pdfThumbnailURL(path: path, page: pageIndex + 1)
+    }
+
+    private func thumbnailKey(pageIndex: Int) -> String? {
+        if renderer != nil {
+            return localThumbnailKey(pageIndex: pageIndex)
+        }
+        guard let streamPath else { return nil }
+        return remoteThumbnailURL(path: streamPath, pageIndex: pageIndex)?.absoluteString
+    }
+
+    private func localThumbnailKey(pageIndex: Int) -> String {
+        "local:\(pageIndex)"
     }
 
     private func gridColumns(for width: CGFloat) -> [GridItem] {
@@ -1973,60 +2149,140 @@ private struct PDFPageThumbnailBrowser: View {
         return [current, current + 1, current - 1, current + 2, current - 2]
             .filter { $0 >= 0 && $0 < pageCount }
     }
+
+    private func prioritized<S: Sequence>(_ pageIndexes: S, around centerPageIndex: Int) -> [Int]
+    where S.Element == Int {
+        pageIndexes.sorted {
+            let leftDistance = abs($0 - centerPageIndex)
+            let rightDistance = abs($1 - centerPageIndex)
+            return leftDistance == rightDistance ? $0 < $1 : leftDistance < rightDistance
+        }
+    }
 }
 
-private struct RemotePDFPageThumbnailCell: View {
-    @EnvironmentObject private var store: WorkspaceStore
-    let path: String
-    let pageIndex: Int
-    let isCurrent: Bool
-    let onSelect: () -> Void
+private enum PDFPageSidebarCoordinateSpace {
+    static let name = "pdf-page-sidebar-scroll"
+}
 
-    var body: some View {
-        Button(action: onSelect) {
-            VStack(spacing: 7) {
-                AsyncImage(url: thumbnailURL) { phase in
-                    ZStack {
-                        Color.white
-                        if case let .success(image) = phase {
-                            image.resizable().scaledToFit()
-                        }
-                    }
-                }
-                .aspectRatio(0.72, contentMode: .fit)
-                .clipped()
-                .overlay { Rectangle().stroke(Color.black.opacity(0.12), lineWidth: 1) }
+private struct PDFPageSidebarVisibilityModifier: ViewModifier {
+    let onChange: ([Int]) -> Void
 
-                Text("Page \(pageIndex + 1)")
-                    .font(.caption.weight(isCurrent ? .semibold : .regular))
-                    .foregroundStyle(isCurrent ? Color.accentColor : Color.primary)
-                    .monospacedDigit()
-            }
-            .padding(7)
-            .frame(maxWidth: 270)
-            .background(isCurrent ? Color.accentColor.opacity(0.12) : Color.clear)
-            .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 2)
-            }
-            .contentShape(Rectangle())
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            content.onScrollTargetVisibilityChange(idType: Int.self, threshold: 0.1, onChange)
+        } else {
+            content
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Page \(pageIndex + 1)")
-        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+}
+
+private struct PDFPageThumbnailFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+private struct PDFRemoteThumbnailRequest: Sendable {
+    let pageIndex: Int
+    let url: URL
+}
+
+private struct PDFRemoteThumbnailResult: Sendable {
+    let request: PDFRemoteThumbnailRequest
+    let data: Data?
+}
+
+private actor PDFRemotePageThumbnailRenderer {
+    private let gate = PDFThumbnailRequestGate(limit: 3)
+    private let cache = NSCache<NSString, NSData>()
+    private var activeKeys = Set<String>()
+
+    init() {
+        cache.countLimit = 64
+        cache.totalCostLimit = 24 * 1024 * 1024
     }
 
-    private var thumbnailURL: URL? {
-        try? store.api?.pdfThumbnailURL(path: path, page: pageIndex + 1)
+    func thumbnailData(pageIndex: Int, url: URL) async -> Data? {
+        let key = url.absoluteString
+        let cacheKey = key as NSString
+        if let cached = cache.object(forKey: cacheKey) {
+            return cached as Data
+        }
+
+        while activeKeys.contains(key) {
+            guard !Task.isCancelled else { return nil }
+            try? await Task.sleep(for: .milliseconds(20))
+            if let cached = cache.object(forKey: cacheKey) {
+                return cached as Data
+            }
+        }
+        activeKeys.insert(key)
+
+        guard await gate.acquire() else {
+            activeKeys.remove(key)
+            return nil
+        }
+        let data: Data?
+        if Task.isCancelled {
+            data = nil
+        } else if let cached = cache.object(forKey: cacheKey) {
+            data = cached as Data
+        } else {
+            data = await Self.download(url: url)
+        }
+        await gate.release()
+        activeKeys.remove(key)
+        if let data, cache.object(forKey: cacheKey) == nil {
+            cache.setObject(data as NSData, forKey: cacheKey, cost: data.count)
+        }
+        return data
+    }
+
+    private static func download(url: URL) async -> Data? {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let response = response as? HTTPURLResponse,
+                  (200..<300).contains(response.statusCode) else { return nil }
+            return data
+        } catch {
+            return nil
+        }
+    }
+}
+
+private actor PDFThumbnailRequestGate {
+    private let limit: Int
+    private var activeCount = 0
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    func acquire() async -> Bool {
+        while activeCount >= limit {
+            guard !Task.isCancelled else { return false }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        guard !Task.isCancelled else { return false }
+        activeCount += 1
+        return true
+    }
+
+    func release() {
+        activeCount = max(0, activeCount - 1)
     }
 }
 
 private struct PDFPageThumbnailCell: View {
-    let renderer: PDFPageThumbnailRenderer
+    let image: PDFPagePreviewImage?
+    let isLoading: Bool
+    let didFail: Bool
     let pageIndex: Int
     let isCurrent: Bool
     let onSelect: () -> Void
-    @State private var image: PDFPagePreviewImage?
 
     var body: some View {
         Button(action: onSelect) {
@@ -2037,6 +2293,12 @@ private struct PDFPageThumbnailCell: View {
                         platformImage(image)
                             .resizable()
                             .scaledToFit()
+                    } else if didFail {
+                        Image(systemName: "exclamationmark.circle")
+                            .foregroundStyle(.secondary)
+                    } else if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
                     }
                 }
                 .aspectRatio(0.72, contentMode: .fit)
@@ -2064,12 +2326,6 @@ private struct PDFPageThumbnailCell: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Page \(pageIndex + 1)")
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
-        .task(id: pageIndex) {
-            guard image == nil else { return }
-            guard let data = await renderer.thumbnailData(pageIndex: pageIndex),
-                  !Task.isCancelled else { return }
-            image = PDFPagePreviewImage(data: data)
-        }
     }
 
     @ViewBuilder
@@ -2100,13 +2356,6 @@ private final class PDFPageThumbnailRenderer: @unchecked Sendable {
                 let document = loadDocumentIfNeeded()
                 continuation.resume(returning: document?.pageCount)
             }
-        }
-    }
-
-    func prewarm(pageIndexes: [Int]) async {
-        for pageIndex in pageIndexes {
-            guard !Task.isCancelled else { return }
-            _ = await thumbnailData(pageIndex: pageIndex)
         }
     }
 
